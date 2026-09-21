@@ -7,6 +7,7 @@ import type { Ctx } from "./context";
 import { installErrorHandler, notFoundBody } from "./errors";
 import { dbFile, lifecycleRoutes } from "./routes/lifecycle";
 import { agentRoutes } from "./routes/agents";
+import { chainRoutes } from "./routes/chain";
 import { projectRoutes } from "./routes/projects";
 import { ticketRoutes } from "./routes/tickets";
 
@@ -42,6 +43,7 @@ export async function buildApp(opts: { dataDir: string; now?: () => Date; webDis
   agentRoutes(app, ctx);
   projectRoutes(app, ctx);
   ticketRoutes(app, ctx);
+  chainRoutes(app, ctx);
 
   if (opts.webDist && existsSync(opts.webDist)) {
     await app.register(fastifyStatic, { root: opts.webDist });

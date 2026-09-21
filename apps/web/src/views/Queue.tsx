@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useOutletContext } from "react-router-dom";
-import type { Lane, Project } from "@panorama/core";
+import { CaretDown, CaretRight } from "@phosphor-icons/react";
+import type { Lane, Project, Ticket } from "@panorama/core";
 import { LaneScene } from "../lib/iso";
-import { useAgents, useQueue } from "../lib/hooks";
+import { useAgents, useQueue, useTickets } from "../lib/hooks";
 import { TicketRow } from "../components/TicketRow";
 import { NewTicket } from "../components/NewTicket";
 
@@ -14,14 +15,25 @@ function isTypingTarget(): boolean {
 export function Queue() {
   const { project, lanes } = useOutletContext<{ project: Project; lanes: Lane[] }>();
   const queue = useQueue(project.id);
+  const allTickets = useTickets(project.id);
   const agents = useAgents().data ?? [];
   const [showNew, setShowNew] = useState(false);
+  const [showAllOpen, setShowAllOpen] = useState(false);
   const rowsRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
 
   const needsHuman = queue.data?.needsHuman ?? [];
   const active = queue.data?.active ?? [];
   const hasQueue = !queue.isPending && !queue.isError;
+
+  const doneLaneIds = new Set(lanes.filter((l) => l.isDone).map((l) => l.id));
+  const shownIds = new Set([...needsHuman, ...active].map((t) => t.id));
+  const openTickets = (allTickets.data ?? []).filter((t) => !shownIds.has(t.id) && !doneLaneIds.has(t.laneId));
+
+  function closeNew(created?: Ticket) {
+    setShowNew(false);
+    if (created) navigate(`/t/${created.id}`);
+  }
 
   useEffect(() => {
     if (!hasQueue || needsHuman.length === 0) return;
@@ -50,6 +62,18 @@ export function Queue() {
   function openTicket(id: string) {
     navigate(`/t/${id}`);
   }
+
+  const allOpenSection = openTickets.length === 0 ? null : (
+    <>
+      <button type="button" className="section-toggle" aria-expanded={showAllOpen} onClick={() => setShowAllOpen((v) => !v)}>
+        {showAllOpen ? <CaretDown size={16} weight="regular" aria-hidden="true" /> : <CaretRight size={16} weight="regular" aria-hidden="true" />}
+        All open tickets <span className="mono">{openTickets.length}</span>
+      </button>
+      {showAllOpen && openTickets.map((t, i) => (
+        <TicketRow key={t.id} ticket={t} lanes={lanes} agents={agents} onOpen={openTicket} index={i} />
+      ))}
+    </>
+  );
 
   if (queue.isPending) {
     return (
@@ -85,7 +109,8 @@ export function Queue() {
             ))}
           </>
         )}
-        {showNew && <NewTicket projectId={project.id} onClose={() => setShowNew(false)} />}
+        {allOpenSection}
+        {showNew && <NewTicket projectId={project.id} onClose={closeNew} />}
       </div>
     );
   }
@@ -111,7 +136,8 @@ export function Queue() {
           ))}
         </>
       )}
-      {showNew && <NewTicket projectId={project.id} onClose={() => setShowNew(false)} />}
+      {allOpenSection}
+      {showNew && <NewTicket projectId={project.id} onClose={closeNew} />}
     </div>
   );
 }

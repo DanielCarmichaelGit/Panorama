@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
+import type { Ticket } from "@panorama/core";
 import { useCreateTicket } from "../lib/hooks";
 
 const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])';
 
-export function NewTicket({ projectId, onClose }: { projectId: string; onClose: () => void }) {
+export function NewTicket({ projectId, onClose }: { projectId: string; onClose: (created?: Ticket) => void }) {
   const [title, setTitle] = useState("");
   const create = useCreateTicket();
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -38,8 +39,8 @@ export function NewTicket({ projectId, onClose }: { projectId: string; onClose: 
     e.preventDefault();
     if (!title.trim() || create.isPending) return;
     try {
-      await create.mutateAsync({ projectId, title: title.trim() });
-      onClose();
+      const created = await create.mutateAsync({ projectId, title: title.trim() });
+      onClose(created);
     } catch {
       // create.error renders the message below
     }
@@ -56,7 +57,7 @@ export function NewTicket({ projectId, onClose }: { projectId: string; onClose: 
           </div>
           {create.isError && <p className="error" role="alert">{create.error instanceof Error ? create.error.message : "Could not create the ticket."}</p>}
           <div className="modal-actions">
-            <button type="button" className="btn ghost" onClick={onClose}>Cancel</button>
+            <button type="button" className="btn ghost" onClick={() => onClose()}>Cancel</button>
             <button type="submit" className="btn" disabled={!title.trim() || create.isPending}>{create.isPending ? "Creating" : "Create"}</button>
           </div>
         </form>

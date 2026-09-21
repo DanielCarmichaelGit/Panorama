@@ -14,10 +14,14 @@ export const useQueue = (projectId: string | undefined) =>
     enabled: !!projectId,
   });
 
-export const useAgents = () => useQuery({ queryKey: ["agents"], queryFn: () => api<Actor[]>("GET", "/api/v1/agents") });
+export const useAgents = (opts?: { refetchInterval?: number }) =>
+  useQuery({ queryKey: ["agents"], queryFn: () => api<Actor[]>("GET", "/api/v1/agents"), refetchInterval: opts?.refetchInterval });
 
 export const useTicket = (id: string | undefined) =>
   useQuery({ queryKey: ["ticket", id], queryFn: () => api<Ticket>("GET", `/api/v1/tickets/${id}`), enabled: !!id });
+
+export const useTickets = (projectId: string | undefined) =>
+  useQuery({ queryKey: ["tickets", projectId], queryFn: () => api<Ticket[]>("GET", `/api/v1/tickets?projectId=${projectId}`), enabled: !!projectId });
 
 export const useCreateProject = () => {
   const qc = useQueryClient();
@@ -31,7 +35,10 @@ export const useCreateTicket = () => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (v: { projectId: string; title: string }) => api<Ticket>("POST", "/api/v1/tickets", v),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["queue"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["queue"] });
+      qc.invalidateQueries({ queryKey: ["tickets"] });
+    },
   });
 };
 
@@ -41,6 +48,7 @@ export const useMoveTicket = () => {
     mutationFn: (v: { id: string; laneId: string }) => api<Ticket>("POST", `/api/v1/tickets/${v.id}/move`, { laneId: v.laneId }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["queue"] });
+      qc.invalidateQueries({ queryKey: ["tickets"] });
       qc.invalidateQueries({ queryKey: ["ticket"] });
     },
   });
@@ -52,6 +60,7 @@ export const useSetFlag = () => {
     mutationFn: (v: { id: string; flag: string; on: boolean }) => api<Ticket>("POST", `/api/v1/tickets/${v.id}/flags`, { flag: v.flag, on: v.on }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["queue"] });
+      qc.invalidateQueries({ queryKey: ["tickets"] });
       qc.invalidateQueries({ queryKey: ["ticket"] });
     },
   });
@@ -63,6 +72,7 @@ export const useUpdateTicket = () => {
     mutationFn: (v: { id: string; patch: Record<string, unknown> }) => api<Ticket>("PATCH", `/api/v1/tickets/${v.id}`, v.patch),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["queue"] });
+      qc.invalidateQueries({ queryKey: ["tickets"] });
       qc.invalidateQueries({ queryKey: ["ticket"] });
     },
   });

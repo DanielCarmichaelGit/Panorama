@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { NavLink, Outlet, useMatch, useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { CaretLeft, CaretRight, Lock, Robot, Tray } from "@phosphor-icons/react";
 import type { Status } from "../App";
@@ -7,6 +7,7 @@ import { api } from "../lib/api";
 import { session } from "../lib/session";
 import { useLanes, useProjects } from "../lib/hooks";
 import { FirstProject } from "./FirstProject";
+import { TicketPanel } from "./TicketPanel";
 
 const SIDEBAR_KEY = "pan.sidebar";
 
@@ -50,6 +51,17 @@ export function Shell({ status, brokenAt }: { status: Status; brokenAt: number |
   const list = projects.data ?? [];
   const current = list.find((p) => p.id === projectOverride) ?? list[0] ?? null;
   const lanes = useLanes(current?.id);
+  const ticketMatch = useMatch("/t/:id");
+  const ticketId = ticketMatch?.params.id;
+
+  function closeTicketPanel() {
+    navigate("/");
+    if (ticketId) {
+      window.setTimeout(() => {
+        document.querySelector<HTMLElement>(`[data-ticket="${ticketId}"]`)?.focus();
+      }, 0);
+    }
+  }
 
   useEffect(() => {
     let pendingG = false;
@@ -133,7 +145,7 @@ export function Shell({ status, brokenAt }: { status: Status; brokenAt: number |
           </button>
         </div>
       </nav>
-      <main id="main">
+      <main id="main" className={ticketId ? "with-panel" : undefined}>
         {projects.isPending || lanes.isPending ? (
           <SkeletonRows />
         ) : lanes.isError ? (
@@ -145,6 +157,7 @@ export function Shell({ status, brokenAt }: { status: Status; brokenAt: number |
           <Outlet context={{ project: current, lanes: lanes.data ?? [] }} />
         )}
       </main>
+      {ticketId && <TicketPanel id={ticketId} onClose={closeTicketPanel} />}
     </div>
   );
 }

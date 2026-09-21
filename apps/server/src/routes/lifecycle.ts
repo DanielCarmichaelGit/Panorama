@@ -2,6 +2,7 @@ import { join } from "node:path";
 import type { FastifyInstance } from "fastify";
 import { SetupInput, UnlockInput, verifyRequest } from "@panorama/core";
 import { appendEvent, insertActor, migrate, openDatabase, writeConfig } from "@panorama/db";
+import { getDb, requireCan } from "../auth";
 import type { Ctx } from "../context";
 import { HttpError } from "../errors";
 
@@ -46,6 +47,14 @@ export function lifecycleRoutes(app: FastifyInstance, ctx: Ctx): void {
       throw new HttpError(401, "bad_key", "That key does not open this database");
     }
     migrate(ctx.db);
+    return { ok: true };
+  });
+
+  app.post("/api/v1/lock", async (req) => {
+    requireCan(req, "lock");
+    if (!ctx.config?.encryption) throw new HttpError(409, "not_encrypted", "Locking needs encryption to be on");
+    appendEvent(getDb(ctx), { actorId: req.actor.id, type: "system.locked", payload: {}, signature: req.sig, now: ctx.now().toISOString() });
+    ctx.db!.close(); ctx.db = null;
     return { ok: true };
   });
 }

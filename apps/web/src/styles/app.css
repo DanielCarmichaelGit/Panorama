@@ -19,3 +19,12 @@ a{color:var(--accent)}
 .error{color:var(--coral-ink);background:var(--coral-top);border-radius:var(--r-input);padding:.5rem .7rem}
 .skip{position:absolute;left:-9999px}.skip:focus{left:var(--gutter);top:8px;z-index:var(--z-toast);background:var(--surface);padding:.5rem}
 @media (prefers-reduced-motion:reduce){*{transition-duration:0ms!important;animation-duration:0ms!important}}
+@keyframes iso-settle{from{transform:translateY(-12px);opacity:0}to{transform:none;opacity:1}}
+.iso-settle{animation:iso-settle 500ms var(--ease-in) both}
+.lock{min-height:100%;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);align-items:center;gap:var(--gutter);padding:var(--gutter);max-width:1080px;margin:0 auto}
+.lock form{max-width:380px}
+.lock .mark{font-weight:700;font-size:1.05rem;letter-spacing:-.01em;margin-bottom:2rem}
+.lock h1{margin-bottom:.75rem}.lock p{margin:0 0 1.5rem}
+.check{display:flex;gap:.6rem;align-items:flex-start;margin-bottom:1.25rem}
+.banner{background:var(--coral-top);color:var(--coral-ink);padding:.7rem var(--gutter);font-weight:600}
+@media (max-width:860px){.lock{grid-template-columns:1fr}.lock .art{order:-1}}

@@ -1,11 +1,13 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link, NavLink, Outlet, useMatch, useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
-import { CaretLeft, CaretRight, Lock, Robot, Tray } from "@phosphor-icons/react";
+import { CaretLeft, CaretRight, List, Lock, Robot, Tray } from "@phosphor-icons/react";
+import type { Project } from "@panorama/core";
 import type { Status } from "../App";
 import { api } from "../lib/api";
 import { session } from "../lib/session";
 import { useLanes, useProjects } from "../lib/hooks";
+import { useFocusTrap } from "../lib/useFocusTrap";
 import { FirstProject } from "./FirstProject";
 import { TicketPanel } from "./TicketPanel";
 
@@ -40,11 +42,41 @@ function SkeletonRows() {
   );
 }
 
+function ProjectSwitcher({ list, current, onChange }: { list: Project[]; current: Project; onChange: (id: string) => void }) {
+  if (list.length > 1) {
+    return (
+      <select className="input" aria-label="Project" value={current.id} onChange={(e) => onChange(e.target.value)}>
+        {list.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+      </select>
+    );
+  }
+  return (
+    <div>
+      <strong>{current.name}</strong>
+      <div className="mono muted">{current.key}</div>
+    </div>
+  );
+}
+
+/** Below 860px the sidebar foot has nowhere to live, so it moves in here. */
+function MenuSheet({ onClose, children }: { onClose: () => void; children: React.ReactNode }) {
+  const ref = useFocusTrap<HTMLDivElement>(onClose);
+  return (
+    <div className="modal-back sheet-back" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="sheet" role="dialog" aria-modal="true" aria-label="Menu" ref={ref}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
 export function Shell({ status, chainOk }: { status: Status; chainOk: boolean }) {
   const projects = useProjects();
   const [collapsed, setCollapsed] = useState(readCollapsed);
   const [projectOverride, setProjectOverride] = useState<string | null>(null);
   const [lockError, setLockError] = useState("");
+  const [menuOpen, setMenuOpen] = useState(false);
+  const closeMenu = useCallback(() => setMenuOpen(false), []);
   const navigate = useNavigate();
   const qc = useQueryClient();
 
@@ -115,15 +147,8 @@ export function Shell({ status, chainOk }: { status: Status; chainOk: boolean })
         <div className="switcher" title={current?.name}>
           {!current ? null : collapsed ? (
             <strong className="mono">{current.key}</strong>
-          ) : list.length > 1 ? (
-            <select className="input" aria-label="Project" value={current.id} onChange={(e) => setProjectOverride(e.target.value)}>
-              {list.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
           ) : (
-            <div>
-              <strong>{current.name}</strong>
-              <div className="mono muted">{current.key}</div>
-            </div>
+            <ProjectSwitcher list={list} current={current} onChange={setProjectOverride} />
           )}
         </div>
         <Link to="/" className="nav-item" aria-label="Queue" title="Queue" aria-current={queueCurrent ? "page" : undefined}>
@@ -134,6 +159,10 @@ export function Shell({ status, chainOk }: { status: Status; chainOk: boolean })
           <Robot size={18} weight="regular" aria-hidden="true" />
           <span className="label">Agents</span>
         </NavLink>
+        <button type="button" className="nav-item menu-item" onClick={() => setMenuOpen(true)} aria-haspopup="dialog" aria-expanded={menuOpen}>
+          <List size={18} weight="regular" aria-hidden="true" />
+          <span className="label">Menu</span>
+        </button>
         <div className="foot">
           <span className="mono muted">{chainOk ? "chain verified" : "chain broken"}</span>
           {status.encryption && (
@@ -160,6 +189,19 @@ export function Shell({ status, chainOk }: { status: Status; chainOk: boolean })
         )}
       </main>
       {ticketId && <TicketPanel id={ticketId} onClose={closeTicketPanel} />}
+      {menuOpen && (
+        <MenuSheet onClose={closeMenu}>
+          {current && <ProjectSwitcher list={list} current={current} onChange={setProjectOverride} />}
+          <span className="mono muted">{chainOk ? "chain verified" : "chain broken"}</span>
+          {status.encryption && (
+            <button type="button" className="btn ghost" onClick={handleLock}>
+              <Lock size={16} weight="regular" aria-hidden="true" /> Lock
+            </button>
+          )}
+          {lockError && <p className="error" role="alert">{lockError}</p>}
+          <button type="button" className="btn ghost" onClick={closeMenu}>Close</button>
+        </MenuSheet>
+      )}
     </div>
   );
 }

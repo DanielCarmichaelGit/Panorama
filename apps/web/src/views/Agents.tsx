@@ -92,7 +92,7 @@ function ApproveDialog({ agent, onClose }: { agent: Actor; onClose: () => void }
   );
 }
 
-function AgentRow({ agent, showLastSeen, children }: { agent: Actor; showLastSeen?: boolean; children?: React.ReactNode }) {
+function AgentRow({ agent, showLastSeen, error, children }: { agent: Actor; showLastSeen?: boolean; error?: string; children?: React.ReactNode }) {
   return (
     <div className="card agent-row">
       <strong>{agent.name}</strong>
@@ -101,6 +101,7 @@ function AgentRow({ agent, showLastSeen, children }: { agent: Actor; showLastSee
       {agent.scopes && <span className="muted">{scopeSummary(agent.scopes)}</span>}
       <div className="spacer" />
       {children}
+      {error && <p className="error" role="alert">{error}</p>}
     </div>
   );
 }
@@ -109,21 +110,25 @@ export function Agents() {
   const agents = useAgents({ refetchInterval: 3000 });
   const revoke = useRevokeAgent();
   const [approving, setApproving] = useState<Actor | null>(null);
-  const [rejecting, setRejecting] = useState<string | null>(null);
+  const [working, setWorking] = useState<string | null>(null);
+  const [rowError, setRowError] = useState<{ id: string; message: string } | null>(null);
 
   const list = agents.data ?? [];
   const pending = list.filter((a) => a.status === "pending");
   const active = list.filter((a) => a.status === "active");
   const revoked = list.filter((a) => a.status === "revoked");
 
-  async function reject(id: string) {
-    setRejecting(id);
-    try {
-      await revoke.mutateAsync(id);
-    } finally {
-      setRejecting(null);
-    }
+  // Reject and Revoke are the same call. Failures belong beside the row they failed on.
+  function withdraw(id: string) {
+    setWorking(id);
+    setRowError(null);
+    revoke.mutate(id, {
+      onError: (e) => setRowError({ id, message: e instanceof Error ? e.message : "Could not update this agent." }),
+      onSettled: () => setWorking(null),
+    });
   }
+
+  const errorFor = (id: string) => (rowError?.id === id ? rowError.message : undefined);
 
   if (agents.isPending) {
     return (
@@ -165,9 +170,9 @@ export function Agents() {
         <>
           <h2 className="section-title">Pending</h2>
           {pending.map((a) => (
-            <AgentRow key={a.id} agent={a}>
+            <AgentRow key={a.id} agent={a} error={errorFor(a.id)}>
               <button type="button" className="btn" onClick={() => setApproving(a)}>Approve</button>
-              <button type="button" className="btn ghost" onClick={() => reject(a.id)} disabled={rejecting === a.id}>Reject</button>
+              <button type="button" className="btn ghost" onClick={() => withdraw(a.id)} disabled={working === a.id}>Reject</button>
             </AgentRow>
           ))}
         </>
@@ -176,8 +181,8 @@ export function Agents() {
         <>
           <h2 className="section-title">Active</h2>
           {active.map((a) => (
-            <AgentRow key={a.id} agent={a} showLastSeen>
-              <button type="button" className="btn ghost" onClick={() => revoke.mutate(a.id)} disabled={revoke.isPending}>Revoke</button>
+            <AgentRow key={a.id} agent={a} showLastSeen error={errorFor(a.id)}>
+              <button type="button" className="btn ghost" onClick={() => withdraw(a.id)} disabled={working === a.id}>Revoke</button>
             </AgentRow>
           ))}
         </>

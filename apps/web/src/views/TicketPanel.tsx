@@ -23,11 +23,17 @@ export function TicketPanel({ id, onClose }: { id: string; onClose: () => void }
 
   const [title, setTitle] = useState("");
   const [titleError, setTitleError] = useState("");
+  const [laneChoice, setLaneChoice] = useState<string | null>(null);
   const titleRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (ticket.data) setTitle(ticket.data.title);
   }, [ticket.data?.id, ticket.data?.title]);
+
+  // The server has spoken: whatever lane it reports is the one to show.
+  useEffect(() => {
+    setLaneChoice(null);
+  }, [ticket.data?.id, ticket.data?.laneId]);
 
   useEffect(() => {
     if (ticket.data) titleRef.current?.focus();
@@ -113,7 +119,17 @@ export function TicketPanel({ id, onClose }: { id: string; onClose: () => void }
       {titleError && <p className="error" role="alert">{titleError}</p>}
       <div className="field">
         <label htmlFor="tp-lane">Lane</label>
-        <select id="tp-lane" className="input" value={t.laneId} disabled={move.isPending} onChange={(e) => move.mutate({ id, laneId: e.target.value })}>
+        <select
+          id="tp-lane"
+          className="input"
+          value={laneChoice ?? t.laneId}
+          disabled={move.isPending}
+          onChange={(e) => {
+            const laneId = e.target.value;
+            setLaneChoice(laneId);
+            move.mutate({ id, laneId }, { onError: () => setLaneChoice(null) });
+          }}
+        >
           {laneList.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
         </select>
       </div>

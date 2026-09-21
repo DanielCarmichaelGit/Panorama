@@ -22,7 +22,13 @@ export function App() {
   const seed = useSyncExternalStore(session.subscribe, session.getSeed);
   const [chain, setChain] = useState<ChainState>({ ok: true });
   const status = useQuery({ queryKey: ["status"], queryFn: () => api<Status>("GET", "/api/v1/status") });
-  if (status.isPending) return null;
+  if (status.isPending) {
+    return (
+      <main className="view" aria-busy="true">
+        {[0, 1, 2, 3].map((i) => <div key={i} className="skeleton" />)}
+      </main>
+    );
+  }
   if (status.isError) {
     return (
       <main style={{ padding: "var(--gutter)" }}>

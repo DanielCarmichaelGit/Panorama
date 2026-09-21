@@ -59,10 +59,6 @@ export function Queue() {
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [showNew]);
 
-  function openTicket(id: string) {
-    navigate(`/t/${id}`);
-  }
-
   const allOpenSection = openTickets.length === 0 ? null : (
     <>
       <button type="button" className="section-toggle" aria-expanded={showAllOpen} onClick={() => setShowAllOpen((v) => !v)}>
@@ -70,7 +66,7 @@ export function Queue() {
         All open tickets <span className="mono">{openTickets.length}</span>
       </button>
       {showAllOpen && openTickets.map((t, i) => (
-        <TicketRow key={t.id} ticket={t} lanes={lanes} agents={agents} onOpen={openTicket} index={i} />
+        <TicketRow key={t.id} ticket={t} lanes={lanes} agents={agents} index={i} />
       ))}
     </>
   );
@@ -106,7 +102,7 @@ export function Queue() {
             <>
               <h2 className="section-title">With agents</h2>
               {active.map((t, i) => (
-                <TicketRow key={t.id} ticket={t} lanes={lanes} agents={agents} onOpen={openTicket} index={i} />
+                <TicketRow key={t.id} ticket={t} lanes={lanes} agents={agents} index={i} />
               ))}
             </>
           )}
@@ -127,14 +123,14 @@ export function Queue() {
       </div>
       <div ref={rowsRef}>
         {needsHuman.map((t, i) => (
-          <TicketRow key={t.id} ticket={t} lanes={lanes} agents={agents} onOpen={openTicket} index={i} />
+          <TicketRow key={t.id} ticket={t} lanes={lanes} agents={agents} index={i} />
         ))}
       </div>
       {active.length > 0 && (
         <>
           <h2 className="section-title">With agents</h2>
           {active.map((t, i) => (
-            <TicketRow key={t.id} ticket={t} lanes={lanes} agents={agents} onOpen={openTicket} index={needsHuman.length + i} />
+            <TicketRow key={t.id} ticket={t} lanes={lanes} agents={agents} index={needsHuman.length + i} />
           ))}
         </>
       )}

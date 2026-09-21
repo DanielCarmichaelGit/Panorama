@@ -45,7 +45,6 @@ a{color:var(--accent)}
 .trow .mark{width:10px;height:10px;border-radius:3px;transform:rotate(45deg);flex:none}
 .trow .ttl{font-weight:600;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .chip{font:600 .75rem var(--font);padding:.2rem .6rem;border-radius:var(--r-pill);border:0;white-space:nowrap;flex:none}
-button.chip{cursor:pointer;transition:filter var(--dur) var(--ease)}button.chip:hover{filter:brightness(.96)}
 .section-title{margin:1.75rem 0 .75rem}
 .skeleton{height:46px;border-radius:var(--r-card);background:var(--stone-top);margin-bottom:8px}
 .empty{display:grid;justify-items:start;gap:.5rem;max-width:420px}
@@ -58,7 +57,10 @@ button.chip{cursor:pointer;transition:filter var(--dur) var(--ease)}button.chip:
 @keyframes rise-row{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 .enter-header{animation:rise 400ms var(--ease-in) 80ms both}
 .enter-row{animation:rise-row 350ms var(--ease-in) both;animation-delay:calc(140ms + min(var(--i),7) * 30ms)}
-@media (max-width:860px){.shell,.shell.collapsed{grid-template-columns:1fr}.side{position:fixed;inset:auto 0 0 0;height:auto;flex-direction:row;border-right:0;border-top:1px solid var(--line)}.side .foot,.side .switcher{display:none}.view{padding-bottom:5rem}.trow .ag,.trow .tk{display:none}}
+.side .menu-item{display:none}
+.sheet{background:var(--surface);border-top:1px solid var(--line);border-radius:var(--r-card) var(--r-card) 0 0;padding:1rem var(--gutter) 1.25rem;display:grid;gap:.75rem;justify-items:stretch;animation:sheet-in 250ms var(--ease-in) both}
+@keyframes sheet-in{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
+@media (max-width:860px){.shell,.shell.collapsed{grid-template-columns:1fr}.side{position:fixed;inset:auto 0 0 0;height:auto;flex-direction:row;border-right:0;border-top:1px solid var(--line)}.side .foot,.side .switcher{display:none}.side .menu-item{display:flex}.sheet-back{align-items:end;justify-items:stretch;padding:0}.sheet{width:100%;padding-bottom:5rem}.view{padding-bottom:5rem}.trow .ag,.trow .tk{display:none}}
 .panel{position:fixed;top:0;right:0;bottom:0;width:min(520px,100%);background:var(--surface);border-left:1px solid var(--line);z-index:var(--z-panel);padding:1.25rem var(--gutter);overflow:auto;animation:panel-in 250ms var(--ease-in) both;box-shadow:var(--shadow)}
 @keyframes panel-in{from{transform:translateX(24px);opacity:0}to{transform:none;opacity:1}}
 @media (min-width:1280px){.with-panel .view{margin-right:520px}}
@@ -71,4 +73,4 @@ button.chip{cursor:pointer;transition:filter var(--dur) var(--ease)}button.chip:
 .panel .field{margin:1rem 0}
 .chips{display:flex;gap:.4rem;flex-wrap:wrap;margin:.75rem 0}
 .section-toggle{display:flex;align-items:center;gap:.5rem;background:none;border:0;padding:0;cursor:pointer;font:600 1.125rem var(--font);letter-spacing:-.01em;color:var(--text);margin:1.75rem 0 .75rem}
-.section-toggle:hover{color:var(--accent)}
+.section-toggle:hover{color:var(--text)}

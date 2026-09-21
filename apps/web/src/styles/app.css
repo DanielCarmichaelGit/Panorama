@@ -49,6 +49,7 @@ button.chip{cursor:pointer;transition:filter var(--dur) var(--ease)}button.chip:
 .section-title{margin:1.75rem 0 .75rem}
 .skeleton{height:46px;border-radius:var(--r-card);background:var(--stone-top);margin-bottom:8px}
 .empty{display:grid;justify-items:start;gap:.5rem;max-width:420px}
+.rows{width:100%;max-width:none}
 .modal-back{position:fixed;inset:0;background:rgba(27,34,48,.35);z-index:var(--z-modal);display:grid;place-items:center;padding:var(--gutter)}
 .modal{width:min(480px,100%);padding:1.25rem}
 .modal-actions{display:flex;gap:.6rem;justify-content:flex-end;margin-top:.25rem}

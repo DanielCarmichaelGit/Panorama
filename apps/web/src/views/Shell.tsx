@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { NavLink, Outlet, useMatch, useNavigate } from "react-router-dom";
+import { Link, NavLink, Outlet, useMatch, useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { CaretLeft, CaretRight, Lock, Robot, Tray } from "@phosphor-icons/react";
 import type { Status } from "../App";
@@ -53,6 +53,8 @@ export function Shell({ status, brokenAt }: { status: Status; brokenAt: number |
   const lanes = useLanes(current?.id);
   const ticketMatch = useMatch("/t/:id");
   const ticketId = ticketMatch?.params.id;
+  const rootMatch = useMatch("/");
+  const queueCurrent = !!rootMatch || !!ticketId;
 
   function closeTicketPanel() {
     navigate("/");
@@ -124,10 +126,10 @@ export function Shell({ status, brokenAt }: { status: Status; brokenAt: number |
             </div>
           )}
         </div>
-        <NavLink to="/" end className="nav-item" aria-label="Queue" title="Queue">
+        <Link to="/" className="nav-item" aria-label="Queue" title="Queue" aria-current={queueCurrent ? "page" : undefined}>
           <Tray size={18} weight="regular" aria-hidden="true" />
           <span className="label">Queue</span>
-        </NavLink>
+        </Link>
         <NavLink to="/agents" className="nav-item" aria-label="Agents" title="Agents">
           <Robot size={18} weight="regular" aria-hidden="true" />
           <span className="label">Agents</span>

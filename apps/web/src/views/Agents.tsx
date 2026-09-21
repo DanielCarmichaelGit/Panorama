@@ -1,9 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { AGENT_ACTIONS, type Actor, type AgentAction, type Scopes } from "@panorama/core";
 import { LaneScene } from "../lib/iso";
 import { useAgents, useApproveAgent, useProjects, useRevokeAgent } from "../lib/hooks";
-
-const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])';
+import { useFocusTrap } from "../lib/useFocusTrap";
 
 export const shortKey = (hex: string) => `${hex.slice(0, 8)}…${hex.slice(-4)}`;
 
@@ -40,32 +39,7 @@ function ApproveDialog({ agent, onClose }: { agent: Actor; onClose: () => void }
   const list = projects.data ?? [];
   const canApprove = (allProjects || projectIds.length > 0) && actions.includes("read") && !approve.isPending;
 
-  const dialogRef = useRef<HTMLDivElement>(null);
-  const openerRef = useRef<HTMLElement | null>(null);
-
-  useEffect(() => {
-    openerRef.current = document.activeElement as HTMLElement | null;
-    dialogRef.current?.querySelector<HTMLElement>(FOCUSABLE)?.focus();
-    return () => openerRef.current?.focus?.();
-  }, []);
-
-  useEffect(() => {
-    function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        onClose();
-        return;
-      }
-      if (e.key !== "Tab") return;
-      const focusable = Array.from(dialogRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? []);
-      if (focusable.length === 0) return;
-      const first = focusable[0], last = focusable[focusable.length - 1];
-      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
-      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
-    }
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, [onClose]);
+  const dialogRef = useFocusTrap<HTMLDivElement>(onClose);
 
   function toggleAction(a: AgentAction) {
     setActions((cur) => (cur.includes(a) ? cur.filter((x) => x !== a) : [...cur, a]));

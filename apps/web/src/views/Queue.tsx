@@ -101,15 +101,17 @@ export function Queue() {
           <p className="muted">Agents are working. Flagged tickets land here.</p>
           <button className="btn" onClick={() => setShowNew(true)}>New ticket</button>
         </div>
-        {active.length > 0 && (
-          <>
-            <h2 className="section-title">With agents</h2>
-            {active.map((t, i) => (
-              <TicketRow key={t.id} ticket={t} lanes={lanes} agents={agents} onOpen={openTicket} index={i} />
-            ))}
-          </>
-        )}
-        {allOpenSection}
+        <div className="rows">
+          {active.length > 0 && (
+            <>
+              <h2 className="section-title">With agents</h2>
+              {active.map((t, i) => (
+                <TicketRow key={t.id} ticket={t} lanes={lanes} agents={agents} onOpen={openTicket} index={i} />
+              ))}
+            </>
+          )}
+          {allOpenSection}
+        </div>
         {showNew && <NewTicket projectId={project.id} onClose={closeNew} />}
       </div>
     );

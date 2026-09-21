@@ -117,6 +117,7 @@ export function TicketPanel({ id, onClose }: { id: string; onClose: () => void }
           {laneList.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
         </select>
       </div>
+      {move.isError && <p className="error" role="alert">{move.error instanceof Error ? move.error.message : "Could not move the ticket."}</p>}
       {t.flags.length > 0 && (
         <div className="chips">
           {t.flags.map((f) => <Chip key={f} family={f === "needs_human" ? "coral" : "stone"}>{f.replace(/_/g, " ")}</Chip>)}
@@ -130,6 +131,7 @@ export function TicketPanel({ id, onClose }: { id: string; onClose: () => void }
       >
         {flagged ? "Clear needs human" : "Flag for human"}
       </button>
+      {setFlag.isError && <p className="error" role="alert">{setFlag.error instanceof Error ? setFlag.error.message : "Could not update the flag."}</p>}
       <dl className="kv">
         <dt>Assignee</dt><dd className="mono">{assignee ? assignee.name : "Unassigned"}</dd>
         <dt>Created</dt><dd className="mono">{when(t.createdAt)}</dd>

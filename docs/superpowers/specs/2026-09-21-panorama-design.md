@@ -55,7 +55,7 @@ Project, Epic, Ticket, Lane, Flag, Evidence, Rule, Trigger, Agent.
 
 ## 5. Tamper evidence
 
-Every state change appends to `events` with `hash = sha256(prev_hash, canonical payload)`, inside the same SQLite transaction as the change. Human actions carry the human signature; agent actions carry the agent signature. On unlock the server verifies the chain from the last checkpoint and the browser signs a new checkpoint. A break shows a blocking banner with the first bad sequence number. Settings offers full verification and JSONL export.
+Every state change appends to `events` with `hash = sha256(prev_hash, canonical payload)`, inside the same SQLite transaction as the change. Human actions carry the human signature; agent actions carry the agent signature. On unlock the server verifies the whole chain, checks it against the last signed checkpoint, and the browser signs a new checkpoint. A break shows a blocking banner with the first bad sequence number. Settings offers full verification and JSONL export.
 
 A checkpoint is the owner's signature over the text `"<seq>:<headHash>"`, so it is bound to one point in the chain and cannot be moved to another; verification walks every entry from GENESIS and then requires the entry at the checkpoint's seq to carry the checkpoint's hash, which is what a rewritten or truncated chain cannot produce. The browser keeps the seq and hash it last signed in `localStorage` under `pan.anchor` and asks the server for the hash at that seq on the next unlock, so a rollback of the `checkpoints` table itself is caught by the one party the attacker does not hold.
 

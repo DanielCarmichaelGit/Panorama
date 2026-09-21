@@ -8,6 +8,7 @@ import { Agents } from "./views/Agents";
 import { LockScreen } from "./views/LockScreen";
 import { Queue } from "./views/Queue";
 import { Shell } from "./views/Shell";
+import type { ChainState } from "./views/unlock";
 
 export interface Status {
   state: "uninitialized" | "locked" | "unlocked";
@@ -19,7 +20,7 @@ export interface Status {
 
 export function App() {
   const seed = useSyncExternalStore(session.subscribe, session.getSeed);
-  const [brokenAt, setBrokenAt] = useState<number | null>(null);
+  const [chain, setChain] = useState<ChainState>({ ok: true });
   const status = useQuery({ queryKey: ["status"], queryFn: () => api<Status>("GET", "/api/v1/status") });
   if (status.isPending) return null;
   if (status.isError) {
@@ -31,13 +32,13 @@ export function App() {
     );
   }
   if (status.data.state !== "unlocked" || !seed) {
-    return <LockScreen status={status.data} onDone={(s, b) => { setBrokenAt(b); session.setSeed(s); status.refetch(); }} />;
+    return <LockScreen status={status.data} onDone={(s, c) => { setChain(c); session.setSeed(s); status.refetch(); }} />;
   }
   return (
     <>
-      {brokenAt !== null && <ChainBanner brokenAt={brokenAt} />}
+      {!chain.ok && <ChainBanner brokenAt={chain.brokenAt} reason={chain.reason} />}
       <Routes>
-        <Route element={<Shell status={status.data} brokenAt={brokenAt} />}>
+        <Route element={<Shell status={status.data} chainOk={chain.ok} />}>
           <Route path="/" element={<Queue />} />
           <Route path="/agents" element={<Agents />} />
           <Route path="/t/:id" element={<Queue />} />

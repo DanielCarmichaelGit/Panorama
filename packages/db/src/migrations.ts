@@ -16,7 +16,13 @@ create trigger events_no_update before update on events begin select raise(abort
 create trigger events_no_delete before delete on events begin select raise(abort, 'events are append-only'); end;
 create table checkpoints(seq integer primary key, head_hash text not null, signature text not null, created_at text not null);
 `;
-const MIGRATIONS = [M1];
+// Checkpoints are the anchor the chain is verified against, so they are as append-only
+// as the events themselves. Nothing to backfill: seq was already the primary key.
+const M2 = `
+create trigger checkpoints_no_update before update on checkpoints begin select raise(abort, 'checkpoints are append-only'); end;
+create trigger checkpoints_no_delete before delete on checkpoints begin select raise(abort, 'checkpoints are append-only'); end;
+`;
+const MIGRATIONS = [M1, M2];
 export function migrate(db: DB): void {
   const current = db.pragma("user_version", { simple: true }) as number;
   for (let i = current; i < MIGRATIONS.length; i++) db.transaction(() => { db.exec(MIGRATIONS[i]); db.pragma(`user_version = ${i + 1}`); })();

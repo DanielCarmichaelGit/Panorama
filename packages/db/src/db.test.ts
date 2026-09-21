@@ -36,6 +36,17 @@ describe("events", () => {
   });
 });
 
+describe("checkpoints", () => {
+  it("keeps checkpoints append-only and ignores a second one at the same seq", () => {
+    const { db } = fresh();
+    d.addCheckpoint(db, { seq: 1, headHash: "aa".repeat(32), signature: "s1", now: NOW });
+    d.addCheckpoint(db, { seq: 1, headHash: "bb".repeat(32), signature: "s2", now: NOW });
+    expect(d.latestCheckpoint(db)).toEqual({ seq: 1, headHash: "aa".repeat(32), signature: "s1" });
+    expect(() => db.prepare("update checkpoints set head_hash='cc' where seq=1").run()).toThrow(/append-only/);
+    expect(() => db.prepare("delete from checkpoints where seq=1").run()).toThrow(/append-only/);
+  });
+});
+
 describe("projects and tickets", () => {
   it("creates a project with the six default lanes", () => {
     const { db } = fresh();

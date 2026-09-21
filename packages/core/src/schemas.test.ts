@@ -25,13 +25,25 @@ describe("hex validators", () => {
   const validSig = "b".repeat(128);
 
   it("accept a correctly sized lowercase hex string", () => {
-    expect(CheckpointInput.safeParse({ headHash: validHead, signature: validSig }).success).toBe(true);
+    expect(CheckpointInput.safeParse({ seq: 4, headHash: validHead, signature: validSig }).success).toBe(true);
   });
   it("reject uppercase hex", () => {
-    expect(CheckpointInput.safeParse({ headHash: validHead.toUpperCase(), signature: validSig }).success).toBe(false);
+    expect(CheckpointInput.safeParse({ seq: 4, headHash: validHead.toUpperCase(), signature: validSig }).success).toBe(false);
   });
   it("reject the wrong length", () => {
-    expect(CheckpointInput.safeParse({ headHash: validHead.slice(1), signature: validSig }).success).toBe(false);
+    expect(CheckpointInput.safeParse({ seq: 4, headHash: validHead.slice(1), signature: validSig }).success).toBe(false);
+  });
+});
+
+describe("CheckpointInput", () => {
+  const validHead = "a".repeat(64);
+  const validSig = "b".repeat(128);
+
+  it("binds a checkpoint to a positive integer seq", () => {
+    expect(CheckpointInput.safeParse({ headHash: validHead, signature: validSig }).success).toBe(false);
+    expect(CheckpointInput.safeParse({ seq: 0, headHash: validHead, signature: validSig }).success).toBe(false);
+    expect(CheckpointInput.safeParse({ seq: 1.5, headHash: validHead, signature: validSig }).success).toBe(false);
+    expect(CheckpointInput.safeParse({ seq: 1, headHash: validHead, signature: validSig }).success).toBe(true);
   });
 });
 

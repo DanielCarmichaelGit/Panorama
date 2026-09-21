@@ -1,9 +1,9 @@
 import { useState } from "react";
 import type { Status } from "../App";
 import { LaneScene } from "../lib/iso";
-import { setupFlow, unlockFlow } from "./unlock";
+import { setupFlow, unlockFlow, type ChainState } from "./unlock";
 
-export function LockScreen({ status, onDone }: { status: Status; onDone: (seed: Uint8Array, brokenAt: number | null) => void }) {
+export function LockScreen({ status, onDone }: { status: Status; onDone: (seed: Uint8Array, chain: ChainState) => void }) {
   const first = status.state === "uninitialized";
   const [pw, setPw] = useState(""), [pw2, setPw2] = useState(""), [enc, setEnc] = useState(true), [busy, setBusy] = useState(false), [err, setErr] = useState("");
   async function submit(e: React.FormEvent) {
@@ -12,8 +12,8 @@ export function LockScreen({ status, onDone }: { status: Status; onDone: (seed: 
     if (first && pw !== pw2) return setErr("The two passwords do not match.");
     setBusy(true);
     try {
-      if (first) onDone(await setupFlow(pw, enc), null);
-      else { const out = await unlockFlow(pw, status); onDone(out.seed, out.chain.ok ? null : out.chain.brokenAt); }
+      if (first) onDone(await setupFlow(pw, enc), { ok: true });
+      else { const out = await unlockFlow(pw, status); onDone(out.seed, out.chain); }
     } catch (x: any) {
       setErr(x.message === "wrong_password" ? "That password does not match this installation's key. If you are sure it is right, config.json may have been altered." : x.message);
     } finally { setBusy(false); }

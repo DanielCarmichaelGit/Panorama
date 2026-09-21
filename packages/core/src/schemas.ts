@@ -114,5 +114,7 @@ export const FlagInput = z.object({
 });
 export type FlagInput = z.infer<typeof FlagInput>;
 
-export const CheckpointInput = z.object({ headHash: hex64, signature: hex128 });
+// The owner signs the text "<seq>:<headHash>", so a signature cannot be moved to a
+// different point in the chain. The server checks seq against the current last seq.
+export const CheckpointInput = z.object({ seq: z.number().int().positive(), headHash: hex64, signature: hex128 });
 export type CheckpointInput = z.infer<typeof CheckpointInput>;

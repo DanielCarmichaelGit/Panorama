@@ -40,7 +40,7 @@ function SkeletonRows() {
   );
 }
 
-export function Shell({ status, brokenAt }: { status: Status; brokenAt: number | null }) {
+export function Shell({ status, chainOk }: { status: Status; chainOk: boolean }) {
   const projects = useProjects();
   const [collapsed, setCollapsed] = useState(readCollapsed);
   const [projectOverride, setProjectOverride] = useState<string | null>(null);
@@ -135,7 +135,7 @@ export function Shell({ status, brokenAt }: { status: Status; brokenAt: number |
           <span className="label">Agents</span>
         </NavLink>
         <div className="foot">
-          <span className="mono muted">{brokenAt === null ? "chain verified" : "chain broken"}</span>
+          <span className="mono muted">{chainOk ? "chain verified" : "chain broken"}</span>
           {status.encryption && (
             <button type="button" className="btn ghost" onClick={handleLock}>
               <Lock size={16} weight="regular" aria-hidden="true" /> Lock

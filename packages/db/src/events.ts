@@ -13,10 +13,11 @@ export function appendEvent(db: DB, e: { actorId: string; type: string; payload:
   return ev;
 }
 export const listEvents = (db: DB, afterSeq = 0): ChainEvent[] => db.prepare("select * from events where seq > ? order by seq").all(afterSeq).map(toEvent);
-export function latestCheckpoint(db: DB): { seq: number; headHash: string } | null {
-  const r = db.prepare("select seq, head_hash from checkpoints order by seq desc limit 1").get() as any;
-  return r ? { seq: r.seq, headHash: r.head_hash } : null;
+export function latestCheckpoint(db: DB): { seq: number; headHash: string; signature: string } | null {
+  const r = db.prepare("select seq, head_hash, signature from checkpoints order by seq desc limit 1").get() as any;
+  return r ? { seq: r.seq, headHash: r.head_hash, signature: r.signature } : null;
 }
+// Append-only: a second checkpoint at a seq already recorded is a no-op, never a replacement.
 export const addCheckpoint = (db: DB, c: { seq: number; headHash: string; signature: string; now: string }): void => {
-  db.prepare("insert or replace into checkpoints(seq, head_hash, signature, created_at) values(?,?,?,?)").run(c.seq, c.headHash, c.signature, c.now);
+  db.prepare("insert or ignore into checkpoints(seq, head_hash, signature, created_at) values(?,?,?,?)").run(c.seq, c.headHash, c.signature, c.now);
 };

@@ -1,4 +1,4 @@
-import { chmodSync, existsSync, rmSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import type { FastifyInstance } from "fastify";
 import { ARGON, SetupInput, UnlockInput, verifyRequest } from "@panorama/core";
@@ -32,6 +32,8 @@ export function lifecycleRoutes(app: FastifyInstance, ctx: Ctx): void {
     const ok = await verifyRequest(input.publicKey, req.headers as any, "POST", req.url, req.rawBody ?? "", ctx.now().getTime());
     if (!ok) throw new HttpError(401, "bad_signature", "Setup must be signed by the key it registers");
 
+    // First run on a fresh machine: PANORAMA_DATA_DIR need not exist yet.
+    mkdirSync(ctx.dataDir, { recursive: true });
     const db = openDatabase(file, input.dbKey);
     try {
       chmodSync(file, 0o600);

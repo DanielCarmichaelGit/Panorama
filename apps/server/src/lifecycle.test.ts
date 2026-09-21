@@ -56,6 +56,13 @@ describe("setup guards", () => {
     expect(res.json().error.code).toBe("already_setup");
   });
 
+  it("sets up into a data directory that does not exist yet", async () => {
+    const dir = join(tempDir(), "panorama");
+    const keys = await humanKeys();
+    expect((await doSetup(await app(dir), keys, true)).statusCode).toBe(200);
+    expect(existsSync(join(dir, "config.json"))).toBe(true);
+  });
+
   it("creates the database readable by its owner only", async () => {
     const dir = tempDir(); const keys = await humanKeys();
     expect((await doSetup(await app(dir), keys, true)).statusCode).toBe(200);

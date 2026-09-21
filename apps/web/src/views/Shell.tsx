@@ -191,7 +191,7 @@ export function Shell({ status, chainOk }: { status: Status; chainOk: boolean })
       {ticketId && <TicketPanel id={ticketId} onClose={closeTicketPanel} />}
       {menuOpen && (
         <MenuSheet onClose={closeMenu}>
-          {current && <ProjectSwitcher list={list} current={current} onChange={setProjectOverride} />}
+          {current && <ProjectSwitcher list={list} current={current} onChange={(id) => { setProjectOverride(id); closeMenu(); }} />}
           <span className="mono muted">{chainOk ? "chain verified" : "chain broken"}</span>
           {status.encryption && (
             <button type="button" className="btn ghost" onClick={handleLock}>

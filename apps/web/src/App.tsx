@@ -1,9 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState, useSyncExternalStore } from "react";
+import { Route, Routes } from "react-router-dom";
 import { ChainBanner } from "./components/ChainBanner";
 import { api } from "./lib/api";
 import { session } from "./lib/session";
+import { Agents } from "./views/Agents";
 import { LockScreen } from "./views/LockScreen";
+import { Queue } from "./views/Queue";
+import { Shell } from "./views/Shell";
 
 export interface Status {
   state: "uninitialized" | "locked" | "unlocked";
@@ -32,7 +36,13 @@ export function App() {
   return (
     <>
       {brokenAt !== null && <ChainBanner brokenAt={brokenAt} />}
-      <p>Unlocked</p>
+      <Routes>
+        <Route element={<Shell status={status.data} brokenAt={brokenAt} />}>
+          <Route path="/" element={<Queue />} />
+          <Route path="/agents" element={<Agents />} />
+          <Route path="/t/:id" element={<Queue />} />
+        </Route>
+      </Routes>
     </>
   );
 }

@@ -1,0 +1,135 @@
+import { useEffect, useState } from "react";
+import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
+import { CaretLeft, CaretRight, Lock, Robot, Tray } from "@phosphor-icons/react";
+import type { Status } from "../App";
+import { api } from "../lib/api";
+import { session } from "../lib/session";
+import { useLanes, useProjects } from "../lib/hooks";
+import { FirstProject } from "./FirstProject";
+
+const SIDEBAR_KEY = "pan.sidebar";
+
+function readCollapsed(): boolean {
+  try {
+    return localStorage.getItem(SIDEBAR_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function writeCollapsed(v: boolean): void {
+  try {
+    localStorage.setItem(SIDEBAR_KEY, v ? "1" : "0");
+  } catch {
+    // storage unavailable; the preference just won't persist
+  }
+}
+
+function isTypingTarget(): boolean {
+  const el = document.activeElement as HTMLElement | null;
+  return !!el && (["INPUT", "TEXTAREA", "SELECT"].includes(el.tagName) || el.isContentEditable);
+}
+
+export function Shell({ status, brokenAt }: { status: Status; brokenAt: number | null }) {
+  const projects = useProjects();
+  const [collapsed, setCollapsed] = useState(readCollapsed);
+  const [projectOverride, setProjectOverride] = useState<string | null>(null);
+  const [lockError, setLockError] = useState("");
+  const navigate = useNavigate();
+  const qc = useQueryClient();
+
+  const list = projects.data ?? [];
+  const current = list.find((p) => p.id === projectOverride) ?? list[0] ?? null;
+  const lanes = useLanes(current?.id);
+
+  useEffect(() => {
+    let pendingG = false;
+    let timer: number | undefined;
+    const reset = () => { pendingG = false; window.clearTimeout(timer); };
+    function onKeyDown(e: KeyboardEvent) {
+      if (isTypingTarget() || document.querySelector(".modal-back")) { reset(); return; }
+      if (pendingG) {
+        reset();
+        if (e.key === "q") { e.preventDefault(); navigate("/"); }
+        else if (e.key === "a") { e.preventDefault(); navigate("/agents"); }
+        return;
+      }
+      if (e.key === "g") { pendingG = true; timer = window.setTimeout(reset, 900); }
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => { document.removeEventListener("keydown", onKeyDown); reset(); };
+  }, [navigate]);
+
+  function toggleCollapsed() {
+    setCollapsed((c) => { writeCollapsed(!c); return !c; });
+  }
+
+  async function handleLock() {
+    setLockError("");
+    try {
+      await api("POST", "/api/v1/lock");
+      session.clear();
+      qc.invalidateQueries({ queryKey: ["status"] });
+    } catch (e) {
+      setLockError(e instanceof Error ? e.message : "Could not lock Panorama.");
+    }
+  }
+
+  if (projects.isPending) return null;
+  if (projects.isError) {
+    return (
+      <main className="view">
+        <p className="error" role="alert">Cannot reach the Panorama server.</p>
+        <button className="btn" onClick={() => projects.refetch()}>Try again</button>
+      </main>
+    );
+  }
+  if (list.length === 0) return <FirstProject />;
+  if (!current || lanes.isPending) return null;
+
+  return (
+    <div className={collapsed ? "shell collapsed" : "shell"}>
+      <a className="skip" href="#main">Skip to content</a>
+      <nav className="side" aria-label="Main">
+        <div className="switcher" title={current.name}>
+          {collapsed ? (
+            <strong className="mono">{current.key}</strong>
+          ) : list.length > 1 ? (
+            <select className="input" aria-label="Project" value={current.id} onChange={(e) => setProjectOverride(e.target.value)}>
+              {list.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+          ) : (
+            <div>
+              <strong>{current.name}</strong>
+              <div className="mono muted">{current.key}</div>
+            </div>
+          )}
+        </div>
+        <NavLink to="/" end className="nav-item" aria-label="Queue" title="Queue">
+          <Tray size={18} weight="regular" aria-hidden="true" />
+          <span className="label">Queue</span>
+        </NavLink>
+        <NavLink to="/agents" className="nav-item" aria-label="Agents" title="Agents">
+          <Robot size={18} weight="regular" aria-hidden="true" />
+          <span className="label">Agents</span>
+        </NavLink>
+        <div className="foot">
+          <span className="mono muted">{brokenAt === null ? "chain verified" : "chain broken"}</span>
+          {status.encryption && (
+            <button type="button" className="btn ghost" onClick={handleLock}>
+              <Lock size={16} weight="regular" aria-hidden="true" /> Lock
+            </button>
+          )}
+          {lockError && <p className="error" role="alert">{lockError}</p>}
+          <button type="button" className="btn ghost" onClick={toggleCollapsed} aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}>
+            {collapsed ? <CaretRight size={16} weight="regular" aria-hidden="true" /> : <CaretLeft size={16} weight="regular" aria-hidden="true" />}
+          </button>
+        </div>
+      </nav>
+      <main id="main">
+        <Outlet context={{ project: current, lanes: lanes.data ?? [] }} />
+      </main>
+    </div>
+  );
+}

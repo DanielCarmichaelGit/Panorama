@@ -15,6 +15,12 @@ export function requireCan(req: FastifyRequest, action: Action, projectId?: stri
   if (!can(req.actor, action, projectId)) throw new HttpError(403, "forbidden", `This key may not perform ${action}`);
 }
 
+export function inScope(actor: Actor, projectId: string): boolean {
+  if (actor.kind === "human") return true;
+  const scopes = actor.scopes;
+  return !!scopes && (scopes.projects === "*" || scopes.projects.includes(projectId));
+}
+
 export function installAuth(app: FastifyInstance, ctx: Ctx, openPaths: Set<string>): void {
   app.addHook("preHandler", async (req) => {
     const path = req.url.split("?")[0];

@@ -7,8 +7,10 @@ import type { Ctx } from "./context";
 import { installErrorHandler, notFoundBody } from "./errors";
 import { dbFile, lifecycleRoutes } from "./routes/lifecycle";
 import { agentRoutes } from "./routes/agents";
+import { projectRoutes } from "./routes/projects";
+import { ticketRoutes } from "./routes/tickets";
 
-export async function buildApp(opts: { dataDir: string; now?: () => Date; webDist?: string }) {
+export async function buildApp(opts: { dataDir: string; now?: () => Date; webDist?: string }): Promise<ReturnType<typeof Fastify> & { ctx: Ctx }> {
   const app = Fastify({ logger: false, bodyLimit: 1_048_576 });
   const ctx: Ctx = { dataDir: opts.dataDir, db: null, config: readConfig(opts.dataDir), now: opts.now ?? (() => new Date()), nonces: new Map() };
   if (ctx.config && !ctx.config.encryption) {
@@ -38,6 +40,8 @@ export async function buildApp(opts: { dataDir: string; now?: () => Date; webDis
 
   lifecycleRoutes(app, ctx);
   agentRoutes(app, ctx);
+  projectRoutes(app, ctx);
+  ticketRoutes(app, ctx);
 
   if (opts.webDist && existsSync(opts.webDist)) {
     await app.register(fastifyStatic, { root: opts.webDist });

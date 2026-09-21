@@ -53,6 +53,7 @@ button.chip{cursor:pointer;transition:filter var(--dur) var(--ease)}button.chip:
 .modal-actions{display:flex;gap:.6rem;justify-content:flex-end;margin-top:.25rem}
 @keyframes fade{from{opacity:0}to{opacity:1}}
 @keyframes rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+@keyframes rise-row{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 .enter-header{animation:rise 400ms var(--ease-in) 80ms both}
-.enter-row{animation:rise 350ms var(--ease-in) both;animation-delay:calc(140ms + min(var(--i),7) * 30ms)}
+.enter-row{animation:rise-row 350ms var(--ease-in) both;animation-delay:calc(140ms + min(var(--i),7) * 30ms)}
 @media (max-width:860px){.shell,.shell.collapsed{grid-template-columns:1fr}.side{position:fixed;inset:auto 0 0 0;height:auto;flex-direction:row;border-right:0;border-top:1px solid var(--line)}.side .foot,.side .switcher{display:none}.view{padding-bottom:5rem}.trow .ag,.trow .tk{display:none}}

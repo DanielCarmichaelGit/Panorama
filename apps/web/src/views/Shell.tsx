@@ -31,6 +31,14 @@ function isTypingTarget(): boolean {
   return !!el && (["INPUT", "TEXTAREA", "SELECT"].includes(el.tagName) || el.isContentEditable);
 }
 
+function SkeletonRows() {
+  return (
+    <div className="view">
+      {[0, 1, 2, 3].map((i) => <div key={i} className="skeleton" />)}
+    </div>
+  );
+}
+
 export function Shell({ status, brokenAt }: { status: Status; brokenAt: number | null }) {
   const projects = useProjects();
   const [collapsed, setCollapsed] = useState(readCollapsed);
@@ -76,7 +84,6 @@ export function Shell({ status, brokenAt }: { status: Status; brokenAt: number |
     }
   }
 
-  if (projects.isPending) return null;
   if (projects.isError) {
     return (
       <main className="view">
@@ -85,15 +92,14 @@ export function Shell({ status, brokenAt }: { status: Status; brokenAt: number |
       </main>
     );
   }
-  if (list.length === 0) return <FirstProject />;
-  if (!current || lanes.isPending) return null;
+  if (!projects.isPending && list.length === 0) return <FirstProject />;
 
   return (
     <div className={collapsed ? "shell collapsed" : "shell"}>
       <a className="skip" href="#main">Skip to content</a>
       <nav className="side" aria-label="Main">
-        <div className="switcher" title={current.name}>
-          {collapsed ? (
+        <div className="switcher" title={current?.name}>
+          {!current ? null : collapsed ? (
             <strong className="mono">{current.key}</strong>
           ) : list.length > 1 ? (
             <select className="input" aria-label="Project" value={current.id} onChange={(e) => setProjectOverride(e.target.value)}>
@@ -128,7 +134,16 @@ export function Shell({ status, brokenAt }: { status: Status; brokenAt: number |
         </div>
       </nav>
       <main id="main">
-        <Outlet context={{ project: current, lanes: lanes.data ?? [] }} />
+        {projects.isPending || lanes.isPending ? (
+          <SkeletonRows />
+        ) : lanes.isError ? (
+          <div className="view">
+            <p className="error" role="alert">Could not load lanes.</p>
+            <button className="btn" onClick={() => lanes.refetch()}>Try again</button>
+          </div>
+        ) : (
+          <Outlet context={{ project: current, lanes: lanes.data ?? [] }} />
+        )}
       </main>
     </div>
   );

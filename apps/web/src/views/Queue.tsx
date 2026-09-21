@@ -68,8 +68,7 @@ export function Queue() {
     );
   }
 
-  const isEmpty = needsHuman.length === 0 && active.length === 0;
-  if (isEmpty) {
+  if (needsHuman.length === 0) {
     return (
       <div className="view">
         <div className="empty">
@@ -78,6 +77,14 @@ export function Queue() {
           <p className="muted">Agents are working. Flagged tickets land here.</p>
           <button className="btn" onClick={() => setShowNew(true)}>New ticket</button>
         </div>
+        {active.length > 0 && (
+          <>
+            <h2 className="section-title">With agents</h2>
+            {active.map((t, i) => (
+              <TicketRow key={t.id} ticket={t} lanes={lanes} agents={agents} onOpen={openTicket} index={i} />
+            ))}
+          </>
+        )}
         {showNew && <NewTicket projectId={project.id} onClose={() => setShowNew(false)} />}
       </div>
     );
@@ -87,7 +94,7 @@ export function Queue() {
     <div className="view">
       <div className="view-head enter-header">
         <h1><span className="count mono">{needsHuman.length}</span> need you</h1>
-        {active.length > 0 && <p className="muted">{active.length} more with agents</p>}
+        {active.length > 0 && <p className="muted"><span className="mono">{active.length}</span> more with agents</p>}
         <div className="spacer" />
         <button className="btn" onClick={() => setShowNew(true)}>New ticket</button>
       </div>

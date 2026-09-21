@@ -21,7 +21,12 @@ export function inScope(actor: Actor, projectId: string): boolean {
   return !!scopes && (scopes.projects === "*" || scopes.projects.includes(projectId));
 }
 
+const NONCE_TTL_MS = 120_000;
+const SWEEP_EVERY_MS = 30_000;
+const FUTURE_TOLERANCE_MS = 5_000;
+
 export function installAuth(app: FastifyInstance, ctx: Ctx, openPaths: Set<string>): void {
+  let lastSweep = 0;
   app.addHook("preHandler", async (req) => {
     const path = req.url.split("?")[0];
     if (!path.startsWith("/api/") || openPaths.has(path)) return;
@@ -31,12 +36,24 @@ export function installAuth(app: FastifyInstance, ctx: Ctx, openPaths: Set<strin
     const nowMs = ctx.now().getTime();
     const ok = await verifyRequest(actor.publicKey, req.headers as any, req.method, req.url, (req as any).rawBody ?? "", nowMs);
     if (!ok) throw new HttpError(401, "bad_signature", "Signature check failed");
-    const nonce = `${actor.id}:${req.headers["x-pan-nonce"]}`;
-    for (const [k, exp] of ctx.nonces) if (exp < nowMs) ctx.nonces.delete(k);
-    if (ctx.nonces.has(nonce)) throw new HttpError(401, "replay", "Nonce already used");
-    ctx.nonces.set(nonce, nowMs + 120_000);
+
+    // The nonce cache is memory only, so a request captured before this process started
+    // could otherwise be replayed once the cache is empty again.
+    const ts = Number(req.headers["x-pan-ts"]);
+    if (ts > nowMs + FUTURE_TOLERANCE_MS) throw new HttpError(401, "bad_signature", "Request is dated in the future");
+    if (ts < ctx.startedAt) throw new HttpError(401, "stale", "Request is older than this server run");
+
     if (actor.status === "pending") throw new HttpError(403, "pending", "This agent key is waiting for approval");
     if (actor.status === "revoked") throw new HttpError(403, "revoked", "This agent key was revoked");
+
+    if (nowMs - lastSweep >= SWEEP_EVERY_MS) {
+      lastSweep = nowMs;
+      for (const [k, exp] of ctx.nonces) if (exp < nowMs) ctx.nonces.delete(k);
+    }
+    const nonce = `${actor.id}:${req.headers["x-pan-nonce"]}`;
+    if (ctx.nonces.has(nonce)) throw new HttpError(401, "replay", "Nonce already used");
+    ctx.nonces.set(nonce, nowMs + NONCE_TTL_MS);
+
     touchActor(db, actor.id, ctx.now().toISOString());
     req.actor = actor; req.sig = String(req.headers["x-pan-sig"]);
   });

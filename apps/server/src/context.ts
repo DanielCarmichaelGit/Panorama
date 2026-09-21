@@ -5,5 +5,8 @@ export interface Ctx {
   db: DB | null;
   config: Config | null;
   now: () => Date;
+  /** Nonces seen since this process started, with the time they may be forgotten. */
   nonces: Map<string, number>;
+  /** When this process started. Requests older than that cannot be fresh. */
+  startedAt: number;
 }

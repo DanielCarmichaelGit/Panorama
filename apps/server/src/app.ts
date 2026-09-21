@@ -11,10 +11,18 @@ import { chainRoutes } from "./routes/chain";
 import { projectRoutes } from "./routes/projects";
 import { ticketRoutes } from "./routes/tickets";
 
-export async function buildApp(opts: { dataDir: string; now?: () => Date; webDist?: string }): Promise<ReturnType<typeof Fastify> & { ctx: Ctx }> {
+export async function buildApp(opts: { dataDir: string; now?: () => Date; webDist?: string; allowFastKdf?: boolean }): Promise<ReturnType<typeof Fastify> & { ctx: Ctx }> {
   const app = Fastify({ logger: false, bodyLimit: 1_048_576 });
   const now = opts.now ?? (() => new Date());
-  const ctx: Ctx = { dataDir: opts.dataDir, db: null, config: readConfig(opts.dataDir), now, nonces: new Map(), startedAt: now().getTime() };
+  const ctx: Ctx = {
+    dataDir: opts.dataDir,
+    db: null,
+    config: readConfig(opts.dataDir),
+    now,
+    nonces: new Map(),
+    startedAt: now().getTime(),
+    allowFastKdf: opts.allowFastKdf === true,
+  };
   if (ctx.config && !ctx.config.encryption) {
     ctx.db = openDatabase(dbFile(ctx), null);
     migrate(ctx.db);

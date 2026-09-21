@@ -12,7 +12,7 @@ export default defineConfig({
   webServer: {
     command: "pnpm start",
     url: "http://127.0.0.1:4410/api/v1/health",
-    env: { PORT: "4410", PANORAMA_DATA_DIR: dataDir, VITE_FAST_KDF: "1" },
+    env: { PORT: "4410", PANORAMA_DATA_DIR: dataDir, VITE_FAST_KDF: "1", PANORAMA_ALLOW_FAST_KDF: "1" },
     reuseExistingServer: false,
     timeout: 120_000,
   },

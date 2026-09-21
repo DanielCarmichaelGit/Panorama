@@ -9,4 +9,6 @@ export interface Ctx {
   nonces: Map<string, number>;
   /** When this process started. Requests older than that cannot be fresh. */
   startedAt: number;
+  /** Set only for tests and the end to end run, where a real Argon2 pass is too slow. */
+  allowFastKdf: boolean;
 }

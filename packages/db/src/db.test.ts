@@ -1,4 +1,4 @@
-import { mkdtempSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -15,6 +15,24 @@ describe("open", () => {
     expect(() => d.openDatabase(join(dir, "p.db"), "cd".repeat(32))).toThrow("bad_key");
     expect(() => d.openDatabase(join(dir, "p.db"), null)).toThrow("bad_key");
     d.openDatabase(join(dir, "p.db"), KEY).close();
+  });
+  it("refuses a malformed key without creating a file", () => {
+    const dir = mkdtempSync(join(tmpdir(), "pan-"));
+    const file = join(dir, "p.db");
+    expect(() => d.openDatabase(file, "nothex")).toThrow("bad_key");
+    expect(existsSync(file)).toBe(false);
+  });
+  it("rethrows a failure that is not a bad key", () => {
+    const { dir, db } = fresh(); db.close();
+    const file = join(dir, "p.db");
+    chmodSync(file, 0o444);
+    chmodSync(dir, 0o555);
+    try {
+      expect(() => d.openDatabase(file, null)).toThrow(/readonly/i);
+    } finally {
+      chmodSync(dir, 0o755);
+      chmodSync(file, 0o644);
+    }
   });
   it("round trips config", () => {
     const { dir } = fresh();

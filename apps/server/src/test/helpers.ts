@@ -19,7 +19,7 @@ export function client(app: any, seed: Uint8Array, actorId: string) {
 
 export async function setupApp(encryption = true) {
   const dir = tempDir();
-  const app = await buildApp({ dataDir: dir });
+  const app = await buildApp({ dataDir: dir, allowFastKdf: true });
   const keys = await humanKeys();
   const human = client(app, keys.seed, "human");
   const res = await human("POST", "/api/v1/setup", { publicKey: keys.publicKeyHex, kdfSalt: "00".repeat(16), argon: ARGON_FAST, encryption, dbKey: encryption ? keys.dbKeyHex : null });

@@ -57,12 +57,23 @@ describe("tickets", () => {
     expect(listed.json.map((x: any) => x.id)).toEqual([mine.id]);
     expect((await w.agent("GET", `/api/v1/tickets?projectId=${other.project.id}`)).status).toBe(403);
   });
-  it("forbids an out-of-scope agent from reading or moving a ticket that belongs to another project", async () => {
+  it("forbids an out-of-scope agent from reading, patching, moving, flagging, or archiving a ticket that belongs to another project", async () => {
     const w = await world();
     const other = (await w.human("POST", "/api/v1/projects", { name: "Other", key: "OTH" })).json;
     const t = (await w.human("POST", "/api/v1/tickets", { projectId: other.project.id, title: "not mine" })).json;
     expect((await w.agent("GET", `/api/v1/tickets/${t.id}`)).status).toBe(403);
+    expect((await w.agent("PATCH", `/api/v1/tickets/${t.id}`, { title: "x" })).status).toBe(403);
     expect((await w.agent("POST", `/api/v1/tickets/${t.id}/move`, { laneId: other.lanes[1].id })).status).toBe(403);
+    expect((await w.agent("POST", `/api/v1/tickets/${t.id}/flags`, { flag: "blocked", on: true })).status).toBe(403);
+    expect((await w.agent("POST", `/api/v1/tickets/${t.id}/archive`)).status).toBe(403);
+  });
+  it("assigns an agent that moves a human-created, unassigned ticket", async () => {
+    const w = await world();
+    const t = (await w.human("POST", "/api/v1/tickets", { projectId: w.project.id, title: "unassigned" })).json;
+    expect(t.assigneeId).toBe(null);
+    const inProgress = w.lanes.find((l: any) => l.name === "In Progress");
+    const moved = (await w.agent("POST", `/api/v1/tickets/${t.id}/move`, { laneId: inProgress.id })).json;
+    expect(moved.assigneeId).toBe(w.agentId);
   });
   it("restricts who a PATCH can set as the assignee", async () => {
     const w = await world();

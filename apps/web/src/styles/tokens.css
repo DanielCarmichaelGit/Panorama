@@ -1,0 +1,14 @@
+:root{
+  --bg:#FAFBFC;--surface:#FFFFFF;--line:#E3E7EE;--text:#1B2230;--muted:#5D6778;--accent:#12706A;--on-accent:#F3FFFC;
+  --coral-top:#FFD3C9;--coral-left:#F7A999;--coral-right:#E98672;--coral-ink:#8A2A17;
+  --sky-top:#CFE6FB;--sky-left:#A3CDF3;--sky-right:#7FB3E6;--sky-ink:#124A7A;
+  --lilac-top:#E1DAFB;--lilac-left:#C2B5F2;--lilac-right:#A595E6;--lilac-ink:#43318F;
+  --mint-top:#CDF0E2;--mint-left:#9FDDC5;--mint-right:#78C7A9;--mint-ink:#0E5A43;
+  --stone-top:#EEF1F5;--stone-left:#D9DEE6;--stone-right:#C3CAD6;--stone-ink:#3A4352;
+  --font:"Figtree",system-ui,sans-serif;--mono:"JetBrains Mono",ui-monospace,monospace;
+  --r-card:12px;--r-input:8px;--r-pill:999px;
+  --gutter:16px;--ease-in:cubic-bezier(.16,1,.3,1);--ease:cubic-bezier(.2,.7,.3,1);--dur:150ms;
+  --shadow:0 6px 16px -8px rgba(20,30,60,.25);
+  --z-content:10;--z-header:20;--z-sidebar:30;--z-panel:40;--z-menu:50;--z-modal:60;--z-toast:70;
+}
+@media (min-width:860px){:root{--gutter:28px}}

@@ -25,4 +25,10 @@ describe("can", () => {
     expect(can(agent({ status: "pending" }), "read", "p1")).toBe(false);
     expect(can(agent({ status: "revoked" }), "read", "p1")).toBe(false);
   });
+  it("lets a scoped agent add a comment and never lets any agent edit lanes or sign off", () => {
+    expect(can(agent({ scopes: { projects: ["p1"], actions: ["comment.add"] } }), "comment.add", "p1")).toBe(true);
+    const forged = agent({ scopes: { projects: "*", actions: ["lane.edit", "evidence.signoff"] as never } });
+    expect(can(forged, "lane.edit")).toBe(false);
+    expect(can(forged, "evidence.signoff")).toBe(false);
+  });
 });

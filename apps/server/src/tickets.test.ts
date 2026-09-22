@@ -8,7 +8,7 @@ async function world() {
   const { project, lanes } = (await s.human("POST", "/api/v1/projects", { name: "Panorama", key: "PAN" })).json;
   const ak = await deriveKeys("agent-secret-xyz", "11".repeat(16), ARGON_FAST);
   const id = (await s.app.inject({ method: "POST", url: "/api/v1/agents/register", payload: { name: "worker", publicKey: ak.publicKeyHex } })).json().id;
-  await s.human("POST", `/api/v1/agents/${id}/approve`, { scopes: { projects: [project.id], actions: ["read", "ticket.create", "ticket.update", "ticket.move", "flag.set"] } });
+  await s.human("POST", `/api/v1/agents/${id}/approve`, { scopes: { projects: [project.id], actions: ["read", "ticket.create", "ticket.update", "ticket.move", "flag.set", "evidence.add"] } });
   return { ...s, project, lanes, agent: client(s.app, ak.seed, id), agentId: id };
 }
 
@@ -18,13 +18,14 @@ describe("tickets", () => {
     const t = (await w.agent("POST", "/api/v1/tickets", { projectId: w.project.id, title: "Ship the thing" })).json;
     expect(t).toMatchObject({ key: "PAN-1", assigneeId: w.agentId });
     const rfp = w.lanes.find((l: any) => l.name === "Ready for Production");
+    expect((await w.agent("POST", "/api/v1/evidence", { ticketId: t.id, typeId: "et_eval_score", payload: { score: 0.95 } })).json.result).toBe("pass");
     const moved = (await w.agent("POST", `/api/v1/tickets/${t.id}/move`, { laneId: rfp.id })).json;
     expect(moved.flags).toEqual(["needs_human"]);
     expect((await w.human("GET", `/api/v1/queue?projectId=${w.project.id}`)).json.needsHuman.map((x: any) => x.id)).toEqual([t.id]);
     expect((await w.agent("POST", `/api/v1/tickets/${t.id}/flags`, { flag: "needs_human", on: false })).status).toBe(403);
     expect((await w.human("POST", `/api/v1/tickets/${t.id}/flags`, { flag: "needs_human", on: false })).json.flags).toEqual([]);
     const types = listEvents(w.app.ctx.db!).map((e) => e.type);
-    expect(types).toEqual(["system.setup", "project.created", "agent.registered", "agent.approved", "ticket.created", "ticket.moved", "ticket.flag_set", "ticket.flag_cleared"]);
+    expect(types).toEqual(["system.setup", "project.created", "agent.registered", "agent.approved", "ticket.created", "evidence.added", "ticket.moved", "ticket.flag_set", "ticket.flag_cleared"]);
     expect(verifyChain(listEvents(w.app.ctx.db!)).ok).toBe(true);
   });
   it("keeps agents inside their scopes", async () => {

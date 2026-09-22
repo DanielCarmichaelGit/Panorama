@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
-import { CreateTicketInput, FlagInput, MoveTicketInput, UpdateTicketInput } from "@panorama/core";
-import { appendEvent, archiveTicket, createTicket, getActor, getLane, getProject, getTicket, listTickets, moveTicket, queue, setFlag, updateTicket, type DB } from "@panorama/db";
+import { checkGate, CreateTicketInput, FlagInput, MoveTicketInput, UpdateTicketInput } from "@panorama/core";
+import { appendEvent, archiveTicket, createTicket, getActor, getEvidenceType, getLane, getProject, getTicket, listEvidence, listTickets, moveTicket, queue, setFlag, updateTicket, type DB } from "@panorama/db";
 import { getDb, inScope, requireCan } from "../auth";
 import type { Ctx } from "../context";
 import { HttpError } from "../errors";
@@ -53,6 +53,13 @@ export function ticketRoutes(app: FastifyInstance, ctx: Ctx): void {
     const { laneId } = MoveTicketInput.parse(req.body); const lane = getLane(db, laneId);
     if (!lane) throw new HttpError(404, "not_found", "No such lane");
     if (lane.projectId !== t.projectId) throw new HttpError(400, "wrong_project", "That lane belongs to another project");
+    const missing = checkGate(lane.evidenceRequirements, listEvidence(db, t.id));
+    if (missing.length > 0) {
+      throw new HttpError(422, "gate", `${lane.name} needs evidence first`, {
+        laneId,
+        missing: missing.map((m) => ({ ...m, name: getEvidenceType(db, m.typeId)?.name ?? m.typeId })),
+      });
+    }
     return db.transaction(() => {
       if (req.actor.kind === "agent" && !t.assigneeId) updateTicket(db, t.id, { assigneeId: req.actor.id }, iso());
       const { ticket, flagged } = moveTicket(db, t.id, laneId, iso());

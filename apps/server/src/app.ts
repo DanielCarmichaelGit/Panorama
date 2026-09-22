@@ -9,6 +9,7 @@ import { dbFile, lifecycleRoutes } from "./routes/lifecycle";
 import { agentRoutes } from "./routes/agents";
 import { chainRoutes } from "./routes/chain";
 import { projectRoutes } from "./routes/projects";
+import { threadRoutes } from "./routes/thread";
 import { ticketRoutes } from "./routes/tickets";
 
 export async function buildApp(opts: { dataDir: string; now?: () => Date; webDist?: string; allowFastKdf?: boolean }): Promise<ReturnType<typeof Fastify> & { ctx: Ctx }> {
@@ -52,6 +53,7 @@ export async function buildApp(opts: { dataDir: string; now?: () => Date; webDis
   agentRoutes(app, ctx);
   projectRoutes(app, ctx);
   ticketRoutes(app, ctx);
+  threadRoutes(app, ctx);
   chainRoutes(app, ctx);
 
   if (opts.webDist && existsSync(opts.webDist)) {

@@ -1,0 +1,14 @@
+import type { Config, DB } from "@panorama/db";
+
+export interface Ctx {
+  dataDir: string;
+  db: DB | null;
+  config: Config | null;
+  now: () => Date;
+  /** Nonces seen since this process started, with the time they may be forgotten. */
+  nonces: Map<string, number>;
+  /** When this process started. Requests older than that cannot be fresh. */
+  startedAt: number;
+  /** Set only for tests and the end to end run, where a real Argon2 pass is too slow. */
+  allowFastKdf: boolean;
+}

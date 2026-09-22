@@ -1,5 +1,4 @@
 import type { FastifyInstance } from "fastify";
-import sanitizeHtml from "sanitize-html";
 import { AddCommentInput, AddEvidenceInput, checkGate, evaluateEvidence, LaneRequirementsInput } from "@panorama/core";
 import {
   addComment,
@@ -21,26 +20,6 @@ import {
 import { getDb, requireCan } from "../auth";
 import type { Ctx } from "../context";
 import { HttpError } from "../errors";
-
-export function sanitizeCommentBody(body: string): string {
-  return sanitizeHtml(body, {
-    allowedTags: [
-      "p", "br", "b", "strong", "i", "em", "u", "s", "code", "pre",
-      "h1", "h2", "h3", "h4", "h5", "h6",
-      "ul", "ol", "li", "blockquote", "hr",
-      "table", "thead", "tbody", "tr", "th", "td",
-      "a", "img", "div", "span", "details", "summary",
-    ],
-    allowedAttributes: { a: ["href"], img: ["src", "alt"] },
-    allowedSchemes: ["https", "http", "attachment"],
-    disallowedTagsMode: "discard",
-    // sanitize-html HTML-escapes every text node for safety, but this body is markdown,
-    // not HTML: the escaping would corrupt plain markdown punctuation like `<` in prose
-    // or `&` in a code span. Undo it for text nodes; tags themselves are still governed
-    // by allowedTags/allowedAttributes above, so this does not reopen stripped markup.
-    textFilter: (escaped) => escaped.replace(/&gt;/g, ">").replace(/&lt;/g, "<").replace(/&amp;/g, "&"),
-  });
-}
 
 export function threadRoutes(app: FastifyInstance, ctx: Ctx): void {
   const iso = () => ctx.now().toISOString();
@@ -83,9 +62,15 @@ export function threadRoutes(app: FastifyInstance, ctx: Ctx): void {
         throw new HttpError(400, "validation", "Bad attachment", { attachmentId: id });
       }
     }
-    const body = sanitizeCommentBody(input.body);
+    // The body is markdown and is untrusted. It is stored verbatim (zod already bounds it to
+    // 1..20000 chars): an HTML sanitiser here is both lossy (it mangles plain markdown
+    // punctuation like `<` and `&` in prose or code spans) and bypassable (entity-encoded
+    // input decodes back to live markup once un-escaped for the markdown case). The render
+    // boundary is HTML, not this route, so sanitisation happens there: the web client renders
+    // this body through marked and DOMPurify, and shows any raw HTML blocks only inside a
+    // sandboxed frame.
     return db.transaction(() => {
-      const c = addComment(db, { ticketId: t.id, actorId: req.actor.id, body, attachmentIds, now: iso() });
+      const c = addComment(db, { ticketId: t.id, actorId: req.actor.id, body: input.body, attachmentIds, now: iso() });
       log(db, req, "comment.added", { id: c.id, ticketId: t.id });
       return c;
     })();

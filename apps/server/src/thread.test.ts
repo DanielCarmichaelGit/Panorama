@@ -46,20 +46,16 @@ describe("gate", () => {
 });
 
 describe("comments and lanes", () => {
-  it("appends comments, sanitises html, refuses foreign attachments, and reports the thread", async () => {
+  it("appends comments verbatim (sanitisation happens at the render boundary), refuses foreign attachments, and reports the thread", async () => {
     const w = await world();
-    const c = (await w.agent("POST", "/api/v1/comments", { ticketId: w.t.id, body: "# Done\n\n<script>alert(1)</script><b>bold</b>" })).json;
-    expect(c.body).toBe("# Done\n\n<b>bold</b>");
+    const raw = "# Done\n\n<script>alert(1)</script><b>bold</b> &lt;script&gt;alert(2)&lt;/script&gt;";
+    const c = (await w.agent("POST", "/api/v1/comments", { ticketId: w.t.id, body: raw })).json;
+    expect(c.body).toBe(raw);
     expect((await w.agent("POST", "/api/v1/comments", { ticketId: w.t.id, body: "x", attachmentIds: ["missing"] })).json.error.code).toBe("validation");
     const th = (await w.human("GET", `/api/v1/tickets/${w.t.id}/thread`)).json;
-    expect(th.comments.map((x: any) => x.body)).toEqual(["# Done\n\n<b>bold</b>"]);
+    expect(th.comments.map((x: any) => x.body)).toEqual([raw]);
     expect(th.actors.map((a: any) => a.id)).toContain(w.agentId);
     expect((await w.human("GET", "/api/v1/evidence-types")).json).toHaveLength(6);
-  });
-  it("preserves plain markdown characters like < and & untouched", async () => {
-    const w = await world();
-    const c = (await w.agent("POST", "/api/v1/comments", { ticketId: w.t.id, body: "a < b and `x & y`" })).json;
-    expect(c.body).toBe("a < b and `x & y`");
   });
   it("lets only the human set lane requirements, with real type ids", async () => {
     const w = await world(); const ready = w.lane("Ready");

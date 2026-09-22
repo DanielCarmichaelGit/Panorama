@@ -8,6 +8,7 @@
     "start": "tsx src/main.ts"
   },
   "dependencies": {
+    "@fastify/multipart": "^9.0.0",
     "@fastify/static": "^8.0.0",
     "@panorama/core": "workspace:*",
     "@panorama/db": "workspace:*",

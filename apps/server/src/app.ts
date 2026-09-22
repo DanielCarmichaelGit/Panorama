@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
 import Fastify from "fastify";
+import fastifyMultipart from "@fastify/multipart";
 import fastifyStatic from "@fastify/static";
 import { migrate, openDatabase, readConfig } from "@panorama/db";
 import { installAuth } from "./auth";
@@ -7,6 +8,7 @@ import type { Ctx } from "./context";
 import { installErrorHandler, notFoundBody } from "./errors";
 import { dbFile, lifecycleRoutes } from "./routes/lifecycle";
 import { agentRoutes } from "./routes/agents";
+import { attachmentRoutes } from "./routes/attachments";
 import { chainRoutes } from "./routes/chain";
 import { projectRoutes } from "./routes/projects";
 import { threadRoutes } from "./routes/thread";
@@ -23,6 +25,7 @@ export async function buildApp(opts: { dataDir: string; now?: () => Date; webDis
     nonces: new Map(),
     startedAt: now().getTime(),
     allowFastKdf: opts.allowFastKdf === true,
+    fileKey: null,
   };
   if (ctx.config && !ctx.config.encryption) {
     ctx.db = openDatabase(dbFile(ctx), null);
@@ -40,6 +43,8 @@ export async function buildApp(opts: { dataDir: string; now?: () => Date; webDis
   });
   installErrorHandler(app);
 
+  await app.register(fastifyMultipart, { limits: { fileSize: 50 * 1024 * 1024, files: 1, fields: 5 } });
+
   const OPEN = new Set(["/api/v1/health", "/api/v1/status", "/api/v1/setup", "/api/v1/unlock"]);
   app.addHook("onRequest", async (req, reply) => {
     const path = req.url.split("?")[0];
@@ -55,6 +60,7 @@ export async function buildApp(opts: { dataDir: string; now?: () => Date; webDis
   ticketRoutes(app, ctx);
   threadRoutes(app, ctx);
   chainRoutes(app, ctx);
+  attachmentRoutes(app, ctx);
 
   if (opts.webDist && existsSync(opts.webDist)) {
     await app.register(fastifyStatic, { root: opts.webDist });

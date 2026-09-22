@@ -47,6 +47,7 @@ export function lifecycleRoutes(app: FastifyInstance, ctx: Ctx): void {
       writeConfig(ctx.dataDir, config);
       ctx.config = config;
       ctx.db = db;
+      ctx.fileKey = input.encryption ? Buffer.from(input.dbKey as string, "hex") : null;
       return { ok: true };
     } catch (e) {
       // Nothing here existed before this request, so take the whole half-built database with us.
@@ -59,6 +60,7 @@ export function lifecycleRoutes(app: FastifyInstance, ctx: Ctx): void {
   app.post("/api/v1/unlock", async (req) => {
     if (!ctx.config) throw new HttpError(409, "not_setup", "Panorama is not set up");
     if (ctx.db) return { ok: true };
+    const encryption = ctx.config.encryption;
     const { dbKey } = UnlockInput.parse(req.body);
     try {
       ctx.db = openDatabase(dbFile(ctx), dbKey);
@@ -67,6 +69,7 @@ export function lifecycleRoutes(app: FastifyInstance, ctx: Ctx): void {
       throw new HttpError(500, "open_failed", "The database is there but could not be opened", { reason: (e as Error).message });
     }
     migrate(ctx.db);
+    ctx.fileKey = encryption ? Buffer.from(dbKey, "hex") : null;
     return { ok: true };
   });
 
@@ -75,6 +78,7 @@ export function lifecycleRoutes(app: FastifyInstance, ctx: Ctx): void {
     if (!ctx.config?.encryption) throw new HttpError(409, "not_encrypted", "Locking needs encryption to be on");
     appendEvent(getDb(ctx), { actorId: req.actor.id, type: "system.locked", payload: {}, signature: req.sig, now: ctx.now().toISOString() });
     ctx.db!.close(); ctx.db = null;
+    ctx.fileKey = null;
     return { ok: true };
   });
 }

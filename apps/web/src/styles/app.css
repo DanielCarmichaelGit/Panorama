@@ -130,3 +130,9 @@ a{color:var(--accent)}
 .composer .ProseMirror ul,.composer .ProseMirror ol{margin:.4rem 0;padding-left:1.25rem}
 .upload-row{margin:.4rem 0 0}
 .composer-actions{display:flex;justify-content:flex-end;margin-top:.6rem}
+.gate-head{display:flex;align-items:center;justify-content:space-between;gap:.75rem;margin:1.75rem 0 .75rem}
+.gate-head p{margin:0}
+.gate-list{display:grid;gap:.5rem;margin-bottom:1.25rem}
+.gate-list>div{display:flex;align-items:center;gap:.5rem}
+.gate-list .met{color:var(--mint-ink)}
+.gate-list .unmet{color:var(--muted)}

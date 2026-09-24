@@ -39,6 +39,20 @@ export const useEvidenceTypes = () =>
 export const useThread = (ticketId: string | undefined) =>
   useQuery({ queryKey: ["thread", ticketId], queryFn: () => api<ThreadData>("GET", `/api/v1/tickets/${ticketId}/thread`), enabled: !!ticketId });
 
+export interface GateMiss {
+  typeId: string;
+  name: string;
+  need: number;
+  have: number;
+}
+
+export const useGates = (ticketId: string | undefined) =>
+  useQuery({
+    queryKey: ["gates", ticketId],
+    queryFn: () => api<Record<string, GateMiss[]>>("GET", `/api/v1/tickets/${ticketId}/gates`),
+    enabled: !!ticketId,
+  });
+
 export const useAddComment = () => {
   const qc = useQueryClient();
   return useMutation({
@@ -46,6 +60,20 @@ export const useAddComment = () => {
     onSuccess: (_, v) => {
       qc.invalidateQueries({ queryKey: ["thread", v.ticketId] });
       qc.invalidateQueries({ queryKey: ["queue"] });
+    },
+  });
+};
+
+export const useAddEvidence = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { ticketId: string; typeId: string; payload: Record<string, unknown>; attachmentId?: string; commentId?: string }) =>
+      api<Evidence>("POST", "/api/v1/evidence", v),
+    onSuccess: (_, v) => {
+      qc.invalidateQueries({ queryKey: ["thread", v.ticketId] });
+      qc.invalidateQueries({ queryKey: ["gates", v.ticketId] });
+      qc.invalidateQueries({ queryKey: ["queue"] });
+      qc.invalidateQueries({ queryKey: ["tickets"] });
     },
   });
 };

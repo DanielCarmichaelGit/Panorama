@@ -178,6 +178,7 @@ export const CreateTagInput = z
   .object({
     projectId: z.string().min(1),
     name: z.string().min(1).max(40).regex(/^[\p{L}\p{N}][\p{L}\p{N} _-]*$/u),
+    family: z.enum(FAMILIES).optional(),
   })
   .strict();
 export type CreateTagInput = z.infer<typeof CreateTagInput>;

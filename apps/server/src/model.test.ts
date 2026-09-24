@@ -33,6 +33,15 @@ describe("epics and tags", () => {
     expect(dup.json.error.code).toBe("duplicate_tag");
   });
 
+  it("creates a tag with a chosen family and reads it back", async () => {
+    const w = await world();
+    const tag = (await w.human("POST", "/api/v1/tags", { projectId: w.project.id, name: "design", family: "lilac" })).json;
+    expect(tag.family).toBe("lilac");
+
+    const listed = (await w.human("GET", `/api/v1/tags?projectId=${w.project.id}`)).json;
+    expect(listed.find((t: any) => t.id === tag.id).family).toBe("lilac");
+  });
+
   it("updates an epic and archives a tag, human only", async () => {
     const w = await world();
     const epic = (await w.human("POST", "/api/v1/epics", { projectId: w.project.id, name: "Launch" })).json;

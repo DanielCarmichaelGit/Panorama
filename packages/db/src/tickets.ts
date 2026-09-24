@@ -50,12 +50,22 @@ export function setFlag(db: DB, id: string, flag: string, on: boolean, now: stri
   return getTicket(db, id)!;
 }
 
-export function moveTicket(db: DB, id: string, laneId: string, now: string): { ticket: Ticket; flagged: boolean } {
+/**
+ * The rules a lane applies to a ticket that has just landed in it: for now, the needs-human flag
+ * a lane can set on entry, reported back so the caller can log the matching event. A ticket
+ * created straight into a lane has entered it just as surely as one moved into it, so both
+ * paths run this rather than only the move.
+ */
+export function enterLane(db: DB, id: string, laneId: string, now: string): { ticket: Ticket; flagged: boolean } {
   const lane = getLane(db, laneId)!;
-  db.prepare("update tickets set lane_id = ?, position = ?, updated_at = ? where id = ?").run(laneId, nextPosition(db, laneId), now, id);
   const before = getTicket(db, id)!;
   const flagged = lane.setsNeedsHuman && !before.flags.includes("needs_human");
   return { ticket: flagged ? setFlag(db, id, "needs_human", true, now) : before, flagged };
+}
+
+export function moveTicket(db: DB, id: string, laneId: string, now: string): { ticket: Ticket; flagged: boolean } {
+  db.prepare("update tickets set lane_id = ?, position = ?, updated_at = ? where id = ?").run(laneId, nextPosition(db, laneId), now, id);
+  return enterLane(db, id, laneId, now);
 }
 
 export function archiveTicket(db: DB, id: string, now: string): Ticket {

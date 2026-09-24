@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
-import { checkGate, CreateTicketInput, FlagInput, MoveTicketInput, UpdateTicketInput } from "@panorama/core";
-import { appendEvent, archiveTicket, createTicket, getActor, getBoard, getEvidenceType, getLane, getProject, getTicket, listEvidence, listTickets, moveTicket, queue, setCurrentTicket, setFlag, updateTicket, type DB } from "@panorama/db";
+import { checkGate, CreateTicketInput, FlagInput, type Lane, MoveTicketInput, UpdateTicketInput } from "@panorama/core";
+import { appendEvent, archiveTicket, createTicket, enterLane, getActor, getBoard, getEvidenceType, getLane, getProject, getTicket, listEvidence, listLanes, listTickets, moveTicket, queue, setCurrentTicket, setFlag, updateTicket, type DB } from "@panorama/db";
 import { getDb, inScope, requireCan } from "../auth";
 import { record } from "../bus";
 import type { Ctx } from "../context";
@@ -9,6 +9,15 @@ import { HttpError } from "../errors";
 export function ticketRoutes(app: FastifyInstance, ctx: Ctx): void {
   const iso = () => ctx.now().toISOString();
   const load = (db: DB, id: string) => { const t = getTicket(db, id); if (!t || t.archived) throw new HttpError(404, "not_found", "No such ticket"); return t; };
+  /** Refuses a lane a ticket cannot enter yet, in the one 422 shape both create and move use. */
+  const requireGate = (db: DB, lane: Lane, evidence: Parameters<typeof checkGate>[1]) => {
+    const missing = checkGate(lane.evidenceRequirements, evidence);
+    if (missing.length === 0) return;
+    throw new HttpError(422, "gate", `${lane.name} needs evidence first`, {
+      laneId: lane.id,
+      missing: missing.map((m) => ({ ...m, name: getEvidenceType(db, m.typeId)?.name ?? m.typeId })),
+    });
+  };
   const log = (db: DB, req: any, type: string, payload: unknown) => {
     const ev = appendEvent(db, { actorId: req.actor.id, type, payload, signature: req.sig, now: iso() });
     record(req, ev);
@@ -35,11 +44,17 @@ export function ticketRoutes(app: FastifyInstance, ctx: Ctx): void {
     requireCan(req, "ticket.create", input.projectId);
     if (input.laneId && getLane(db, input.laneId)?.projectId !== input.projectId) throw new HttpError(400, "wrong_project", "That lane belongs to another project");
     if (input.boardId && getBoard(db, input.boardId)?.projectId !== input.projectId) throw new HttpError(400, "wrong_project", "That board belongs to another project");
+    // Creating into a lane is entering it, so the same gate applies. A brand new ticket carries
+    // no evidence at all, so every requirement the lane has is missing by definition.
+    const lane = input.laneId ? getLane(db, input.laneId)! : listLanes(db, input.projectId)[0];
+    requireGate(db, lane, []);
     return db.transaction(() => {
       const t = createTicket(db, { ...input, assigneeId: req.actor.kind === "agent" ? req.actor.id : null }, iso());
       if (req.actor.kind === "agent") setCurrentTicket(db, req.actor.id, t.id);
       log(db, req, "ticket.created", { id: t.id, projectId: t.projectId, boardId: t.boardId, key: t.key, title: t.title, laneId: t.laneId });
-      return t;
+      const { ticket, flagged } = enterLane(db, t.id, t.laneId, iso());
+      if (flagged) log(db, req, "ticket.flag_set", { id: t.id, projectId: t.projectId, flag: "needs_human", cause: "lane" });
+      return ticket;
     })();
   });
 
@@ -60,13 +75,7 @@ export function ticketRoutes(app: FastifyInstance, ctx: Ctx): void {
     const { laneId } = MoveTicketInput.parse(req.body); const lane = getLane(db, laneId);
     if (!lane) throw new HttpError(404, "not_found", "No such lane");
     if (lane.projectId !== t.projectId) throw new HttpError(400, "wrong_project", "That lane belongs to another project");
-    const missing = checkGate(lane.evidenceRequirements, listEvidence(db, t.id));
-    if (missing.length > 0) {
-      throw new HttpError(422, "gate", `${lane.name} needs evidence first`, {
-        laneId,
-        missing: missing.map((m) => ({ ...m, name: getEvidenceType(db, m.typeId)?.name ?? m.typeId })),
-      });
-    }
+    requireGate(db, lane, listEvidence(db, t.id));
     return db.transaction(() => {
       if (req.actor.kind === "agent" && !t.assigneeId) updateTicket(db, t.id, { assigneeId: req.actor.id }, iso());
       const { ticket, flagged } = moveTicket(db, t.id, laneId, iso());

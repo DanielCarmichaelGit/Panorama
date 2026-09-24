@@ -1,11 +1,13 @@
 import { useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
-import type { Ticket } from "@panorama/core";
+import type { Lane, Ticket } from "@panorama/core";
 import { uploadFile } from "../lib/attachments";
-import { useAgents, useAddComment, useBoards, useCreateTicket, useLanes, useSetFlag, useUpdateTicket } from "../lib/hooks";
+import type { GateMiss } from "../lib/hooks";
+import { useAgents, useAddComment, useBoards, useCreateTicket, useEvidenceTypes, useLanes, useSetFlag, useUpdateTicket } from "../lib/hooks";
 import { useFocusTrap } from "../lib/useFocusTrap";
 import { Composer } from "./Composer";
+import { laneOptionLabel } from "./GateList";
 
 interface PendingFile { id: string; file: File }
 interface UploadedAttachment { id: string; filename: string; isImage: boolean }
@@ -39,6 +41,7 @@ export function NewTicket({
   const boardsQuery = useBoards(projectId);
   const lanesQuery = useLanes(projectId);
   const agents = (useAgents().data ?? []).filter((a) => a.status === "active");
+  const evidenceTypes = useEvidenceTypes().data ?? [];
   const boards = [...(boardsQuery.data ?? [])].sort((a, b) => a.position - b.position);
   const lanes = [...(lanesQuery.data ?? [])].sort((a, b) => a.position - b.position);
 
@@ -72,6 +75,17 @@ export function NewTicket({
   const dialogRef = useFocusTrap<HTMLDivElement>(() => onClose());
 
   const effectiveLane = laneId || lanes[0]?.id || "";
+
+  // A ticket that does not exist yet carries no evidence, so every requirement a lane has is
+  // missing: those lanes are closed to it, and the select says so rather than letting the
+  // server refuse the create with a 422.
+  const missingFor = (l: Lane): GateMiss[] =>
+    l.evidenceRequirements.map((r) => ({
+      typeId: r.typeId,
+      name: evidenceTypes.find((t) => t.id === r.typeId)?.name ?? r.typeId,
+      need: r.count,
+      have: 0,
+    }));
   const busy = create.isPending || update.isPending || setFlag.isPending || addComment.isPending || !!busyStep;
 
   function addFiles(newFiles: File[]) {
@@ -225,7 +239,14 @@ export function NewTicket({
               <div className="field">
                 <label htmlFor="nt-lane">Lane</label>
                 <select id="nt-lane" className="input" value={effectiveLane} onChange={(e) => setLaneId(e.target.value)}>
-                  {lanes.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+                  {lanes.map((l) => {
+                    const missing = missingFor(l);
+                    return (
+                      <option key={l.id} value={l.id} disabled={missing.length > 0}>
+                        {laneOptionLabel(l, missing)}
+                      </option>
+                    );
+                  })}
                 </select>
               </div>
               <div className="field">

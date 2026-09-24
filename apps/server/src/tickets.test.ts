@@ -123,6 +123,40 @@ describe("tickets", () => {
     expect(asHuman.json.name).toBe("Yes");
   });
 
+  it("refuses a ticket created straight into a gated lane, for an agent and for the human", async () => {
+    const w = await world();
+    const done = w.lanes.find((l: any) => l.name === "Done");
+
+    const asAgent = await w.agent("POST", "/api/v1/tickets", { projectId: w.project.id, title: "straight to done", laneId: done.id });
+    expect(asAgent.status).toBe(422);
+    expect(asAgent.json.error.code).toBe("gate");
+    expect(asAgent.json.error.details).toEqual({ laneId: done.id, missing: [{ typeId: "et_human_signoff", name: "Human sign-off", need: 1, have: 0 }] });
+
+    const asHuman = await w.human("POST", "/api/v1/tickets", { projectId: w.project.id, title: "straight to done", laneId: done.id });
+    expect(asHuman.status).toBe(422);
+    expect(asHuman.json.error.code).toBe("gate");
+
+    expect((await w.human("GET", `/api/v1/tickets?projectId=${w.project.id}`)).json).toEqual([]);
+    expect(listEvents(w.app.ctx.db!).map((e) => e.type)).not.toContain("ticket.created");
+  });
+
+  it("flags a ticket created straight into a needs-human lane, with the lane as the cause", async () => {
+    const w = await world();
+    const rfp = w.lanes.find((l: any) => l.name === "Ready for Production");
+    // Clear the lane's own evidence requirements so the gate is not what is under test here.
+    await w.human("PUT", `/api/v1/lanes/${rfp.id}/requirements`, { requirements: [] });
+
+    const t = (await w.agent("POST", "/api/v1/tickets", { projectId: w.project.id, title: "born flagged", laneId: rfp.id })).json;
+    expect(t.flags).toEqual(["needs_human"]);
+    expect((await w.human("GET", `/api/v1/queue?projectId=${w.project.id}`)).json.needsHuman.map((x: any) => x.id)).toEqual([t.id]);
+
+    const events = listEvents(w.app.ctx.db!);
+    const types = events.map((e) => e.type);
+    expect(types.slice(-2)).toEqual(["ticket.created", "ticket.flag_set"]);
+    expect(events[events.length - 1].payload).toMatchObject({ id: t.id, flag: "needs_human", cause: "lane" });
+    expect(verifyChain(events).ok).toBe(true);
+  });
+
   it("restricts who a PATCH can set as the assignee", async () => {
     const w = await world();
     const t = (await w.agent("POST", "/api/v1/tickets", { projectId: w.project.id, title: "assignable" })).json;

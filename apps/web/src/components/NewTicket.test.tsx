@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { Actor, Board, Lane } from "@panorama/core";
+import type { Actor, Board, EvidenceType, Lane } from "@panorama/core";
 import { api } from "../lib/api";
 import { uploadFile } from "../lib/attachments";
 import { NewTicket } from "./NewTicket";
@@ -33,6 +33,8 @@ const board = (over: Partial<Board>): Board => ({
 const lane = (over: Partial<Lane>): Lane => ({
   id: "l1", projectId: "p1", name: "Backlog", position: 0, family: "stone", setsNeedsHuman: false, isDone: false, evidenceRequirements: [], ...over,
 });
+
+const signoffType: EvidenceType = { id: "et_human_signoff", name: "Human sign-off", kind: "human_signoff", params: {}, humanOnly: true, needsAttachment: false, createdAt: "" };
 
 const agent = (over: Partial<Actor>): Actor => ({
   id: "a1", kind: "agent", name: "worker", publicKey: "", scopes: null, status: "active", lastSeen: null, currentTicketId: null, createdAt: "", ...over,
@@ -66,6 +68,7 @@ function renderDialog(opts: {
         if (method === "GET" && path === "/api/v1/projects/p1/boards") return boards;
         if (method === "GET" && path === "/api/v1/projects/p1/lanes") return lanes;
         if (method === "GET" && path === "/api/v1/agents") return agents;
+        if (method === "GET" && path === "/api/v1/evidence-types") return [signoffType];
         if (method === "POST" && path === "/api/v1/tickets") {
           return { id: "t1", projectId: "p1", boardId: (body as any).boardId ?? boards[0].id, key: "PAN-1", title: (body as any).title, laneId: (body as any).laneId ?? lanes[0].id, number: 1, position: 1, flags: [], assigneeId: null, startDate: null, dueDate: null, metadata: {}, archived: false, createdAt: "", updatedAt: "" };
         }
@@ -108,6 +111,16 @@ describe("NewTicket", () => {
     expect(screen.getByLabelText("Board")).toBeTruthy();
   });
 
+  it("disables a lane whose evidence requirements a brand new ticket cannot meet", async () => {
+    renderDialog({
+      lanes: [lane({}), lane({ id: "l6", name: "Done", position: 5, isDone: true, evidenceRequirements: [{ typeId: "et_human_signoff", count: 1 }] })],
+    });
+    await screen.findByText("Backlog");
+    const done = await screen.findByRole("option", { name: "Done (needs Human sign-off)" });
+    expect((done as HTMLOptionElement).disabled).toBe(true);
+    expect((screen.getByRole("option", { name: "Backlog" }) as HTMLOptionElement).disabled).toBe(false);
+  });
+
   it("disables Create while the title is empty", async () => {
     renderDialog();
     await screen.findByRole("dialog", { name: "New ticket" });
@@ -122,6 +135,7 @@ describe("NewTicket", () => {
       if (method === "GET" && path === "/api/v1/projects/p1/boards") return [board({})];
       if (method === "GET" && path === "/api/v1/projects/p1/lanes") return [lane({})];
       if (method === "GET" && path === "/api/v1/agents") return [];
+      if (method === "GET" && path === "/api/v1/evidence-types") return [signoffType];
       if (method === "POST" && path === "/api/v1/tickets") {
         order.push("create");
         return { id: "t1", projectId: "p1", boardId: "b1", key: "PAN-1", title: (body as any).title, laneId: "l1", number: 1, position: 1, flags: [], assigneeId: null, startDate: null, dueDate: null, metadata: {}, archived: false, createdAt: "", updatedAt: "" };
@@ -180,6 +194,7 @@ describe("NewTicket", () => {
       if (method === "GET" && path === "/api/v1/projects/p1/boards") return [board({})];
       if (method === "GET" && path === "/api/v1/projects/p1/lanes") return [lane({})];
       if (method === "GET" && path === "/api/v1/agents") return [];
+      if (method === "GET" && path === "/api/v1/evidence-types") return [signoffType];
       if (method === "POST" && path === "/api/v1/tickets") {
         createCalls++;
         return { id: "t1", projectId: "p1", boardId: "b1", key: "PAN-1", title: (body as any).title, laneId: "l1", number: 1, position: 1, flags: [], assigneeId: null, startDate: null, dueDate: null, metadata: {}, archived: false, createdAt: "", updatedAt: "" };
@@ -245,6 +260,7 @@ describe("NewTicket", () => {
       if (method === "GET" && path === "/api/v1/projects/p1/boards") return [board({})];
       if (method === "GET" && path === "/api/v1/projects/p1/lanes") return [lane({})];
       if (method === "GET" && path === "/api/v1/agents") return [agent({ id: "a1", name: "worker" })];
+      if (method === "GET" && path === "/api/v1/evidence-types") return [signoffType];
       if (method === "POST" && path === "/api/v1/tickets") return { id: "t1", projectId: "p1", boardId: "b1", key: "PAN-1", title: "x", laneId: "l1", number: 1, position: 1, flags: [], assigneeId: null, startDate: null, dueDate: null, metadata: {}, archived: false, createdAt: "", updatedAt: "" };
       if (method === "PATCH" && path === "/api/v1/tickets/t1") return { id: "t1" };
       if (method === "POST" && path === "/api/v1/tickets/t1/flags") return { id: "t1" };

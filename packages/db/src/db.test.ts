@@ -135,6 +135,19 @@ describe("projects and tickets", () => {
     expect(moved.ticket.flags).toContain("needs_human");
     expect(d.listTickets(db, { flag: "needs_human" }).map((t) => t.id)).toEqual([t1.id]);
   });
+  it("applies a lane's entry rules to a ticket created straight into it, the same as a move does", () => {
+    const { db } = fresh();
+    const { project, lanes } = d.createProject(db, { name: "Panorama", key: "PAN" }, NOW);
+    const plain = d.createTicket(db, { projectId: project.id, title: "in backlog" }, NOW);
+    expect(d.enterLane(db, plain.id, plain.laneId, NOW).flagged).toBe(false);
+
+    const straight = d.createTicket(db, { projectId: project.id, title: "straight in", laneId: lanes[4].id }, NOW);
+    const entered = d.enterLane(db, straight.id, straight.laneId, NOW);
+    expect(entered.flagged).toBe(true);
+    expect(entered.ticket.flags).toContain("needs_human");
+    // Entering the same lane again is not a second flagging: the flag is already there.
+    expect(d.enterLane(db, straight.id, straight.laneId, NOW).flagged).toBe(false);
+  });
   it("builds the queue: needs-human first, then assigned work outside done lanes", () => {
     const { db } = fresh();
     d.insertActor(db, { id: "ag1", kind: "agent", name: "a", publicKey: "22".repeat(32), scopes: null, status: "active", lastSeen: null, currentTicketId: null, createdAt: NOW });

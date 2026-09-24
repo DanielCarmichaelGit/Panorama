@@ -92,6 +92,14 @@ pnpm e2e
 
 runs the Playwright end to end test, which builds the app, starts a server on a temporary data directory, and drives a full first run: setup, first project, agent registration and approval, a ticket flagged for a human, clearing that flag, and a locked reload that rejects the wrong password and accepts the right one.
 
+## Contributing
+
+Read `.claude/skills/contribute/SKILL.md` before changing anything: the
+working contract, vocabulary, and test and commit rules. Every commit
+carries a hash bound record of the session that produced it; see
+`docs/provenance.md` for how that is captured and verified, and
+`AGENTS.md` if you are working from a tool other than Claude Code.
+
 ## Milestone status
 
 Panorama is at milestone 1 of 5: the foundation (monorepo, database, setup and unlock, human key, agent registration and approval, signing, hash chain, projects, lanes, tickets, REST, app shell with sidebar, Queue, ticket panel, lock screen). See `docs/superpowers/specs` for the full design and `todo/` for what is planned next.

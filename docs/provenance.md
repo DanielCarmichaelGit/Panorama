@@ -1,0 +1,93 @@
+# Contribution provenance
+
+Every change to Panorama should carry a verifiable record of how it was
+made: who, with which tool, with what stated intent, through which
+prompts and tool calls, producing which diff. A reviewer, human or AI, can
+then check that the record presented matches what was committed, and read
+the intent and the process next to the diff. Hunks that no prompt
+explains are the ones to look at hardest.
+
+What this proves: the record was not altered after the commit, the commit
+is bound to that record, and (when the commit is signed) a named person
+stands behind it. What it does not prove: that the record is truthful, or
+that the code is safe. It raises the cost of injecting a change and
+leaves a trail; review still happens.
+
+## Vocabulary
+
+**Session.** A working period in the repository, stored locally at
+`.provenance/sessions/<id>.jsonl` and never committed. It holds entries:
+`start` (actor, tool, intent), `prompt` (text kept locally, a hash
+carried), `tool` (name, input hash, files touched), `note`, `commit`,
+`end`. Each entry carries `prev` and `hash = sha256(prev +
+canonical(entry without hash))`, so a session is a hash chain: change or
+remove one entry and every entry after it stops verifying.
+
+**Manifest.** Committed, one per commit, at
+`.provenance/manifests/<sessionId>-<n>.json`: the session id, actor,
+tool, intent, the chain's head hash and entry count at commit time, a
+`diffHash` (the sha256 of `git diff --cached`, excluding `.provenance/`
+itself), the list of files in that diff, a timestamp, and an optional
+redacted transcript head when the contributor hands over a redacted copy.
+It carries hashes, never prompt text.
+
+**Trailers.** Three lines appended to the commit message:
+`Provenance-Manifest: sha256:<hash> <path>`, naming the manifest and its
+hash; `Provenance-Head: sha256:<hash>`, the session chain's head at
+commit time; `Provenance-Diff: sha256:<hash>`, the hash of the commit's
+real diff.
+
+**Verification.** `pnpm provenance verify [range]` (default: commits
+ahead of `origin/main`, or the last 20) checks, for every commit in
+range: the three trailers are present; the manifest named by the trailer
+is in that commit and its hash matches; the commit's actual diff
+(excluding `.provenance/`) hashes to the value in `Provenance-Diff`; the
+manifest's file list equals the commit's changed files; the commit's
+signature, reported as signed, unsigned, or unknown key; and, when the
+session file still exists on this machine, that its chain verifies and
+its head matches `Provenance-Head` ("transcript not available here"
+otherwise). The command prints a table and exits non-zero when anything
+fails or is unrecorded.
+
+## The verify table
+
+Seven columns, sized to fit within 100 characters: `SHA`, `RECORDED`
+(trailers present), `MANIFEST` (hash matches), `DIFF` (hash matches),
+`FILES` (list matches), `SIGNATURE` (signed, unsigned, unknown-key, or
+bad), `TRANSCRIPT` (matches, mismatch, or unavailable). Pass `--json` for
+the full report objects, problems included.
+
+## How it is captured
+
+- **Claude Code**: hooks in `.claude/settings.json` run
+  `scripts/provenance/hook.mjs` on `UserPromptSubmit` and `PostToolUse`,
+  appending entries to the session in progress. With no session open, the
+  hook starts one, taking its intent from the first prompt (or "unstated"
+  for a tool event before any prompt).
+- **Any other agent, or a human**: the CLI, `pnpm provenance <start|note|
+  prompt|tool|status|end>`.
+- **Git hooks**, installed by `pnpm provenance install`
+  (`core.hooksPath=.githooks`): `pre-commit` refuses a commit with no
+  session open (unless `PROVENANCE_SKIP=1`, which prints a warning and
+  lets the commit through unrecorded), and otherwise writes the manifest
+  and stages it; `commit-msg` appends the three trailers.
+
+## The skip escape hatch
+
+`PROVENANCE_SKIP=1 git commit ...` bypasses the pre-commit refusal for
+the rare case that genuinely needs it (an emergency fix, a generated
+lockfile). It does not fake a record: the resulting commit carries no
+trailers and `pnpm provenance verify` reports it as unrecorded, honestly,
+rather than inventing a session after the fact.
+
+## Honest limits
+
+This is tamper evident, not tamper proof, and it is local, not a CI gate.
+It proves that a record exists and matches its commit; it does not prove
+the record is true, that the diff is safe, or that nobody edited history
+and force pushed over it. A determined actor with write access to the
+repository can rewrite everything, including the hooks that would have
+caught them. What it does buy: an honest contributor's record survives by
+default, a dishonest one has to actively work to produce a false record
+instead of simply omitting one, and every commit either carries a
+transcript-backed explanation or visibly does not.

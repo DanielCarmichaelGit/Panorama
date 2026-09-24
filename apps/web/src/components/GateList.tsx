@@ -28,6 +28,15 @@ export function laneOptionLabel(lane: Lane, missing: GateMiss[], types?: Evidenc
 }
 
 /**
+ * Phrases a gate refusal's missing evidence, from the shape the server's 422 `details.missing`
+ * (and `useGates`) both report. Shared by the Board's drag-drop error and its keyboard move
+ * error, so both surfaces refuse a lane the same way.
+ */
+export function missingMessage(missing: Pick<GateMiss, "name">[]): string {
+  return `${missing.map((m) => m.name).join(", ")} needed first`;
+}
+
+/**
  * The evidence checklist for one lane: a mint check for each requirement already met, a stone
  * circle with the running count for one still missing. `missing` is the lane's entry from
  * `GET /api/v1/tickets/:id/gates` (only the unmet requirements); every requirement not named

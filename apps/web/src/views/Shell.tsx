@@ -7,6 +7,7 @@ import type { Status } from "../App";
 import { api } from "../lib/api";
 import { session } from "../lib/session";
 import { useLanes, useProjects, useStream } from "../lib/hooks";
+import { isTypingTarget } from "../lib/keys";
 import { useFocusTrap } from "../lib/useFocusTrap";
 import { FirstProject } from "./FirstProject";
 import { TicketPanel } from "./TicketPanel";
@@ -27,11 +28,6 @@ function writeCollapsed(v: boolean): void {
   } catch {
     // storage unavailable; the preference just won't persist
   }
-}
-
-function isTypingTarget(): boolean {
-  const el = document.activeElement as HTMLElement | null;
-  return !!el && (["INPUT", "TEXTAREA", "SELECT"].includes(el.tagName) || el.isContentEditable);
 }
 
 function SkeletonRows() {

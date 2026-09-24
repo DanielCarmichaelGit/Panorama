@@ -6,7 +6,7 @@ import type { EvidenceType, Lane, Project, Ticket } from "@panorama/core";
 import { ApiError } from "../lib/api";
 import { useAgents, useBoard, useEvidenceTypes, useGates, useMoveTicket } from "../lib/hooks";
 import { BoardCard, BoardCardContent } from "../components/BoardCard";
-import { laneOptionLabel } from "../components/GateList";
+import { laneOptionLabel, missingMessage } from "../components/GateList";
 import { LaneRequirements } from "../components/LaneRequirements";
 import { LaneScene } from "../lib/iso";
 
@@ -19,11 +19,6 @@ export function groupByLane(tickets: Ticket[], lanes: Lane[]): Record<string, Ti
   }
   for (const list of Object.values(groups)) list.sort((a, b) => a.position - b.position);
   return groups;
-}
-
-/** The 422 gate error's `details.missing` names, phrased the way the drop was refused. */
-function missingMessage(missing: { name: string }[]): string {
-  return `${missing.map((m) => m.name).join(", ")} needed first`;
 }
 
 interface DropError {
@@ -39,6 +34,7 @@ function LaneColumn({
   types,
   activeId,
   refused,
+  busy,
   title,
   error,
   onOpenRequirements,
@@ -50,13 +46,20 @@ function LaneColumn({
   types: EvidenceType[];
   activeId: string | null;
   refused: boolean;
+  busy: boolean;
   title: string | undefined;
   error: string | null;
   onOpenRequirements: () => void;
 }) {
   const { setNodeRef } = useDroppable({ id: lane.id, disabled: refused });
   return (
-    <section className="lane" ref={setNodeRef} aria-disabled={refused ? "true" : undefined} title={title}>
+    <section
+      className="lane"
+      ref={setNodeRef}
+      aria-disabled={refused ? "true" : undefined}
+      aria-busy={busy ? "true" : undefined}
+      title={title}
+    >
       <div className="lane-head">
         <div className="lane-head-top">
           <h2>{lane.name}</h2>
@@ -160,8 +163,14 @@ export function Board() {
       <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd} onDragCancel={() => setActiveId(null)}>
         <div className="board">
           {laneList.map((lane) => {
-            const missing = activeId && lane.id !== activeTicket?.laneId ? activeGates.data?.[lane.id] ?? [] : [];
-            const refused = missing.length > 0;
+            const isSource = !!activeId && lane.id === activeTicket?.laneId;
+            const dragging = !!activeId && !isSource;
+            // Gates for the dragged card haven't landed yet: don't pretend this lane is open
+            // before we know either way.
+            const busy = dragging && activeGates.isPending;
+            const missing = dragging && !busy ? activeGates.data?.[lane.id] ?? [] : [];
+            const refused = busy || missing.length > 0;
+            const title = busy ? "Checking what this lane needs" : refused ? laneOptionLabel(lane, missing, evidenceTypes) : undefined;
             return (
               <LaneColumn
                 key={lane.id}
@@ -172,7 +181,8 @@ export function Board() {
                 types={evidenceTypes}
                 activeId={activeId}
                 refused={refused}
-                title={refused ? laneOptionLabel(lane, missing, evidenceTypes) : undefined}
+                busy={busy}
+                title={title}
                 error={dropError?.laneId === lane.id ? dropError.message : null}
                 onOpenRequirements={() => setReqLane(lane)}
               />

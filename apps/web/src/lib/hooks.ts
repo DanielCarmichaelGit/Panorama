@@ -49,12 +49,26 @@ export interface GateMiss {
   have: number;
 }
 
+const gatesQueryFn = (ticketId: string) => () => api<Record<string, GateMiss[]>>("GET", `/api/v1/tickets/${ticketId}/gates`);
+
 export const useGates = (ticketId: string | undefined) =>
   useQuery({
     queryKey: ["gates", ticketId],
-    queryFn: () => api<Record<string, GateMiss[]>>("GET", `/api/v1/tickets/${ticketId}/gates`),
+    queryFn: ticketId ? gatesQueryFn(ticketId) : gatesQueryFn(""),
     enabled: !!ticketId,
   });
+
+/**
+ * Warms the gates cache for a ticket ahead of time (the Board prefetches on pointerdown and on
+ * focus), so by the time a drag crosses its activation distance, or a keyboard "m" move opens,
+ * the data is usually already there instead of every lane briefly looking open. Cached for 10s:
+ * long enough to cover the gap between a pointerdown/focus and the drag or select that follows.
+ */
+export const usePrefetchGates = () => {
+  const qc = useQueryClient();
+  return (ticketId: string) =>
+    qc.prefetchQuery({ queryKey: ["gates", ticketId], queryFn: gatesQueryFn(ticketId), staleTime: 10_000 });
+};
 
 export const useAddComment = () => {
   const qc = useQueryClient();

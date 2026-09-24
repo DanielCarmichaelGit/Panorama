@@ -89,6 +89,9 @@ export function Composer({ ticketId, onPosted }: { ticketId: string; onPosted: (
   const editor = useEditor({
     extensions: extensions(),
     content: "",
+    // TipTap 3 does not re-render on every transaction by default, which left the Comment
+    // button disabled after typing. The button reads editor.isEmpty, so opt in.
+    shouldRerenderOnTransaction: true,
     editorProps: {
       attributes: { role: "textbox", "aria-multiline": "true", "aria-label": "Comment" },
       handleDrop(_view, event) {

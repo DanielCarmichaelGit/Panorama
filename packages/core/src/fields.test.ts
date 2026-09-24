@@ -27,6 +27,9 @@ describe("FieldDefinitionInput", () => {
   it("rejects options on a non-select field", () => {
     expect(FieldDefinitionInput.safeParse({ projectId: "p1", name: "Notes", key: "notes", kind: "text", options: [{ value: "a", label: "A" }] }).success).toBe(false);
   });
+  it("rejects an empty options array on a non-select field", () => {
+    expect(FieldDefinitionInput.safeParse({ projectId: "p1", name: "Notes", key: "notes", kind: "text", options: [] }).success).toBe(false);
+  });
   it("accepts a text field with no options and defaults required to false", () => {
     const parsed = FieldDefinitionInput.safeParse({ projectId: "p1", name: "Notes", key: "notes", kind: "text" });
     expect(parsed.success).toBe(true);

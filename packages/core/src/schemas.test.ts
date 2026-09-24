@@ -79,6 +79,7 @@ describe("CreateTagInput", () => {
     expect(CreateTagInput.safeParse({ projectId: "p1", name: "v2_api" }).success).toBe(true);
     expect(CreateTagInput.safeParse({ projectId: "p1", name: "" }).success).toBe(false);
     expect(CreateTagInput.safeParse({ projectId: "p1", name: "-lead" }).success).toBe(false);
+    expect(CreateTagInput.safeParse({ projectId: "p1", name: "_lead" }).success).toBe(false);
   });
 });
 

@@ -33,6 +33,8 @@ export function checkDependencies(
   for (const link of links) {
     if (link.kind !== "blocks" || link.toId !== ticketId) continue;
     const blocker = ticketsById.get(link.fromId);
+    // A blocker missing from the map is an archived ticket (callers omit archived tickets
+    // from ticketsById); an archived ticket does not block, so skip it rather than report it.
     if (!blocker) continue;
     const blockerLane = lanesById.get(blocker.laneId);
     if (blockerLane?.isDone) continue;

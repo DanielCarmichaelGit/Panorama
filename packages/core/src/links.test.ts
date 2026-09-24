@@ -44,4 +44,8 @@ describe("checkDependencies", () => {
     const other = link({ toId: "t_other" });
     expect(checkDependencies("t_target", [relates, other], ticketsById, lanesById, { isDone: true })).toEqual([]);
   });
+  it("treats a blocker missing from ticketsById as archived and so not blocking", () => {
+    const archivedBlocker = link({ fromId: "t_archived" });
+    expect(checkDependencies("t_target", [archivedBlocker], ticketsById, lanesById, { isDone: true })).toEqual([]);
+  });
 });

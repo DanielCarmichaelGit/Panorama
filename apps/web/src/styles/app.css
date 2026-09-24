@@ -146,7 +146,9 @@ a{color:var(--accent)}
 .gate-list>div{display:flex;align-items:center;gap:.5rem}
 .gate-list .met{color:var(--mint-ink)}
 .gate-list .unmet{color:var(--muted)}
-.board{display:flex;align-items:stretch;gap:16px;overflow-x:auto;padding-bottom:1rem;min-height:calc(100vh - 9.5rem)}
+.board-view{display:flex;flex-direction:column;min-height:100%}
+.board-view h1{margin-bottom:1.5rem}
+.board{display:flex;align-items:stretch;gap:16px;overflow-x:auto;padding-bottom:.25rem;flex:1;min-height:24rem}
 .lane{flex:0 0 280px;display:flex;flex-direction:column;background:var(--stone-top);border-radius:var(--r-card);padding:.75rem;min-height:12rem}
 .lane[aria-disabled="true"]{opacity:.5}
 .lane-head{display:flex;flex-direction:column;gap:.35rem;margin-bottom:.75rem}

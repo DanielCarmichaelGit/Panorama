@@ -156,7 +156,7 @@ export function Board() {
   }
 
   return (
-    <div className="view">
+    <div className="view board-view">
       <h1>Board</h1>
       <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd} onDragCancel={() => setActiveId(null)}>
         <div className="board">

@@ -136,7 +136,7 @@ Board virtualisation for very long lanes is planned for milestone 4; today every
 
 ## Licences
 
-Every dependency Panorama ships is under a permissive licence: MIT, ISC, BSD, Apache 2.0, MPL 2.0, or OFL. The one exception is `argparse`, a transitive dependency of the markdown editor, which is under the Python Software Foundation licence; that licence is also permissive and imposes no obligation beyond keeping its own notice.
+Every dependency Panorama ships is under a permissive licence: MIT, ISC, BSD, Apache 2.0, MPL 2.0, Blue Oak 1.0.0, or OFL. The one further exception is `argparse`, a transitive dependency of the markdown editor, which is under the Python Software Foundation licence; that licence is also permissive and imposes no obligation beyond keeping its own notice. `pnpm licenses list` shows the full set.
 
 ## License
 

@@ -14,9 +14,11 @@ import type {
   Lane,
   LaneRequirement,
   Project,
+  LinkKind,
   Scopes,
   Tag,
   Ticket,
+  TicketLink,
 } from "@panorama/core";
 import { api } from "./api";
 import { session } from "./session";
@@ -78,6 +80,48 @@ export const useFields = (projectId: string | undefined) =>
 
 export const useThread = (ticketId: string | undefined) =>
   useQuery({ queryKey: ["thread", ticketId], queryFn: () => api<ThreadData>("GET", `/api/v1/tickets/${ticketId}/thread`), enabled: !!ticketId });
+
+export interface LinksData {
+  links: TicketLink[];
+  tickets: { id: string; key: string; title: string; laneId: string }[];
+}
+
+export const useLinks = (ticketId: string | undefined) =>
+  useQuery({ queryKey: ["links", ticketId], queryFn: () => api<LinksData>("GET", `/api/v1/tickets/${ticketId}/links`), enabled: !!ticketId });
+
+/**
+ * Adds a link. `ticketId` is the link's *from* side: the server always takes the URL ticket as
+ * `fromId` and the body's `toId` as the other end, so "this ticket blocks that one" and "that
+ * ticket blocks this one" are the same call with `ticketId`/`toId` swapped.
+ */
+export const useAddLink = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { ticketId: string; toId: string; kind: LinkKind }) =>
+      api<TicketLink>("POST", `/api/v1/tickets/${v.ticketId}/links`, { toId: v.toId, kind: v.kind }),
+    onSuccess: (_, v) => {
+      qc.invalidateQueries({ queryKey: ["links", v.ticketId] });
+      qc.invalidateQueries({ queryKey: ["links", v.toId] });
+      qc.invalidateQueries({ queryKey: ["gates", v.ticketId] });
+      qc.invalidateQueries({ queryKey: ["gates", v.toId] });
+      qc.invalidateQueries({ queryKey: ["ticket", v.ticketId] });
+      qc.invalidateQueries({ queryKey: ["ticket", v.toId] });
+    },
+  });
+};
+
+/** Removes a link. `ticketId` is either end: the server accepts any ticket the link touches. */
+export const useRemoveLink = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { ticketId: string; linkId: string }) => api<{ ok: boolean }>("DELETE", `/api/v1/tickets/${v.ticketId}/links/${v.linkId}`),
+    onSuccess: (_, v) => {
+      qc.invalidateQueries({ queryKey: ["links", v.ticketId] });
+      qc.invalidateQueries({ queryKey: ["gates", v.ticketId] });
+      qc.invalidateQueries({ queryKey: ["ticket", v.ticketId] });
+    },
+  });
+};
 
 export interface GateMiss {
   typeId: string;

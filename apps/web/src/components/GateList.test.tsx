@@ -45,6 +45,37 @@ describe("GateList", () => {
     expect(screen.getByText("No evidence required.")).toBeTruthy();
   });
 
+  it("shows a blocked_by entry as its own name, with an unmet circle, even though it names no evidence requirement", () => {
+    // blocked_by is a dependency gate reason, not an evidence type: it never appears in
+    // lane.evidenceRequirements, so it must be rendered from `missing` directly rather than
+    // looked up against the requirements list (which is how a real evidence miss is rendered).
+    render(
+      <GateList
+        lane={lane({ evidenceRequirements: [] })}
+        missing={[{ typeId: "blocked_by", name: "Blocked by PAN-2", need: 1, have: 0 }]}
+        types={types}
+      />,
+    );
+    expect(screen.getByText("Blocked by PAN-2")).toBeTruthy();
+    expect(screen.queryByText("No evidence required.")).toBeNull();
+  });
+
+  it("shows a blocked_by entry alongside real evidence requirements", () => {
+    const reviewLane = lane({ id: "l2", name: "Review", evidenceRequirements: [{ typeId: "et_eval_score", count: 1 }] });
+    render(
+      <GateList
+        lane={reviewLane}
+        missing={[
+          { typeId: "et_eval_score", name: "Eval score", need: 1, have: 0 },
+          { typeId: "blocked_by", name: "Blocked by PAN-3", need: 1, have: 0 },
+        ]}
+        types={types}
+      />,
+    );
+    expect(screen.getByText("Eval score, 0 of 1")).toBeTruthy();
+    expect(screen.getByText("Blocked by PAN-3")).toBeTruthy();
+  });
+
   it("says this is the last lane when there is no next lane", () => {
     render(<GateList lane={null} missing={[]} types={types} />);
     expect(screen.getByText("This is the last lane.")).toBeTruthy();

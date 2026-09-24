@@ -72,4 +72,23 @@ describe("renderBlocks", () => {
     expect(parsed.querySelector("img[onerror]")).toBeNull();
     expect(parsed.querySelector("img")).toBeNull();
   });
+
+  it("renders task-list checkboxes as inert markers, and strips any other input outright", () => {
+    // Ticket success criteria and comments both go through here: a task-list checkbox is the one
+    // interactive element markdown is allowed to produce, and even that keeps only the attributes
+    // that make it a checkbox marker. A smuggled-in text field (a real form control, however
+    // harmless-looking) must not survive at all.
+    const [b] = renderBlocks('- [ ] Todo one\n- [x] Todo two <input type="text" onfocus="steal()" id="x">\n');
+    expect(b.html).toContain('<input disabled="" type="checkbox">');
+    expect(b.html).toContain('<input checked="" disabled="" type="checkbox">');
+    expect(b.html).not.toContain('type="text"');
+    expect(b.html).not.toContain("onfocus");
+    expect(b.html).not.toContain('id="x"');
+  });
+
+  it("does not turn a plain list item into a checkbox", () => {
+    const [b] = renderBlocks("- [ ] A task\n- Not a task\n");
+    const parsed = new DOMParser().parseFromString(b.html, "text/html");
+    expect(parsed.querySelectorAll('input[type="checkbox"]').length).toBe(1);
+  });
 });

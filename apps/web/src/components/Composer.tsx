@@ -54,17 +54,23 @@ function extensions(placeholder: string) {
  * the caller uploads them once the ticket is created; `onChange` fires on every edit with the
  * editor's live markdown (and whatever `attachmentIds` this composer has inserted itself, which
  * in draft mode stays empty since it never uploads).
+ *
+ * `content`, draft mode only, seeds the editor with existing markdown (e.g. editing a ticket's
+ * success criteria rather than writing a fresh description): the Markdown extension parses it
+ * the same way it parses a paste, so a plain markdown string is all a caller ever needs to pass.
  */
 export function Composer({
   ticketId,
   onPosted,
   mode = "post",
+  content = "",
   onChange,
   onFilesAdded,
 }: {
   ticketId?: string;
   onPosted?: () => void;
   mode?: "post" | "draft";
+  content?: string;
   onChange?: (markdown: string, attachmentIds: string[]) => void;
   onFilesAdded?: (files: File[]) => void;
 }) {
@@ -108,7 +114,7 @@ export function Composer({
 
   const editor = useEditor({
     extensions: extensions(mode === "draft" ? "Describe the work" : "Write a comment"),
-    content: "",
+    content,
     onUpdate: mode === "draft" ? ({ editor: ed }) => onChange?.(composerMarkdown(ed), attachmentIds) : undefined,
     editorProps: {
       attributes: { role: "textbox", "aria-multiline": "true", "aria-label": mode === "draft" ? "Description" : "Comment" },

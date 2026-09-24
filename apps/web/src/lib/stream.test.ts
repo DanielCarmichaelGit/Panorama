@@ -88,6 +88,21 @@ describe("invalidationsFor", () => {
     }
   });
 
+  it("invalidates links, gates, and ticket keys for both ends of a ticket.linked or ticket.unlinked event", () => {
+    // The link's own id rides in `id`, not a ticket id, so this must not fall into the generic
+    // ticket.* branch (which would invalidate ["ticket", <link id>] instead of either real ticket).
+    for (const type of ["ticket.linked", "ticket.unlinked"]) {
+      const keys = invalidationsFor(type, { id: "link1", fromId: "t1", toId: "t2", kind: "blocks" });
+      expect(keys).toContainEqual(["links", "t1"]);
+      expect(keys).toContainEqual(["links", "t2"]);
+      expect(keys).toContainEqual(["gates", "t1"]);
+      expect(keys).toContainEqual(["gates", "t2"]);
+      expect(keys).toContainEqual(["ticket", "t1"]);
+      expect(keys).toContainEqual(["ticket", "t2"]);
+      expect(keys).not.toContainEqual(["ticket", "link1"]);
+    }
+  });
+
   it("invalidates agents on an agent.* event", () => {
     expect(invalidationsFor("agent.approved", { id: "a1" })).toEqual([["agents"]]);
   });

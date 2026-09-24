@@ -11,7 +11,26 @@ export type Block = { kind: "rich"; html: string } | { kind: "html"; html: strin
 // works in the browser, without caring which one provides `window` first.
 let purifier: ReturnType<typeof createDOMPurify> | null = null;
 function purify(): ReturnType<typeof createDOMPurify> {
-  if (!purifier) purifier = createDOMPurify(window);
+  if (!purifier) {
+    purifier = createDOMPurify(window);
+    // The one interactive element markdown is allowed to render is a task-list checkbox
+    // (`- [ ]` / `- [x]`), and even that only as an inert marker: any other <input> (a fake text
+    // field, a password box) is stripped outright, and a checkbox itself is stripped down to just
+    // the attributes that make it one, so a comment or a ticket's success criteria can never
+    // smuggle in a functional form control or an attribute DOMPurify's own checks missed.
+    purifier.addHook("uponSanitizeElement", (node, data) => {
+      if (data.tagName !== "input") return;
+      const el = node as Element;
+      if (el.getAttribute("type") !== "checkbox") {
+        el.remove();
+        return;
+      }
+      const keep = new Set(["type", "checked", "disabled"]);
+      for (const attr of Array.from(el.attributes)) {
+        if (!keep.has(attr.name)) el.removeAttribute(attr.name);
+      }
+    });
+  }
   return purifier;
 }
 
@@ -90,7 +109,10 @@ function neutralizeInvalidAttachmentTokens(tokens: Token[] | undefined): void {
 function sanitizeRich(html: string): string {
   return purify().sanitize(html, {
     USE_PROFILES: { html: true },
-    FORBID_TAGS: ["style", "iframe", "object", "embed", "form", "input", "script"],
+    // "input" is allowed through here (unlike a plain FORBID_TAGS entry would), and the
+    // uponSanitizeElement hook above immediately cuts it back down to an inert checkbox or
+    // removes it outright.
+    FORBID_TAGS: ["style", "iframe", "object", "embed", "form", "script"],
     FORBID_ATTR: ["style"],
     ALLOWED_URI_REGEXP,
   });

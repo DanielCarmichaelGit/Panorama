@@ -54,13 +54,20 @@ export function GateList({ lane, missing, types, actions }: { lane: Lane | null;
     );
   }
 
+  // blocked_by is a dependency gate reason, not an evidence type: it never appears in
+  // lane.evidenceRequirements, so it cannot be matched against that list the way a real evidence
+  // miss is. It is rendered straight from `missing` instead, using the name the server already
+  // gave it ("Blocked by KEY"), so it never falls into typeName's evidence-type lookup.
+  const blockers = missing.filter((m) => m.typeId === "blocked_by");
+  const hasContent = lane.evidenceRequirements.length > 0 || blockers.length > 0;
+
   return (
     <>
       <div className="gate-head">
         <h2 className="gate-title">To enter <Chip family={lane.family}>{lane.name}</Chip></h2>
         {actions}
       </div>
-      {lane.evidenceRequirements.length === 0 ? (
+      {!hasContent ? (
         <p className="muted">No evidence required.</p>
       ) : (
         <div className="gate-list">
@@ -78,6 +85,12 @@ export function GateList({ lane, missing, types, actions }: { lane: Lane | null;
               </div>
             );
           })}
+          {blockers.map((b, i) => (
+            <div className="unmet" key={`blocked_by-${i}`}>
+              <Circle size={16} weight="regular" aria-hidden="true" />
+              <span>{b.name}</span>
+            </div>
+          ))}
         </div>
       )}
     </>

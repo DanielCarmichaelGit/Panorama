@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ARGON_FAST, signRequest } from "@panorama/core";
+import { AGENT_ACTIONS, ARGON_FAST, deriveKeys, randomHex, signRequest, type AgentAction } from "@panorama/core";
 import { buildApp } from "./app";
 import { agentIn, client, humanKeys, tempDir } from "./test/helpers";
 
@@ -16,6 +16,15 @@ async function setup(now: () => Date) {
   });
   if (res.status !== 200) throw new Error(`setup failed: ${JSON.stringify(res.json)}`);
   return { app, human, keys, dir };
+}
+
+/** Like agentIn, but takes the full scopes so a test can approve an agent across several
+ *  projects (or "*"), which agentIn's single-projectId signature cannot express. */
+async function agentWithScopes(s: { app: any; human: any }, scopes: { projects: string[] | "*"; actions: AgentAction[] }) {
+  const ak = await deriveKeys("agent-secret-" + randomHex(4), "11".repeat(16), ARGON_FAST);
+  const id = (await s.app.inject({ method: "POST", url: "/api/v1/agents/register", payload: { name: "worker-" + randomHex(4), publicKey: ak.publicKeyHex } })).json().id;
+  await s.human("POST", `/api/v1/agents/${id}/approve`, { scopes });
+  return { agent: client(s.app, ak.seed, id), agentId: id };
 }
 
 // Copied from stream.test.ts's open() helper rather than imported, per the sibling test file's
@@ -69,6 +78,46 @@ describe("presence", () => {
     // An agent without read may not call it at all.
     const { agent: blind } = await agentIn(s, project.id, ["ticket.create"]);
     expect((await blind("GET", "/api/v1/agents")).status).toBe(403);
+  });
+
+  it("only shows an agent's presence to another agent that shares a project with it", async () => {
+    const s = await setup(() => new Date());
+    const { project: p1 } = (await s.human("POST", "/api/v1/projects", { name: "P1", key: "PP1" })).json;
+    const { project: p2 } = (await s.human("POST", "/api/v1/projects", { name: "P2", key: "PP2" })).json;
+    const { agent: a1, agentId: a1Id } = await agentIn(s, p1.id);
+    const { agent: a2, agentId: a2Id } = await agentIn(s, p2.id);
+    const { agent: a3, agentId: a3Id } = await agentIn(s, p1.id);
+
+    // a1 and a2 never share a project: neither learns the other exists.
+    expect((await a1("GET", "/api/v1/agents")).json.map((a: any) => a.id)).not.toContain(a2Id);
+    expect((await a2("GET", "/api/v1/agents")).json.map((a: any) => a.id)).not.toContain(a1Id);
+
+    // a1 and a3 both work p1: each sees the other.
+    expect((await a1("GET", "/api/v1/agents")).json.map((a: any) => a.id)).toContain(a3Id);
+    expect((await a3("GET", "/api/v1/agents")).json.map((a: any) => a.id)).toContain(a1Id);
+
+    // The human is unaffected: it still sees every agent regardless of project.
+    const seenByHuman = (await s.human("GET", "/api/v1/agents")).json.map((a: any) => a.id);
+    expect(seenByHuman).toEqual(expect.arrayContaining([a1Id, a2Id, a3Id]));
+  });
+
+  it("blanks currentTicketId for a caller that cannot read the ticket's project", async () => {
+    const s = await setup(() => new Date());
+    const { project: p1 } = (await s.human("POST", "/api/v1/projects", { name: "P1", key: "PP1" })).json;
+    const { project: p2 } = (await s.human("POST", "/api/v1/projects", { name: "P2", key: "PP2" })).json;
+    const { agent: a1 } = await agentIn(s, p1.id);
+    // Scoped to "*" so it shares a project with a1 (and so is visible to it at all) while its
+    // current ticket lives in p2, which a1 cannot read.
+    const { agent: a2, agentId: a2Id } = await agentWithScopes(s, { projects: "*", actions: [...AGENT_ACTIONS] });
+
+    const t2 = (await a2("POST", "/api/v1/tickets", { projectId: p2.id, title: "in p2" })).json;
+
+    const seenByA1 = (await a1("GET", "/api/v1/agents")).json.find((a: any) => a.id === a2Id);
+    expect(seenByA1.currentTicketId).toBeNull();
+
+    // The human and the agent itself still see the real value.
+    expect((await s.human("GET", "/api/v1/agents")).json.find((a: any) => a.id === a2Id).currentTicketId).toBe(t2.id);
+    expect((await a2("GET", "/api/v1/agents")).json.find((a: any) => a.id === a2Id).currentTicketId).toBe(t2.id);
   });
 
   it("publishes agent.seen to the human's stream once per agent per 30s, not on every request", async () => {

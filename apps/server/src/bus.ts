@@ -97,7 +97,7 @@ export function installStream(app: FastifyInstance, ctx: Ctx): void {
       ctx.bus.publish({ seq: ev.seq, type: ev.type, payload: ev.payload, at: ev.createdAt });
       if (ev.type === "agent.revoked") {
         const id = (ev.payload as { id?: unknown } | null)?.id;
-        if (typeof id === "string") ctx.bus.closeFor(id);
+        if (typeof id === "string") { ctx.bus.closeFor(id); ctx.agentSeenAt.delete(id); }
       }
     }
   });

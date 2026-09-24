@@ -27,8 +27,12 @@ export function canonical(value) {
   return `{${keys.map((k) => `${JSON.stringify(k)}:${canonical(o[k])}`).join(",")}}`;
 }
 
+// M2: stdin ignored, stdout piped and captured, stderr piped and captured
+// (never inherited to our own stderr). Without this, an expected failure
+// such as `rev-parse <root-commit>^` prints git's own "fatal:" line
+// straight to the process, even though we catch and handle it.
 function git(root, args) {
-  return execFileSync("git", args, { cwd: root, encoding: "utf8" });
+  return execFileSync("git", args, { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
 }
 
 export function repoRoot(cwd = process.cwd()) {
@@ -117,13 +121,16 @@ export function appendEntry(root, id, fields, now = new Date()) {
   const file = sessionFile(root, id);
   const last = readLastEntry(file);
   const { type, ...rest } = fields;
+  const data = entryData(type, rest);
 
+  // M3: seq, ts, and prev are the library's to set, not the caller's.
+  // Spreading `data` first and these fixed fields last means a caller
+  // cannot smuggle its own seq/ts/prev through `fields` and shift the
+  // chain.
   const seq = last.seq + 1;
   const prev = last.hash;
   const ts = now.toISOString();
-  const data = entryData(type, rest);
-
-  const withoutHash = { seq, type, ts, prev, ...data };
+  const withoutHash = { ...data, seq, type, ts, prev };
   const hash = sha256(prev + canonical(withoutHash));
   const entry = { ...withoutHash, hash };
 
@@ -145,12 +152,19 @@ export function readSession(root, id) {
 export function verifySession(entries) {
   if (entries.length === 0) return { ok: false, brokenAt: 0 };
   let prevHash = ZERO_HASH;
+  let expectedSeq = 1;
   for (const entry of entries) {
     const { hash, ...withoutHash } = entry;
+    // C2: seq must climb by exactly one from 1. A forged chain that drops
+    // an entry can still be internally consistent (correct prev linkage,
+    // correct hash for its own content); only checking seq catches a
+    // skipped or duplicated entry that hash/prev linkage alone would miss.
+    if (withoutHash.seq !== expectedSeq) return { ok: false, brokenAt: entry.seq };
     if (withoutHash.prev !== prevHash) return { ok: false, brokenAt: entry.seq };
     const expected = sha256(withoutHash.prev + canonical(withoutHash));
     if (expected !== hash) return { ok: false, brokenAt: entry.seq };
     prevHash = hash;
+    expectedSeq += 1;
   }
   return { ok: true, head: prevHash, count: entries.length };
 }
@@ -164,24 +178,51 @@ export function stagedDiff(root) {
   return { diff, files };
 }
 
-export function commitDiff(root, sha) {
-  let parent;
+// The staged diff against an explicit base tree-ish, for when the caller
+// already knows HEAD is not the right comparison point: precommit.mjs uses
+// this for `git commit --amend`, where at pre-commit time HEAD is still
+// the commit about to be replaced, not the amended commit's real parent
+// (HEAD's own parent). Unlike stagedDiff, `base` must already resolve
+// (there is no unborn-HEAD fallback), which is fine here since amending
+// requires an existing commit.
+export function stagedDiffAgainst(root, base) {
+  const diff = git(root, ["diff", "--cached", "--no-color", base, ...DIFF_PATHSPEC]);
+  const out = git(root, ["diff", "--cached", "--name-only", base, ...DIFF_PATHSPEC]);
+  const files = out.trim().split("\n").filter(Boolean);
+  return { diff, files };
+}
+
+// A root commit has no parent; "sha^" fails (git() now pipes that "fatal:"
+// line to a captured stderr rather than leaking it, per M2).
+function parentOf(root, sha) {
   try {
-    // A root commit has no parent; "sha^" fails, and git writes a "fatal:"
-    // line to stderr even though we handle the failure. Pipe stderr away so
-    // this expected case stays quiet.
-    parent = execFileSync("git", ["rev-parse", `${sha}^`], {
-      cwd: root,
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-    }).trim();
+    return git(root, ["rev-parse", `${sha}^`]).trim();
   } catch {
-    parent = EMPTY_TREE;
+    return EMPTY_TREE;
   }
+}
+
+export function commitDiff(root, sha) {
+  const parent = parentOf(root, sha);
   const diff = git(root, ["diff", "--no-color", parent, sha, ...DIFF_PATHSPEC]);
   const out = git(root, ["diff", "--name-only", parent, sha, ...DIFF_PATHSPEC]);
   const files = out.trim().split("\n").filter(Boolean);
   return { diff, files };
+}
+
+// C1: files this commit ADDED (not modified, not merely present because an
+// earlier commit added them). Used to bind a manifest to the one commit
+// that legitimately created it, not to any later commit that merely
+// references its still-tracked path and hash.
+function addedFiles(root, sha) {
+  const parent = parentOf(root, sha);
+  const out = git(root, ["diff", "--name-only", "--diff-filter=A", parent, sha]);
+  return out.trim().split("\n").filter(Boolean);
+}
+
+function parentCount(root, sha) {
+  const parents = git(root, ["log", "-1", "--format=%P", sha]).trim();
+  return parents ? parents.split(/\s+/).length : 0;
 }
 
 export function writeManifest(root, m) {
@@ -231,7 +272,32 @@ function mapSignature(code) {
   }
 }
 
+// I5: a merge commit is exempt from provenance (nothing wrote a manifest
+// for "merge these two branches"). It gets its own report shape: neither
+// recorded nor failed, so it never trips the CLI's problems-based exit
+// code, and never shows the ordinary provenance columns as if a manifest
+// were expected.
+function verifyMergeCommit(root, sha) {
+  const subject = git(root, ["log", "-1", "--format=%s", sha]).trim();
+  const sigCode = git(root, ["log", "-1", "--format=%G?", sha]).trim();
+  const signature = mapSignature(sigCode);
+  return {
+    sha,
+    subject,
+    recorded: null,
+    manifestOk: null,
+    diffOk: null,
+    filesOk: null,
+    signature,
+    transcript: "merge",
+    problems: [],
+    merge: true,
+  };
+}
+
 export function verifyCommit(root, sha) {
+  if (parentCount(root, sha) > 1) return verifyMergeCommit(root, sha);
+
   const subject = git(root, ["log", "-1", "--format=%s", sha]).trim();
   const message = git(root, ["log", "-1", "--format=%B", sha]);
   const trailers = parseTrailers(message);
@@ -240,25 +306,51 @@ export function verifyCommit(root, sha) {
   const recorded = Boolean(trailers.manifest && trailers.head && trailers.diff);
   if (!recorded) problems.push("missing provenance trailers");
 
-  let manifestObj = null;
-  let manifestOk = false;
-  if (trailers.manifest) {
-    try {
-      const content = git(root, ["show", `${sha}:${trailers.manifest.path}`]);
-      manifestObj = JSON.parse(content);
-      manifestOk = sha256(canonical(manifestObj)) === trailers.manifest.hash;
-      if (!manifestOk) problems.push("manifest hash does not match trailer");
-    } catch {
-      problems.push("manifest file not found in commit");
-    }
-  }
-
+  // The commit's real diff and file list, computed once and reused both to
+  // check the Provenance-Diff trailer and to bind the manifest below.
   const { diff, files } = commitDiff(root, sha);
   const diffHash = sha256(diff);
   let diffOk = false;
   if (trailers.diff) {
     diffOk = diffHash === trailers.diff;
     if (!diffOk) problems.push("diff hash does not match trailer");
+  }
+
+  // C1: a manifest that merely hashes correctly is not enough. An old,
+  // still-tracked manifest from an earlier commit hashes correctly too.
+  // Bind it to THIS commit: its own diffHash and head must match what
+  // actually happened here, its path must be a real manifest path, and it
+  // must have been ADDED by this commit, not carried forward unchanged
+  // from one that already used it.
+  let manifestObj = null;
+  let manifestOk = false;
+  if (trailers.manifest) {
+    if (!trailers.manifest.path.startsWith(".provenance/manifests/")) {
+      problems.push("manifest path is outside .provenance/manifests/");
+    } else {
+      try {
+        const content = git(root, ["show", `${sha}:${trailers.manifest.path}`]);
+        manifestObj = JSON.parse(content);
+
+        const hashOk = sha256(canonical(manifestObj)) === trailers.manifest.hash;
+        if (!hashOk) problems.push("manifest hash does not match trailer");
+
+        const headOk = manifestObj.head === trailers.head;
+        if (!headOk) problems.push("manifest head does not match the Provenance-Head trailer");
+
+        const diffBoundOk = manifestObj.diffHash === diffHash;
+        if (!diffBoundOk) problems.push("manifest diffHash does not match this commit's actual diff");
+
+        const addedOk = addedFiles(root, sha).includes(trailers.manifest.path);
+        if (!addedOk) {
+          problems.push("manifest was not added by this commit (it may be reused from an earlier one)");
+        }
+
+        manifestOk = hashOk && headOk && diffBoundOk && addedOk;
+      } catch {
+        problems.push("manifest file not found in commit");
+      }
+    }
   }
 
   let filesOk = false;
@@ -271,13 +363,25 @@ export function verifyCommit(root, sha) {
 
   const sigCode = git(root, ["log", "-1", "--format=%G?", sha]).trim();
   const signature = mapSignature(sigCode);
+  // I1: a cryptographically bad signature is a problem in its own right,
+  // independent of the four provenance booleans above.
+  if (signature === "bad") problems.push("commit signature does not verify");
 
+  // C2: compare the entry the manifest actually points at (the count-th
+  // entry, at the time of that commit), not the session's CURRENT head.
+  // A session that goes on to make a second commit has a head that moves
+  // past what the first commit's manifest recorded; comparing against the
+  // live head would wrongly call the first commit's transcript a mismatch.
+  // Requiring entries.length >= manifest.count also catches a session file
+  // truncated below what the manifest claims, which an internally
+  // consistent (but short) chain would otherwise pass.
   let transcript = "unavailable";
   if (manifestObj) {
     const entries = readSession(root, manifestObj.sessionId);
     if (entries.length > 0) {
       const verified = verifySession(entries);
-      if (verified.ok && verified.head === manifestObj.head) {
+      const atCount = entries.length >= manifestObj.count ? entries[manifestObj.count - 1] : null;
+      if (verified.ok && atCount && atCount.hash === manifestObj.head) {
         transcript = "matches";
       } else {
         transcript = "mismatch";
@@ -286,7 +390,7 @@ export function verifyCommit(root, sha) {
     }
   }
 
-  return { sha, subject, recorded, manifestOk, diffOk, filesOk, signature, transcript, problems };
+  return { sha, subject, recorded, manifestOk, diffOk, filesOk, signature, transcript, problems, merge: false };
 }
 
 export function verifyRange(root, range) {

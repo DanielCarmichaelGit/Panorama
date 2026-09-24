@@ -200,6 +200,129 @@ test("hook.mjs PostToolUse Edit appends a tool entry with the file path and no i
   assert.ok(toolEntry.inputHash);
 });
 
+// I1: exit code must be driven by `problems`, not only the four booleans.
+// A transcript mismatch alone (session truncated locally after a
+// perfectly good commit) must still fail `verify`.
+test("verify exits 1 on a transcript-only problem even when the four booleans are true", (t) => {
+  const root = makeRepo(t);
+  cli(root, ["install"]);
+  cli(root, ["start", "add", "a", "file"]);
+  cli(root, ["prompt"], { input: "please add a.txt" });
+
+  fs.writeFileSync(path.join(root, "a.txt"), "hello\n");
+  git(root, ["add", "a.txt"]);
+  git(root, ["commit", "-q", "-m", "feat: add a.txt"]);
+  const sha = git(root, ["rev-parse", "HEAD"]).trim();
+
+  const id = fs.readFileSync(paths(root).current, "utf8").trim();
+  const sessionFile = path.join(paths(root).sessions, `${id}.jsonl`);
+  const lines = fs.readFileSync(sessionFile, "utf8").trim().split("\n");
+  assert.ok(lines.length >= 2);
+  fs.writeFileSync(sessionFile, `${lines.slice(0, lines.length - 1).join("\n")}\n`, "utf8");
+
+  assert.throws(
+    () => cli(root, ["verify", `${sha}~1..${sha}`]),
+    (err) => {
+      assert.equal(err.status, 1);
+      return true;
+    }
+  );
+});
+
+// I2: `git commit --amend --no-edit` starts from the PREVIOUS full message,
+// old trailers included. The amended commit must end with exactly one set
+// of (fresh) trailers, and must verify cleanly.
+test("amending a provenance commit refreshes its trailers instead of duplicating them", (t) => {
+  const root = makeRepo(t);
+  cli(root, ["install"]);
+  cli(root, ["start", "add and then amend a file"]);
+  cli(root, ["prompt"], { input: "please add a.txt" });
+
+  fs.writeFileSync(path.join(root, "a.txt"), "hello\n");
+  git(root, ["add", "a.txt"]);
+  git(root, ["commit", "-q", "-m", "feat: add a.txt"]);
+
+  cli(root, ["note", "actually let me fix a typo"]);
+  fs.writeFileSync(path.join(root, "a.txt"), "hello world\n");
+  git(root, ["add", "a.txt"]);
+  git(root, ["commit", "-q", "--amend", "--no-edit"]);
+
+  const sha = git(root, ["rev-parse", "HEAD"]).trim();
+  const message = git(root, ["log", "-1", "--format=%B", sha]);
+  const manifestLines = message.split("\n").filter((l) => l.startsWith("Provenance-Manifest:"));
+  assert.equal(manifestLines.length, 1, `expected exactly one manifest trailer, got:\n${message}`);
+
+  const out = cli(root, ["verify", `${sha}~1..${sha}`]);
+  const dataLine = out.split("\n").find((l) => l.startsWith(sha.slice(0, 7)));
+  assert.ok(dataLine, `expected a row for ${sha.slice(0, 7)} in:\n${out}`);
+  assert.match(dataLine, /yes/);
+});
+
+// I3: a pending file left over from an aborted commit attempt (precommit
+// ran and staged a manifest, but the commit never happened) must not
+// stamp trailers onto a later, unrelated PROVENANCE_SKIP=1 commit.
+test("a stale pending file from an aborted commit does not stamp a later skip commit", (t) => {
+  const root = makeRepo(t);
+  cli(root, ["install"]);
+  cli(root, ["start", "add a file that never gets committed"]);
+
+  fs.writeFileSync(path.join(root, "aborted.txt"), "never committed\n");
+  git(root, ["add", "aborted.txt"]);
+
+  // Simulate an aborted commit: run the pre-commit hook directly, exactly
+  // as git would right before opening the message editor, without ever
+  // actually creating the commit. This leaves .provenance/pending on disk
+  // exactly as an editor-cancelled `git commit` would.
+  execFileSync("node", [path.join(root, "scripts", "provenance", "precommit.mjs")], {
+    cwd: root,
+    encoding: "utf8",
+    stdio: "pipe",
+  });
+  const pendingFile = path.join(root, ".provenance", "pending");
+  assert.ok(fs.existsSync(pendingFile), "expected the aborted attempt to leave a stale pending file");
+
+  git(root, ["reset", "aborted.txt"]);
+  fs.rmSync(path.join(root, "aborted.txt"));
+  cli(root, ["end"]);
+
+  fs.writeFileSync(path.join(root, "real.txt"), "actually committed\n");
+  git(root, ["add", "real.txt"]);
+  git(root, ["commit", "-q", "-m", "chore: real skip commit"], {
+    env: { ...process.env, PROVENANCE_SKIP: "1" },
+  });
+
+  const sha = git(root, ["rev-parse", "HEAD"]).trim();
+  const message = git(root, ["log", "-1", "--format=%B", sha]);
+  assert.ok(!message.includes("Provenance-Manifest:"), "the stale pending must not stamp this commit");
+  assert.equal(fs.existsSync(pendingFile), false, "the skip path must clear the stale pending file");
+});
+
+// M1: a payload whose cwd resolves to a different repository must be
+// ignored (and logged), never acted on -- this hook trusts its own file
+// location for identity, not a payload field.
+test("hook.mjs ignores a payload whose cwd resolves to a different repository", (t) => {
+  const root = makeRepo(t);
+  const otherDir = fs.mkdtempSync(path.join(os.tmpdir(), "provenance-other-repo-"));
+  git(otherDir, ["init", "-q"]);
+  git(otherDir, ["config", "user.name", "Test User"]);
+  git(otherDir, ["config", "user.email", "test@example.com"]);
+  t.after(() => fs.rmSync(otherDir, { recursive: true, force: true }));
+  const otherRoot = repoRoot(otherDir);
+
+  const out = hook(root, {
+    hook_event_name: "UserPromptSubmit",
+    prompt: "this claims to be in a different repo",
+    cwd: otherRoot,
+  });
+  assert.equal(out, "");
+
+  assert.equal(fs.existsSync(paths(root).current), false, "no session should start in this hook's own repo");
+  const logPath = path.join(paths(root).dir, "hook.log");
+  assert.ok(fs.existsSync(logPath), "expected hook.log to record the mismatch");
+  const log = fs.readFileSync(logPath, "utf8");
+  assert.match(log, /different repository|resolves to/i);
+});
+
 test("hook.mjs ignores unrecognised PostToolUse tools and still exits cleanly", (t) => {
   const root = makeRepo(t);
   const out = hook(root, {

@@ -40,22 +40,31 @@ real diff.
 **Verification.** `pnpm provenance verify [range]` (default: commits
 ahead of `origin/main`, or the last 20) checks, for every commit in
 range: the three trailers are present; the manifest named by the trailer
-is in that commit and its hash matches; the commit's actual diff
-(excluding `.provenance/`) hashes to the value in `Provenance-Diff`; the
-manifest's file list equals the commit's changed files; the commit's
-signature, reported as signed, unsigned, or unknown key; and, when the
-session file still exists on this machine, that its chain verifies and
-its head matches `Provenance-Head` ("transcript not available here"
-otherwise). The command prints a table and exits non-zero when anything
-fails or is unrecorded.
+is in that commit and its hash matches; that manifest's own recorded
+head and diff hash actually match this commit (not merely a hash that
+happens to be valid, which an old, still-tracked manifest reused from an
+earlier commit would also produce); the manifest's file list equals the
+commit's changed files; the commit's signature, reported as signed,
+unsigned, or unknown key; and, when the session file still exists on
+this machine, that its chain verifies and the entry the manifest points
+to still matches (mismatch or "transcript not available here"
+otherwise). A merge commit is exempt (see below). The command prints a
+table and exits non-zero when any commit has a problem.
 
 ## The verify table
 
 Seven columns, sized to fit within 100 characters: `SHA`, `RECORDED`
-(trailers present), `MANIFEST` (hash matches), `DIFF` (hash matches),
-`FILES` (list matches), `SIGNATURE` (signed, unsigned, unknown-key, or
-bad), `TRANSCRIPT` (matches, mismatch, or unavailable). Pass `--json` for
-the full report objects, problems included.
+(trailers present), `MANIFEST` (bound to this commit), `DIFF` (hash
+matches), `FILES` (list matches), `SIGNATURE` (signed, unsigned,
+unknown-key, or bad), `TRANSCRIPT` (matches, mismatch, unavailable, or
+merge). Pass `--json` for the full report objects, problems included.
+
+## Merge commits are exempt
+
+Nobody writes a manifest for "merge these two branches", so a merge
+commit is never checked against the ordinary rules. `verify` shows it as
+its own row (`RECORDED` reads `merge`, the manifest/diff/file columns
+read `-`) and it never fails the range on its own account.
 
 ## How it is captured
 

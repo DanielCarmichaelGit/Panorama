@@ -8,6 +8,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { repoRoot, paths, currentSession, startSession, appendEntry } from "./lib.mjs";
 
 const TOOL_NAMES = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit", "Bash"]);
@@ -47,8 +48,32 @@ function run() {
     return; // No valid payload: nothing to record.
   }
 
-  const cwd = event.cwd || process.cwd();
-  const root = repoRoot(cwd);
+  // M1: this hook's own repository, resolved from where this file
+  // physically lives, not from anything a payload claims. A payload's cwd
+  // is trusted input only insofar as it is checked against this.
+  const root = repoRoot(path.dirname(fileURLToPath(import.meta.url)));
+
+  // A payload whose cwd resolves to some other repository is not this
+  // hook's business -- ignore it rather than recording into (or worse,
+  // resolving into) a repository this hook does not belong to.
+  if (event.cwd) {
+    let eventRoot;
+    try {
+      eventRoot = repoRoot(event.cwd);
+    } catch {
+      eventRoot = null;
+    }
+    if (eventRoot !== root) {
+      logError(
+        root,
+        new Error(
+          `ignoring payload whose cwd (${event.cwd}) resolves to ${eventRoot ?? "no git repository"}, ` +
+            `not this hook's own repository (${root})`
+        )
+      );
+      return;
+    }
+  }
 
   let sessionId = currentSession(root);
   if (!sessionId) {
@@ -71,9 +96,12 @@ try {
   run();
 } catch (err) {
   try {
-    logError(repoRoot(process.cwd()), err);
+    // Best-effort fallback for logging: resolve from this file's own
+    // location again, same as run() does, since anything else (like the
+    // process cwd) is exactly the untrusted input M1 exists to not rely on.
+    logError(repoRoot(path.dirname(fileURLToPath(import.meta.url))), err);
   } catch {
-    // Best effort: never let logging failure surface.
+    // Truly nowhere to log this; never let it surface past the hook.
   }
 }
 

@@ -150,16 +150,23 @@ function formatRow(cells) {
   return cells.map((c, i) => String(c).padEnd(TABLE_WIDTHS[i])).join(" | ").trimEnd();
 }
 
+// I5: a merge commit's report carries null for the four provenance
+// booleans (exempt, not failing) -- show "-" rather than misreading null
+// as a falsy "no"/"x".
 function formatTable(reports) {
-  const rows = reports.map((r) => [
-    r.sha.slice(0, 7),
-    r.recorded ? "yes" : "no",
-    r.manifestOk ? "ok" : "x",
-    r.diffOk ? "ok" : "x",
-    r.filesOk ? "ok" : "x",
-    r.signature,
-    r.transcript,
-  ]);
+  const rows = reports.map((r) =>
+    r.merge
+      ? [r.sha.slice(0, 7), "merge", "-", "-", "-", r.signature, r.transcript]
+      : [
+          r.sha.slice(0, 7),
+          r.recorded ? "yes" : "no",
+          r.manifestOk ? "ok" : "x",
+          r.diffOk ? "ok" : "x",
+          r.filesOk ? "ok" : "x",
+          r.signature,
+          r.transcript,
+        ]
+  );
   const lines = [formatRow(TABLE_COLUMNS), formatRow(TABLE_WIDTHS.map((w) => "-".repeat(w)))];
   for (const row of rows) lines.push(formatRow(row));
   return lines.join("\n");
@@ -182,7 +189,11 @@ function cmdVerify(root, args) {
   const range = args.find((a) => !a.startsWith("--")) || defaultRange(root);
 
   const reports = verifyRange(root, range);
-  const failed = reports.some((r) => !r.recorded || !r.manifestOk || !r.diffOk || !r.filesOk);
+  // I1: problems is the authoritative list of what is wrong with a commit.
+  // The four booleans alone miss failure modes that don't touch them (a
+  // transcript mismatch, a bad signature) -- problems catches all of it,
+  // and a merge commit's report carries none, so it never fails the range.
+  const failed = reports.some((r) => r.problems.length > 0);
 
   if (json) {
     console.log(JSON.stringify(reports, null, 2));

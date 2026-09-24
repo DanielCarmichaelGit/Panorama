@@ -4,3 +4,15 @@ dist
 test-results
 playwright-report
 .superpowers
+.worktrees
+
+# Provenance: sessions and the current-session pointer are local only;
+# manifests are committed.
+.provenance/sessions/
+.provenance/current
+
+# Claude Code: settings and skills are committed, everything else (such as
+# launch.json) stays local.
+.claude/*
+!.claude/settings.json
+!.claude/skills/

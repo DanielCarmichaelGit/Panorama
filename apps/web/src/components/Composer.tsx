@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { EditorContent, useEditor } from "@tiptap/react";
+import { EditorContent, useEditor, useEditorState } from "@tiptap/react";
 import type { Editor } from "@tiptap/core";
 import StarterKit from "@tiptap/starter-kit";
 import Image from "@tiptap/extension-image";
@@ -109,9 +109,6 @@ export function Composer({
   const editor = useEditor({
     extensions: extensions(mode === "draft" ? "Describe the work" : "Write a comment"),
     content: "",
-    // TipTap 3 does not re-render on every transaction by default, which left the Comment
-    // button disabled after typing. The button reads editor.isEmpty, so opt in.
-    shouldRerenderOnTransaction: true,
     onUpdate: mode === "draft" ? ({ editor: ed }) => onChange?.(composerMarkdown(ed), attachmentIds) : undefined,
     editorProps: {
       attributes: { role: "textbox", "aria-multiline": "true", "aria-label": mode === "draft" ? "Description" : "Comment" },
@@ -156,7 +153,10 @@ export function Composer({
     }
   }
 
-  const isEmpty = !editor || editor.isEmpty;
+  // TipTap 3 does not re-render the owning component on editor transactions, so reading
+  // `editor.isEmpty` during render would go stale the moment the user types. This selector
+  // subscribes to the editor and re-renders only when the answer changes.
+  const isEmpty = useEditorState({ editor, selector: ({ editor: ed }) => !ed || ed.isEmpty });
 
   return (
     <div

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { Scopes, ScopesSchema } from "./permissions";
 import type { LaneRequirement } from "./evidence";
+import { FieldValueSchema, type FieldValue } from "./fields";
 
 export const FAMILIES = ["coral", "sky", "lilac", "mint", "stone"] as const;
 export type Family = (typeof FAMILIES)[number];
@@ -32,6 +33,26 @@ export interface Lane { id: string; projectId: string; name: string; position: n
 
 export interface Board { id: string; projectId: string; name: string; description: string | null; family: Family; position: number; createdAt: string }
 
+export interface Epic {
+  id: string;
+  projectId: string;
+  name: string;
+  description: string | null;
+  family: Family;
+  position: number;
+  archived: boolean;
+  createdAt: string;
+}
+
+export interface Tag {
+  id: string;
+  projectId: string;
+  name: string;
+  family: Family;
+  archived: boolean;
+  createdAt: string;
+}
+
 export interface Ticket {
   id: string;
   projectId: string;
@@ -41,6 +62,10 @@ export interface Ticket {
   title: string;
   laneId: string;
   position: number;
+  epicId: string | null;
+  tagIds: string[];
+  successCriteria: string;
+  fields: Record<string, FieldValue>;
   flags: string[];
   assigneeId: string | null;
   startDate: string | null;
@@ -110,6 +135,10 @@ export const CreateTicketInput = z.object({
   boardId: z.string().min(1).optional(),
   laneId: z.string().min(1).optional(),
   metadata: z.record(z.unknown()).optional(),
+  epicId: z.string().min(1).optional(),
+  tagIds: z.array(z.string().min(1)).max(20).optional(),
+  successCriteria: z.string().max(20000).optional(),
+  fields: z.record(FieldValueSchema).optional(),
 });
 export type CreateTicketInput = z.infer<typeof CreateTicketInput>;
 
@@ -123,6 +152,36 @@ export const CreateBoardInput = z
   .strict();
 export type CreateBoardInput = z.infer<typeof CreateBoardInput>;
 
+export const CreateEpicInput = z
+  .object({
+    projectId: z.string().min(1),
+    name: z.string().min(1).max(80),
+    description: z.string().max(500).optional(),
+    family: z.enum(FAMILIES).optional(),
+  })
+  .strict();
+export type CreateEpicInput = z.infer<typeof CreateEpicInput>;
+
+export const UpdateEpicInput = z
+  .object({
+    name: z.string().min(1).max(80).optional(),
+    description: z.string().max(500).nullable().optional(),
+    family: z.enum(FAMILIES).optional(),
+    archived: z.boolean().optional(),
+    position: z.number().int().min(0).optional(),
+  })
+  .strict()
+  .refine((o) => Object.keys(o).length > 0, "empty patch");
+export type UpdateEpicInput = z.infer<typeof UpdateEpicInput>;
+
+export const CreateTagInput = z
+  .object({
+    projectId: z.string().min(1),
+    name: z.string().min(1).max(40).regex(/^[\p{L}\p{N}][\p{L}\p{N} _-]*$/u),
+  })
+  .strict();
+export type CreateTagInput = z.infer<typeof CreateTagInput>;
+
 export const UpdateTicketInput = z
   .object({
     title: z.string().min(1).max(200).optional(),
@@ -130,6 +189,10 @@ export const UpdateTicketInput = z
     dueDate: dateField.optional(),
     assigneeId: z.string().min(1).nullable().optional(),
     metadata: z.record(z.unknown()).optional(),
+    epicId: z.string().min(1).nullable().optional(),
+    tagIds: z.array(z.string().min(1)).max(20).optional(),
+    successCriteria: z.string().max(20000).optional(),
+    fields: z.record(FieldValueSchema).optional(),
   })
   .strict()
   .refine((o) => Object.keys(o).length > 0, "empty patch");

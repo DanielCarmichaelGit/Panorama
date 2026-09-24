@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CheckpointInput, CreateProjectInput, DEFAULT_LANES, UpdateTicketInput } from "./index";
+import { CheckpointInput, CreateEpicInput, CreateProjectInput, CreateTagInput, CreateTicketInput, DEFAULT_LANES, UpdateEpicInput, UpdateTicketInput } from "./index";
 
 describe("CreateProjectInput", () => {
   it("accepts an uppercase project key and rejects a lowercase one", () => {
@@ -46,6 +46,66 @@ describe("CheckpointInput", () => {
     expect(CheckpointInput.safeParse({ seq: 0, headHash: validHead, signature: validSig }).success).toBe(false);
     expect(CheckpointInput.safeParse({ seq: 1.5, headHash: validHead, signature: validSig }).success).toBe(false);
     expect(CheckpointInput.safeParse({ seq: 1, headHash: validHead, signature: validSig }).success).toBe(true);
+  });
+});
+
+describe("CreateEpicInput", () => {
+  it("requires a name and accepts an optional description and family", () => {
+    expect(CreateEpicInput.safeParse({ projectId: "p1", name: "Launch" }).success).toBe(true);
+    expect(CreateEpicInput.safeParse({ projectId: "p1", name: "Launch", description: "x".repeat(500), family: "mint" }).success).toBe(true);
+    expect(CreateEpicInput.safeParse({ projectId: "p1", name: "" }).success).toBe(false);
+    expect(CreateEpicInput.safeParse({ projectId: "p1", name: "x".repeat(81) }).success).toBe(false);
+    expect(CreateEpicInput.safeParse({ projectId: "p1", name: "Launch", description: "x".repeat(501) }).success).toBe(false);
+  });
+});
+
+describe("UpdateEpicInput", () => {
+  it("rejects an empty patch", () => {
+    expect(UpdateEpicInput.safeParse({}).success).toBe(false);
+  });
+  it("accepts archived and a non-negative position, and rejects a negative one", () => {
+    expect(UpdateEpicInput.safeParse({ archived: true }).success).toBe(true);
+    expect(UpdateEpicInput.safeParse({ position: 0 }).success).toBe(true);
+    expect(UpdateEpicInput.safeParse({ position: -1 }).success).toBe(false);
+  });
+  it("allows clearing the description back to null", () => {
+    expect(UpdateEpicInput.safeParse({ description: null }).success).toBe(true);
+  });
+});
+
+describe("CreateTagInput", () => {
+  it("accepts a name starting with a letter or number, and rejects an empty or leading-hyphen name", () => {
+    expect(CreateTagInput.safeParse({ projectId: "p1", name: "Needs design" }).success).toBe(true);
+    expect(CreateTagInput.safeParse({ projectId: "p1", name: "v2_api" }).success).toBe(true);
+    expect(CreateTagInput.safeParse({ projectId: "p1", name: "" }).success).toBe(false);
+    expect(CreateTagInput.safeParse({ projectId: "p1", name: "-lead" }).success).toBe(false);
+  });
+});
+
+describe("CreateTicketInput ticket-model additions", () => {
+  it("accepts an epic, tags, success criteria, and field values", () => {
+    expect(
+      CreateTicketInput.safeParse({
+        projectId: "p1",
+        title: "Fix bug",
+        epicId: "e1",
+        tagIds: ["t1", "t2"],
+        successCriteria: "- [ ] repro fixed",
+        fields: { severity: "high", points: 3, urgent: false, notes: null },
+      }).success
+    ).toBe(true);
+  });
+  it("rejects more than 20 tags", () => {
+    expect(CreateTicketInput.safeParse({ projectId: "p1", title: "Fix bug", tagIds: Array.from({ length: 21 }, (_, i) => `t${i}`) }).success).toBe(false);
+  });
+});
+
+describe("UpdateTicketInput ticket-model additions", () => {
+  it("accepts clearing the epic and updating tags, success criteria, and fields", () => {
+    expect(UpdateTicketInput.safeParse({ epicId: null }).success).toBe(true);
+    expect(UpdateTicketInput.safeParse({ tagIds: ["t1"] }).success).toBe(true);
+    expect(UpdateTicketInput.safeParse({ successCriteria: "- [ ] done" }).success).toBe(true);
+    expect(UpdateTicketInput.safeParse({ fields: { severity: null } }).success).toBe(true);
   });
 });
 

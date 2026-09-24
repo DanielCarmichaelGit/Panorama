@@ -31,4 +31,14 @@ describe("can", () => {
     expect(can(forged, "lane.edit")).toBe(false);
     expect(can(forged, "evidence.signoff")).toBe(false);
   });
+  it("never lets an agent edit epics, tags, fields, or success criteria, whatever its scopes say", () => {
+    const forged = agent({ scopes: { projects: "*", actions: ["epic.edit", "tag.edit", "field.edit", "criteria.edit"] as never } });
+    expect(can(forged, "epic.edit")).toBe(false);
+    expect(can(forged, "tag.edit")).toBe(false);
+    expect(can(forged, "field.edit")).toBe(false);
+    expect(can(forged, "criteria.edit")).toBe(false);
+  });
+  it("lets a scoped agent update a ticket's epic, tags, links, and field values through ticket.update", () => {
+    expect(can(agent({ scopes: { projects: ["p1"], actions: ["ticket.update"] } }), "ticket.update", "p1")).toBe(true);
+  });
 });

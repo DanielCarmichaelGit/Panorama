@@ -26,7 +26,13 @@ a{color:var(--accent)}
 .lock .art{display:flex;justify-content:center}
 .row-actions{display:flex;gap:8px;flex-wrap:wrap;margin:-.25rem 0 .75rem}
 .mono-input{font-family:var(--mono);font-size:.875rem;letter-spacing:.02em}
-.small{font-size:.8125rem;line-height:1.5}
+.notice{display:flex;gap:.6rem;align-items:flex-start;border:1px solid var(--line);border-radius:var(--r-input);background:var(--surface);padding:.6rem .75rem;margin-bottom:1rem;font-size:.75rem;line-height:1.5;color:var(--muted)}
+.notice p{margin:0;flex:1}
+.tip{position:relative;display:inline-flex;flex:none}
+.tip-btn{display:inline-flex;padding:.1rem;border:0;background:none;color:var(--muted);cursor:default;border-radius:var(--r-pill);transition:color var(--dur) var(--ease)}
+.tip-btn:hover,.tip-btn:focus-visible{color:var(--text)}
+.tip-text{position:absolute;right:0;top:calc(100% + 6px);width:16rem;background:var(--text);color:var(--bg);font-size:.75rem;line-height:1.45;padding:.5rem .65rem;border-radius:var(--r-input);box-shadow:var(--shadow);z-index:var(--z-menu);opacity:0;transform:translateY(-4px);pointer-events:none;transition:opacity var(--dur) var(--ease),transform var(--dur) var(--ease)}
+.tip:hover .tip-text,.tip:focus-within .tip-text{opacity:1;transform:none}
 .iso-scene{display:block;width:100%;max-width:440px;height:auto}
 .lock .mark{font-weight:700;font-size:1.05rem;letter-spacing:-.01em;margin-bottom:2rem}
 .lock h1{margin-bottom:.75rem}.lock p{margin:0 0 1.5rem}

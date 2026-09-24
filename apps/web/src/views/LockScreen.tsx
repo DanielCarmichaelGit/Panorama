@@ -1,3 +1,4 @@
+import { Info } from "@phosphor-icons/react";
 import { useState } from "react";
 import type { Status } from "../App";
 import { LaneScene } from "../lib/iso";
@@ -29,7 +30,10 @@ export function LockScreen({ status, onDone }: { status: Status; onDone: (seed: 
         <div className="field"><label htmlFor="pw">Password</label><input id="pw" className={"input" + (shown ? " mono-input" : "")} type={shown ? "text" : "password"} autoFocus autoComplete={first ? "new-password" : "current-password"} spellCheck={false} value={pw} onChange={(e) => setPw(e.target.value)} /></div>
         {first && <div className="field"><label htmlFor="pw2">Repeat password</label><input id="pw2" className={"input" + (shown ? " mono-input" : "")} type={shown ? "text" : "password"} autoComplete="new-password" spellCheck={false} value={pw2} onChange={(e) => setPw2(e.target.value)} /></div>}
         {first && <div className="row-actions"><button type="button" className="btn ghost" onClick={suggest}>Suggest a password</button><button type="button" className="btn ghost" onClick={() => setShown((v) => !v)} aria-pressed={shown}>{shown ? "Hide" : "Show"}</button></div>}
-        {first && <p className="muted small">Write it down somewhere that is not this computer. Do not save it in a file, a note, a browser, or a password manager on this machine: an agent that can read the file can unlock the database and sign as you. A suggested password has about 129 bits of randomness, so knowing how it was made does not help anyone guess it.</p>}
+        {first && <div className="notice">
+          <p>Write it down somewhere that is not this computer. Do not save it in a file, a note, a browser, or a password manager on this machine: an agent that can read the file can unlock the database and sign as you.</p>
+          <span className="tip"><button type="button" className="tip-btn" aria-label="About suggested passwords" aria-describedby="pw-tip"><Info size={16} weight="regular" aria-hidden="true" /></button><span role="tooltip" id="pw-tip" className="tip-text">A suggested password has about 129 bits of randomness, so knowing how it was made does not help anyone guess it.</span></span>
+        </div>}
         {first && <label className="check"><input type="checkbox" checked={enc} onChange={(e) => setEnc(e.target.checked)} /><span>Encrypt the database. Panorama then stays locked after a restart until you enter this password.</span></label>}
         {err && <p className="error" role="alert">{err}</p>}
         <button className="btn" disabled={busy || !pw}>{busy ? "Working" : first ? "Create" : "Unlock"}</button>

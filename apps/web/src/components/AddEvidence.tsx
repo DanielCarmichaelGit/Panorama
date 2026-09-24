@@ -3,7 +3,9 @@ import type { EvidenceType, EvidenceResult } from "@panorama/core";
 import { ApiError } from "../lib/api";
 import { uploadFile } from "../lib/attachments";
 import { useAddEvidence } from "../lib/hooks";
+import { isPickerOpen } from "../lib/keys";
 import { useFocusTrap } from "../lib/useFocusTrap";
+import { Picker } from "./Picker";
 
 /** A zod issue from a 400 response, as the server's error handler reports it (`err.issues`). */
 interface ZodIssue {
@@ -25,7 +27,7 @@ function parsedNumber(s: string): number | null {
 }
 
 /**
- * Dialog to attach one piece of evidence to a ticket. The type select drives which fields show,
+ * Dialog to attach one piece of evidence to a ticket. The type Picker drives which fields show,
  * matching the payload each kind's zod schema accepts server-side (`EvidencePayload` in
  * `@panorama/core`). Screenshot and file types upload through `uploadFile` first and attach the
  * resulting attachment id; every other kind posts payload fields only.
@@ -142,15 +144,28 @@ export function AddEvidence({ ticketId, types, onClose }: { ticketId: string; ty
 
   return (
     <div className="modal-back" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="modal card" role="dialog" aria-modal="true" aria-labelledby="add-evidence-title" ref={dialogRef}>
+      <div
+        className="modal card"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="add-evidence-title"
+        ref={dialogRef}
+        onKeyDown={(e) => {
+          // Dismissing an open Picker's popover (Type or, for a custom result, Result) must not
+          // also cancel the whole dialog underneath it; useFocusTrap's own Escape handler runs
+          // after this one but only sees the Picker already closed, so it has to be stopped here.
+          if (e.key === "Escape" && isPickerOpen()) e.stopPropagation();
+        }}
+      >
         <form onSubmit={submit}>
           <h2 id="add-evidence-title">Add evidence</h2>
-          <div className="field">
-            <label htmlFor="ae-type">Type</label>
-            <select id="ae-type" className="input" value={typeId} onChange={(e) => setTypeId(e.target.value)}>
-              {types.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-            </select>
-          </div>
+          <Picker
+            id="ae-type"
+            label="Type"
+            options={types.map((t) => ({ id: t.id, label: t.name, hint: t.kind }))}
+            value={typeId}
+            onChange={(id) => id && setTypeId(id)}
+          />
 
           {type?.kind === "test_run" && (
             <>
@@ -226,14 +241,17 @@ export function AddEvidence({ ticketId, types, onClose }: { ticketId: string; ty
 
           {type?.kind === "custom" && (
             <>
-              <div className="field">
-                <label htmlFor="ae-result">Result</label>
-                <select id="ae-result" className="input" value={result} onChange={(e) => setResult(e.target.value as EvidenceResult)}>
-                  <option value="pass">Pass</option>
-                  <option value="fail">Fail</option>
-                  <option value="info">Info</option>
-                </select>
-              </div>
+              <Picker
+                id="ae-result"
+                label="Result"
+                options={[
+                  { id: "pass", label: "Pass" },
+                  { id: "fail", label: "Fail" },
+                  { id: "info", label: "Info" },
+                ]}
+                value={result}
+                onChange={(id) => id && setResult(id as EvidenceResult)}
+              />
               <div className="field">
                 <label htmlFor="ae-note">Note</label>
                 <textarea id="ae-note" className="input" value={note} onChange={(e) => setNote(e.target.value)} />

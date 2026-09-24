@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -30,7 +30,7 @@ const ticket: Ticket = {
 const lanes = [lane({}), lane({ id: "l2", name: "Ready", position: 1 })];
 
 /** Renders the panel with the gates query held open until `resolveGates` is called. */
-function renderPanel(entry = "/t/t1") {
+function renderPanel(entry = "/t/t1", onClose: () => void = () => {}) {
   let resolveGates!: (v: Record<string, unknown>) => void;
   const gates = new Promise<Record<string, unknown>>((resolve) => { resolveGates = resolve; });
   vi.mocked(api).mockImplementation((async (method: string, path: string) => {
@@ -47,34 +47,64 @@ function renderPanel(entry = "/t/t1") {
   render(
     <QueryClientProvider client={client}>
       <MemoryRouter initialEntries={[entry]} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-        <TicketPanel id="t1" onClose={() => {}} />
+        <TicketPanel id="t1" onClose={onClose} />
       </MemoryRouter>
     </QueryClientProvider>,
   );
   return { resolveGates };
 }
 
-const option = (name: string) => screen.getByRole("option", { name }) as HTMLOptionElement;
+function openLanePicker() {
+  fireEvent.click(screen.getByRole("button", { name: "Lane" }));
+}
 
-describe("TicketPanel lane select", () => {
+const option = (name: string) => screen.getByRole("option", { name });
+const disabled = (el: HTMLElement) => el.getAttribute("aria-disabled") === "true";
+
+describe("TicketPanel lane picker", () => {
   it("offers only the current lane until the gates are known, then opens the rest", async () => {
     const { resolveGates } = renderPanel();
+    await screen.findByRole("button", { name: "Lane" });
+    openLanePicker();
     await screen.findByRole("option", { name: "Ready" });
 
     // The gates have not come back yet: nothing is known about what Ready needs, so it stays shut.
-    expect(option("Ready").disabled).toBe(true);
-    expect(option("Backlog").disabled).toBe(false);
+    expect(disabled(option("Ready"))).toBe(true);
+    expect(disabled(option("Backlog"))).toBe(false);
 
     resolveGates({ l1: [], l2: [] });
-    await waitFor(() => expect(option("Ready").disabled).toBe(false));
+    await waitFor(() => expect(disabled(option("Ready"))).toBe(false));
   });
 
   it("keeps a lane shut when the gates say it is missing evidence", async () => {
     const { resolveGates } = renderPanel();
+    await screen.findByRole("button", { name: "Lane" });
+    openLanePicker();
     await screen.findByRole("option", { name: "Ready" });
 
     resolveGates({ l1: [], l2: [{ typeId: "et_test_run", name: "Test run", need: 1, have: 0 }] });
-    await waitFor(() => expect(option("Ready (needs Test run)").disabled).toBe(true));
+    // Wait for the gates to actually land (not just the already-true "still pending" disabled
+    // state) by watching the reason text settle onto the specific missing requirement.
+    await waitFor(() => expect(option("Ready").getAttribute("title")).toBe("Ready (needs Test run)"));
+    expect(disabled(option("Ready"))).toBe(true);
+  });
+});
+
+describe("TicketPanel Escape", () => {
+  it("closes only the Lane picker's popover, not the panel underneath it; a second Escape then closes the panel", async () => {
+    const onClose = vi.fn();
+    renderPanel("/t/t1", onClose);
+    const trigger = await screen.findByRole("button", { name: "Lane" });
+    openLanePicker();
+    expect(screen.getByRole("listbox")).toBeTruthy();
+
+    fireEvent.keyDown(trigger, { key: "Escape" });
+    expect(screen.queryByRole("listbox")).toBeNull();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByRole("dialog")).toBeTruthy();
+
+    fireEvent.keyDown(document.body, { key: "Escape" });
+    expect(onClose).toHaveBeenCalled();
   });
 });
 
@@ -87,7 +117,7 @@ describe("TicketPanel notice", () => {
 
   it("shows nothing when there is no notice", async () => {
     renderPanel();
-    await screen.findByRole("option", { name: "Ready" });
+    await screen.findByRole("button", { name: "Lane" });
     expect(screen.queryByRole("alert")).toBeNull();
   });
 });

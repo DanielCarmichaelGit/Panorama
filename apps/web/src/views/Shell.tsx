@@ -9,6 +9,7 @@ import { session } from "../lib/session";
 import { useLanes, useProjects, useStream } from "../lib/hooks";
 import { isTypingTarget } from "../lib/keys";
 import { useFocusTrap } from "../lib/useFocusTrap";
+import { Picker } from "../components/Picker";
 import { FirstProject } from "./FirstProject";
 import { TicketPanel } from "./TicketPanel";
 
@@ -38,12 +39,17 @@ function SkeletonRows() {
   );
 }
 
-function ProjectSwitcher({ list, current, onChange }: { list: Project[]; current: Project; onChange: (id: string) => void }) {
+function ProjectSwitcher({ id, list, current, onChange }: { id: string; list: Project[]; current: Project; onChange: (id: string) => void }) {
   if (list.length > 1) {
     return (
-      <select className="input" aria-label="Project" value={current.id} onChange={(e) => onChange(e.target.value)}>
-        {list.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-      </select>
+      <Picker
+        id={id}
+        label="Project"
+        hideLabel
+        options={list.map((p) => ({ id: p.id, label: p.name }))}
+        value={current.id}
+        onChange={(v) => v && onChange(v)}
+      />
     );
   }
   return (
@@ -150,7 +156,7 @@ export function Shell({ status, chainOk }: { status: Status; chainOk: boolean })
           {!current ? null : collapsed ? (
             <strong className="mono key-mark" aria-label={current.name}>{current.key.slice(0, 2)}</strong>
           ) : (
-            <ProjectSwitcher list={list} current={current} onChange={setProjectOverride} />
+            <ProjectSwitcher id="project-switcher" list={list} current={current} onChange={setProjectOverride} />
           )}
         </div>
         <Link to="/" className="nav-item" aria-label="Queue" title="Queue" aria-current={queueCurrent ? "page" : undefined}>
@@ -203,7 +209,14 @@ export function Shell({ status, chainOk }: { status: Status; chainOk: boolean })
       {ticketId && <TicketPanel id={ticketId} onClose={closeTicketPanel} />}
       {menuOpen && (
         <MenuSheet onClose={closeMenu}>
-          {current && <ProjectSwitcher list={list} current={current} onChange={(id) => { setProjectOverride(id); closeMenu(); }} />}
+          {current && (
+            <ProjectSwitcher
+              id="project-switcher-menu"
+              list={list}
+              current={current}
+              onChange={(id) => { setProjectOverride(id); closeMenu(); }}
+            />
+          )}
           <Link to="/settings" className="btn ghost" onClick={closeMenu}>
             <GearSix size={16} weight="regular" aria-hidden="true" /> Settings
           </Link>

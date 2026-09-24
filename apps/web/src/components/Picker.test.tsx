@@ -247,6 +247,18 @@ describe("Picker", () => {
     expect(trigger.getAttribute("aria-activedescendant")).toBe(option.id);
   });
 
+  it("autoOpen shows the popover as soon as it mounts, with no click or key needed", () => {
+    render(<Picker id="move-t1" label="Move to" options={BOARD_OPTIONS} value="b1" onChange={() => {}} autoOpen />);
+    expect(screen.getByRole("listbox")).toBeTruthy();
+  });
+
+  it("hideLabel keeps the label in the accessibility tree but visually hides it", () => {
+    render(<Picker id="project" label="Project" options={BOARD_OPTIONS} value="b1" onChange={() => {}} hideLabel />);
+    expect(screen.getByRole("button", { name: "Project" })).toBeTruthy();
+    const label = screen.getByText("Project", { selector: "label" });
+    expect(label.className).toContain("sr-only");
+  });
+
   it("resets the highlight when the option list's ids change, even if the count stays the same", () => {
     function SwapHarness() {
       const [opts, setOpts] = useState<PickerOption[]>([

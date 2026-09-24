@@ -9,6 +9,7 @@ import { BoardCard, BoardCardContent } from "../components/BoardCard";
 import { laneOptionLabel, missingMessage } from "../components/GateList";
 import { NewBoard } from "../components/NewBoard";
 import { NewTicket } from "../components/NewTicket";
+import { Picker } from "../components/Picker";
 
 const NEW_BOARD_OPTION = "__new";
 
@@ -189,13 +190,17 @@ export function Board() {
     <div className="view board-view">
       <div className="board-head">
         <h1>Board</h1>
-        <div className="field">
-          <label htmlFor="board-select">Board</label>
-          <select id="board-select" className="input" value={selectedBoardId} onChange={(e) => selectBoard(e.target.value)}>
-            {boardList.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-            <option value={NEW_BOARD_OPTION}>New board</option>
-          </select>
-        </div>
+        <Picker
+          id="board-select"
+          label="Board"
+          swatch
+          options={[
+            ...boardList.map((b) => ({ id: b.id, label: b.name, family: b.family })),
+            { id: NEW_BOARD_OPTION, label: "New board" },
+          ]}
+          value={selectedBoardId}
+          onChange={(id) => id && selectBoard(id)}
+        />
         <div className="spacer" />
         <button type="button" className="btn" onClick={() => setShowNewTicket(true)}>New ticket</button>
       </div>

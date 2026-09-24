@@ -6,7 +6,9 @@ import { AddEvidence } from "../components/AddEvidence";
 import { Chip } from "../components/Chip";
 import { Composer } from "../components/Composer";
 import { GateList, laneOptionLabel, nextLane } from "../components/GateList";
+import { Picker } from "../components/Picker";
 import { Thread } from "../components/Thread";
+import { isPickerOpen } from "../lib/keys";
 
 function when(iso: string): string {
   return new Date(iso).toLocaleString();
@@ -121,7 +123,17 @@ export function TicketPanel({ id, onClose }: { id: string; onClose: () => void }
   const next = nextLane(laneList, t.laneId);
 
   return (
-    <aside className="panel" role="dialog" aria-label={t.key}>
+    <aside
+      className="panel"
+      role="dialog"
+      aria-label={t.key}
+      onKeyDown={(e) => {
+        // Dismissing an open Picker's popover (the Lane picker) must not also close the whole
+        // panel underneath it; the document-level Escape handler below runs after this one, but
+        // only sees the Picker already closed, so it has to be stopped here instead.
+        if (e.key === "Escape" && isPickerOpen()) e.stopPropagation();
+      }}
+    >
       <div className="panel-head">
         <span className="mono muted">{t.key}</span>
         <button type="button" className="btn ghost" onClick={onClose} aria-label="Close">
@@ -139,32 +151,25 @@ export function TicketPanel({ id, onClose }: { id: string; onClose: () => void }
         onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); (e.target as HTMLInputElement).blur(); } }}
       />
       {titleError && <p className="error" role="alert">{titleError}</p>}
-      <div className="field">
-        <label htmlFor="tp-lane">Lane</label>
-        <select
-          id="tp-lane"
-          className="input"
-          value={laneChoice ?? t.laneId}
-          disabled={move.isPending}
-          onChange={(e) => {
-            const laneId = e.target.value;
-            setLaneChoice(laneId);
-            move.mutate({ id, laneId }, { onError: () => setLaneChoice(null) });
-          }}
-        >
-          {laneList.map((l) => {
-            const missing = gates.data?.[l.id] ?? [];
-            // Until the gates come back, nothing is known about what any other lane needs.
-            // Offering them anyway invites a move the server will refuse, so they stay shut.
-            const disabled = l.id !== t.laneId && (gates.isPending || missing.length > 0);
-            return (
-              <option key={l.id} value={l.id} disabled={disabled}>
-                {laneOptionLabel(l, missing, evidenceTypes)}
-              </option>
-            );
-          })}
-        </select>
-      </div>
+      <Picker
+        id="tp-lane"
+        label="Lane"
+        swatch
+        disabled={move.isPending}
+        value={laneChoice ?? t.laneId}
+        onChange={(laneId) => {
+          if (!laneId) return;
+          setLaneChoice(laneId);
+          move.mutate({ id, laneId }, { onError: () => setLaneChoice(null) });
+        }}
+        options={laneList.map((l) => {
+          const missing = gates.data?.[l.id] ?? [];
+          // Until the gates come back, nothing is known about what any other lane needs.
+          // Offering them anyway invites a move the server will refuse, so they stay shut.
+          const disabled = l.id !== t.laneId && (gates.isPending || missing.length > 0);
+          return { id: l.id, label: l.name, family: l.family, disabled, disabledReason: disabled ? laneOptionLabel(l, missing, evidenceTypes) : undefined };
+        })}
+      />
       {move.isError && <p className="error" role="alert">{move.error instanceof Error ? move.error.message : "Could not move the ticket."}</p>}
       {t.flags.length > 0 && (
         <div className="chips">

@@ -7,6 +7,7 @@ import { useGates, useMoveTicket, usePrefetchGates } from "../lib/hooks";
 import { isTypingTarget } from "../lib/keys";
 import { Chip } from "./Chip";
 import { laneOptionLabel, missingMessage } from "./GateList";
+import { Picker } from "./Picker";
 import { laneFamily } from "./TicketRow";
 
 /**
@@ -37,7 +38,7 @@ function moveErrorMessage(err: unknown): string {
 /**
  * One ticket on the Board: a draggable wrapper (pointer drag only, see `Board`'s sensors) around
  * a real link into the ticket panel, so a plain click still opens it. With the card focused, `m`
- * opens a "Move to" select offering every lane, with the ones its evidence would refuse disabled.
+ * opens a "Move to" Picker offering every lane, with the ones its evidence would refuse disabled.
  * Gates for this ticket are prefetched on pointerdown and on focus, so the drag-activation
  * distance and the "m" shortcut usually already have the data instead of briefly showing every
  * lane as open.
@@ -50,11 +51,13 @@ export function BoardCard({ ticket, lanes, agents, types }: { ticket: Ticket; la
   const [moveError, setMoveError] = useState<string | null>(null);
   const gates = useGates(moveOpen ? ticket.id : undefined);
   const linkRef = useRef<HTMLAnchorElement>(null);
-  const selectRef = useRef<HTMLSelectElement>(null);
+  const moveTriggerId = `move-${ticket.id}-trigger`;
 
+  // The Picker opens itself (`autoOpen`) the instant it mounts; it still needs the keyboard focus
+  // that a native select got from this same effect, so arrow keys and Escape land on it right away.
   useEffect(() => {
-    if (moveOpen) selectRef.current?.focus();
-  }, [moveOpen]);
+    if (moveOpen) document.getElementById(moveTriggerId)?.focus();
+  }, [moveOpen, moveTriggerId]);
 
   function warmGates() {
     void prefetchGates(ticket.id);
@@ -107,29 +110,23 @@ export function BoardCard({ ticket, lanes, agents, types }: { ticket: Ticket; la
         <BoardCardContent ticket={ticket} lanes={lanes} agents={agents} />
       </Link>
       {moveOpen && (
-        <div className="move-to">
-          <label htmlFor={`move-${ticket.id}`}>Move to</label>
-          <select
+        <div className="move-to" onKeyDown={onSelectKeyDown}>
+          <Picker
             id={`move-${ticket.id}`}
-            ref={selectRef}
-            className="input"
-            value={ticket.laneId}
+            label="Move to"
+            swatch
+            autoOpen
             disabled={move.isPending}
-            onChange={(e) => chooseLane(e.target.value)}
-            onKeyDown={onSelectKeyDown}
-          >
-            {lanes.map((l) => {
+            value={ticket.laneId}
+            onChange={(laneId) => laneId && chooseLane(laneId)}
+            options={lanes.map((l) => {
               const same = l.id === ticket.laneId;
               const missing = gates.data?.[l.id] ?? [];
               // Gates not loaded yet: don't pretend a lane is open before we know.
               const disabled = !same && (gates.isPending || missing.length > 0);
-              return (
-                <option key={l.id} value={l.id} disabled={disabled}>
-                  {laneOptionLabel(l, missing, types)}
-                </option>
-              );
+              return { id: l.id, label: l.name, family: l.family, disabled, disabledReason: disabled ? laneOptionLabel(l, missing, types) : undefined };
             })}
-          </select>
+          />
           {moveError && <p className="error" role="alert">{moveError}</p>}
         </div>
       )}

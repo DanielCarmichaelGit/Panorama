@@ -28,6 +28,10 @@ export type PickerProps = (Single | Multi) & {
   disabled?: boolean;
   busy?: boolean;
   describedBy?: string;
+  /** Opens the popover as soon as this instance mounts, e.g. the Board card's "m" shortcut. */
+  autoOpen?: boolean;
+  /** Keeps the label in the accessibility tree but hides it visually, for a spot too tight for one (the sidebar's project switcher). */
+  hideLabel?: boolean;
 };
 
 type Row =
@@ -61,11 +65,14 @@ interface Position {
  * portalled popover listbox with search, arrows, Enter, Escape, type-ahead, and an optional
  * "Create new" row. Replaces every native `<select>`. See the "Picker" paragraph of
  * docs/superpowers/specs/2026-09-24-ticket-model-design.md for the full behaviour contract.
+ * `autoOpen` and `hideLabel` are narrow escape hatches for the two spots that need them: a
+ * keyboard shortcut that should show the popover the instant it mounts, and a switcher too
+ * cramped for a visible label.
  */
 export function Picker(props: PickerProps): JSX.Element {
-  const { id, label, options, placeholder, searchable, swatch, clearable, onCreate, createLabel, disabled, busy, describedBy } = props;
+  const { id, label, options, placeholder, searchable, swatch, clearable, onCreate, createLabel, disabled, busy, describedBy, autoOpen, hideLabel } = props;
 
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(!!autoOpen);
   const [search, setSearch] = useState("");
   const [highlightedKey, setHighlightedKey] = useState<string | null>(null);
   const [position, setPosition] = useState<Position | null>(null);
@@ -366,7 +373,7 @@ export function Picker(props: PickerProps): JSX.Element {
 
   return (
     <div className="picker" ref={wrapRef} onKeyDown={handleKeyDown}>
-      <label id={`${id}-label`} htmlFor={`${id}-trigger`} className="picker-label">
+      <label id={`${id}-label`} htmlFor={`${id}-trigger`} className={hideLabel ? "picker-label sr-only" : "picker-label"}>
         {label}
       </label>
       {/*

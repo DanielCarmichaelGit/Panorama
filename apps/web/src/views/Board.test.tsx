@@ -111,13 +111,14 @@ describe("Board", () => {
     expect(within(prodHeading.closest("section")!).getByText("No tickets")).toBeTruthy();
   });
 
-  it("renders the board select defaulting to the project's one board, with a New board option", async () => {
+  it("renders the board picker defaulting to the project's one board, with a New board option", async () => {
     renderBoard([]);
     await screen.findByRole("heading", { name: "Backlog" });
 
-    const select = screen.getByLabelText("Board") as HTMLSelectElement;
-    expect(select.value).toBe("b1");
-    const options = within(select).getAllByRole("option").map((o) => (o as HTMLOptionElement).textContent);
+    const trigger = screen.getByRole("button", { name: "Board" });
+    expect(trigger.textContent).toContain("Panorama");
+    fireEvent.click(trigger);
+    const options = screen.getAllByRole("option").map((o) => o.textContent);
     expect(options).toEqual(["Panorama", "New board"]);
   });
 
@@ -137,7 +138,8 @@ describe("Board", () => {
     expect(screen.getByRole("link", { name: /PAN-1/ })).toBeTruthy();
     expect(screen.queryByRole("link", { name: /PAN-2/ })).toBeNull();
 
-    fireEvent.change(screen.getByLabelText("Board"), { target: { value: "b2" } });
+    fireEvent.click(screen.getByRole("button", { name: "Board" }));
+    fireEvent.click(screen.getByRole("option", { name: "Growth" }));
 
     await screen.findByRole("link", { name: /PAN-2/ });
     expect(screen.queryByRole("link", { name: /PAN-1/ })).toBeNull();

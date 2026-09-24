@@ -8,7 +8,7 @@ const FAMILY_LABELS: Record<Family, string> = { coral: "Coral", sky: "Sky", lila
 /**
  * Dialog to create a board inside a project (human only, `board.create`). A board groups
  * tickets the way an epic categorises them; every project starts with one default board, and
- * this is how a second one gets made. Opened from the Board view's "New board" select option.
+ * this is how a second one gets made. Opened from the Board view's "New board" picker option.
  */
 export function NewBoard({ projectId, onClose }: { projectId: string; onClose: (created?: Board) => void }) {
   const [name, setName] = useState("");

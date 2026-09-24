@@ -5,9 +5,11 @@ import type { Lane, Ticket } from "@panorama/core";
 import { uploadFile } from "../lib/attachments";
 import type { GateMiss } from "../lib/hooks";
 import { useAgents, useAddComment, useBoards, useCreateTicket, useEvidenceTypes, useLanes, useSetFlag, useUpdateTicket } from "../lib/hooks";
+import { isPickerOpen } from "../lib/keys";
 import { useFocusTrap } from "../lib/useFocusTrap";
 import { Composer } from "./Composer";
 import { laneOptionLabel } from "./GateList";
+import { Picker } from "./Picker";
 
 interface PendingFile { id: string; file: File }
 interface UploadedAttachment { id: string; filename: string; isImage: boolean }
@@ -78,7 +80,7 @@ export function NewTicket({
   const busy = create.isPending || update.isPending || setFlag.isPending || addComment.isPending || !!busyStep;
 
   // A ticket that does not exist yet carries no evidence, so every requirement a lane has is
-  // missing: those lanes are closed to it, and the select says so rather than letting the
+  // missing: those lanes are closed to it, and the Lane picker says so rather than letting the
   // server refuse the create with a 422.
   const missingFor = (l: Lane): GateMiss[] =>
     l.evidenceRequirements.map((r) => ({
@@ -193,6 +195,10 @@ export function NewTicket({
             e.preventDefault();
             void submit();
           }
+          // Dismissing an open Picker's popover (Board, Lane, or Assignee) must not also cancel
+          // the whole dialog underneath it; useFocusTrap's own Escape handler runs after this
+          // one but only sees the Picker already closed, so it has to be stopped here instead.
+          if (e.key === "Escape" && isPickerOpen()) e.stopPropagation();
         }}
       >
         <form onSubmit={(e) => { e.preventDefault(); void submit(); }}>
@@ -248,33 +254,34 @@ export function NewTicket({
             </div>
             <div className="nt-right">
               {boards.length > 1 && (
-                <div className="field">
-                  <label htmlFor="nt-board">Board</label>
-                  <select id="nt-board" className="input" value={selectedBoard} onChange={(e) => setSelectedBoard(e.target.value)}>
-                    {boards.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-                  </select>
-                </div>
+                <Picker
+                  id="nt-board"
+                  label="Board"
+                  swatch
+                  options={boards.map((b) => ({ id: b.id, label: b.name, family: b.family }))}
+                  value={selectedBoard}
+                  onChange={(id) => id && setSelectedBoard(id)}
+                />
               )}
-              <div className="field">
-                <label htmlFor="nt-lane">Lane</label>
-                <select id="nt-lane" className="input" value={effectiveLane} onChange={(e) => setLaneId(e.target.value)}>
-                  {lanes.map((l) => {
-                    const missing = missingFor(l);
-                    return (
-                      <option key={l.id} value={l.id} disabled={missing.length > 0}>
-                        {laneOptionLabel(l, missing)}
-                      </option>
-                    );
-                  })}
-                </select>
-              </div>
-              <div className="field">
-                <label htmlFor="nt-assignee">Assignee</label>
-                <select id="nt-assignee" className="input" value={assigneeId} onChange={(e) => setAssigneeId(e.target.value)}>
-                  <option value="">Unassigned</option>
-                  {agents.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
-                </select>
-              </div>
+              <Picker
+                id="nt-lane"
+                label="Lane"
+                swatch
+                options={lanes.map((l) => {
+                  const missing = missingFor(l);
+                  const disabled = missing.length > 0;
+                  return { id: l.id, label: l.name, family: l.family, disabled, disabledReason: disabled ? laneOptionLabel(l, missing) : undefined };
+                })}
+                value={effectiveLane}
+                onChange={(id) => id && setLaneId(id)}
+              />
+              <Picker
+                id="nt-assignee"
+                label="Assignee"
+                options={[{ id: "", label: "Unassigned" }, ...agents.map((a) => ({ id: a.id, label: a.name }))]}
+                value={assigneeId}
+                onChange={(id) => setAssigneeId(id ?? "")}
+              />
               <div className="field">
                 <label htmlFor="nt-start">Start date</label>
                 <input id="nt-start" className="input" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />

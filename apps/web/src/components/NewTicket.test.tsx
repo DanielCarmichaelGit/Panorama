@@ -105,15 +105,15 @@ describe("NewTicket", () => {
     expect(dialog.closest("body")).toBe(document.body);
   });
 
-  it("hides the board select with only one board, shows it with two", async () => {
+  it("hides the board picker with only one board, shows it with two", async () => {
     renderDialog({ boards: [board({})] });
-    await screen.findByText("Backlog"); // waits for the lane select's options, i.e. data loaded
-    expect(screen.queryByLabelText("Board")).toBeNull();
+    await screen.findByText("Backlog"); // waits for the lane picker's selected value, i.e. data loaded
+    expect(screen.queryByRole("button", { name: "Board" })).toBeNull();
     cleanup();
 
     renderDialog({ boards: [board({ id: "b1", name: "Panorama" }), board({ id: "b2", name: "Growth", position: 1 })] });
-    await screen.findByLabelText("Board");
-    expect(screen.getByLabelText("Board")).toBeTruthy();
+    await screen.findByRole("button", { name: "Board" });
+    expect(screen.getByRole("button", { name: "Board" })).toBeTruthy();
   });
 
   it("disables a lane whose evidence requirements a brand new ticket cannot meet", async () => {
@@ -121,9 +121,11 @@ describe("NewTicket", () => {
       lanes: [lane({}), lane({ id: "l6", name: "Done", position: 5, isDone: true, evidenceRequirements: [{ typeId: "et_human_signoff", count: 1 }] })],
     });
     await screen.findByText("Backlog");
-    const done = await screen.findByRole("option", { name: "Done (needs Human sign-off)" });
-    expect((done as HTMLOptionElement).disabled).toBe(true);
-    expect((screen.getByRole("option", { name: "Backlog" }) as HTMLOptionElement).disabled).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: "Lane" }));
+    const done = await screen.findByRole("option", { name: "Done" });
+    expect(done.getAttribute("aria-disabled")).toBe("true");
+    expect(done.getAttribute("title")).toBe("Done (needs Human sign-off)");
+    expect(screen.getByRole("option", { name: "Backlog" }).getAttribute("aria-disabled")).toBeNull();
   });
 
   it("leaves the Description label pointing at nothing, since the composer labels itself", async () => {
@@ -307,6 +309,24 @@ describe("NewTicket", () => {
     expect(onClose).toHaveBeenCalledWith();
   });
 
+  it("Escape closes only an open Picker's popover, not the whole dialog; a second Escape then cancels it", async () => {
+    const onClose = vi.fn();
+    renderDialog({ onClose });
+    await screen.findByRole("dialog", { name: "New ticket" });
+
+    const laneTrigger = screen.getByRole("button", { name: "Lane" });
+    fireEvent.click(laneTrigger);
+    expect(screen.getByRole("listbox")).toBeTruthy();
+
+    fireEvent.keyDown(laneTrigger, { key: "Escape" });
+    expect(screen.queryByRole("listbox")).toBeNull();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByRole("dialog", { name: "New ticket" })).toBeTruthy();
+
+    fireEvent.keyDown(laneTrigger, { key: "Escape" });
+    expect(onClose).toHaveBeenCalledWith();
+  });
+
   it("saves assignee, dates, and needs human via PATCH and the flag endpoint before posting", async () => {
     const calls: { method: string; path: string; body?: unknown }[] = [];
     const apiImpl = async (method: string, path: string, body?: unknown) => {
@@ -325,7 +345,8 @@ describe("NewTicket", () => {
     await screen.findByRole("dialog", { name: "New ticket" });
 
     fireEvent.change(screen.getByLabelText("Title"), { target: { value: "Ship it" } });
-    fireEvent.change(screen.getByLabelText("Assignee"), { target: { value: "a1" } });
+    fireEvent.click(screen.getByRole("button", { name: "Assignee" }));
+    fireEvent.click(screen.getByRole("option", { name: "worker" }));
     fireEvent.change(screen.getByLabelText("Start date"), { target: { value: "2026-09-24" } });
     fireEvent.change(screen.getByLabelText("Due date"), { target: { value: "2026-09-30" } });
     fireEvent.click(screen.getByLabelText("Needs human"));

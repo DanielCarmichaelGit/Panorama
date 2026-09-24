@@ -25,7 +25,9 @@ a{color:var(--accent)}
 .lock form{max-width:380px}
 .lock .art{display:flex;justify-content:center}
 .row-actions{display:flex;gap:8px;flex-wrap:wrap;margin:-.25rem 0 .75rem}
-.mono-input{font-family:var(--mono);font-size:.875rem;letter-spacing:.02em}
+.mono-input{font-family:var(--mono);letter-spacing:.02em}
+.input{line-height:1.4;min-height:2.6rem}
+.row-actions .btn{min-width:4.75rem}
 .notice{display:flex;gap:.6rem;align-items:flex-start;border:1px solid var(--line);border-radius:var(--r-input);background:var(--surface);padding:.6rem .75rem;margin-bottom:1rem;font-size:.75rem;line-height:1.5;color:var(--muted)}
 .notice p{margin:0;flex:1}
 .tip{position:relative;display:inline-flex;flex:none}

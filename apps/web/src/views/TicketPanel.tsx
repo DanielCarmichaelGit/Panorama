@@ -145,7 +145,9 @@ export function TicketPanel({ id, onClose }: { id: string; onClose: () => void }
         >
           {laneList.map((l) => {
             const missing = gates.data?.[l.id] ?? [];
-            const disabled = l.id !== t.laneId && missing.length > 0;
+            // Until the gates come back, nothing is known about what any other lane needs.
+            // Offering them anyway invites a move the server will refuse, so they stay shut.
+            const disabled = l.id !== t.laneId && (gates.isPending || missing.length > 0);
             return (
               <option key={l.id} value={l.id} disabled={disabled}>
                 {laneOptionLabel(l, missing, evidenceTypes)}

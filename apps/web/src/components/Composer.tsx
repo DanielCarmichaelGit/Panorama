@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { EditorContent, useEditor } from "@tiptap/react";
 import type { Editor } from "@tiptap/core";
 import StarterKit from "@tiptap/starter-kit";
@@ -53,14 +53,21 @@ export function Composer({ ticketId, onPosted }: { ticketId: string; onPosted: (
   const [uploads, setUploads] = useState<UploadItem[]>([]);
   const [attachmentIds, setAttachmentIds] = useState<string[]>([]);
   const [error, setError] = useState("");
+  // File uploads outlive the component when a ticket switch (or panel close) unmounts the
+  // composer mid-upload: uploadFile's XHR keeps running, and its onProgress/then/catch callbacks
+  // would otherwise call setState on an unmounted component.
+  const mountedRef = useRef(true);
+  useEffect(() => () => { mountedRef.current = false; }, []);
 
   function uploadOne(file: File, ed: Editor) {
     const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     setUploads((u) => [...u, { id, name: file.name, progress: 0 }]);
     uploadFile(ticketId, file, (fraction) => {
+      if (!mountedRef.current) return;
       setUploads((u) => u.map((x) => (x.id === id ? { ...x, progress: Math.round(fraction * 100) } : x)));
     })
       .then((attachment) => {
+        if (!mountedRef.current) return;
         setAttachmentIds((ids) => [...ids, attachment.id]);
         const isImage = attachment.mime.startsWith("image/");
         const token = isImage
@@ -69,14 +76,21 @@ export function Composer({ ticketId, onPosted }: { ticketId: string; onPosted: (
         const { from, to } = ed.state.selection;
         ed.chain().focus().insertContentAt({ from, to }, token).run();
       })
-      .catch((e) => setError(e instanceof Error ? e.message : `Could not upload ${file.name}.`))
-      .finally(() => setUploads((u) => u.filter((x) => x.id !== id)));
+      .catch((e) => {
+        if (!mountedRef.current) return;
+        setError(e instanceof Error ? e.message : `Could not upload ${file.name}.`);
+      })
+      .finally(() => {
+        if (!mountedRef.current) return;
+        setUploads((u) => u.filter((x) => x.id !== id));
+      });
   }
 
   const editor = useEditor({
     extensions: extensions(),
     content: "",
     editorProps: {
+      attributes: { role: "textbox", "aria-multiline": "true", "aria-label": "Comment" },
       handleDrop(_view, event) {
         const files = event.dataTransfer?.files;
         if (!editor || !files || files.length === 0) return false;
@@ -120,6 +134,11 @@ export function Composer({ ticketId, onPosted }: { ticketId: string; onPosted: (
       className="composer card"
       data-testid="composer"
       onKeyDown={(e) => {
+        // An IME still composing (e.g. picking a candidate for CJK input) can report `key ===
+        // "Enter"` for the keystroke that confirms the candidate; that keystroke must reach the
+        // IME, not submit the comment. `keyCode === 229` is the same check for browsers that
+        // don't set `isComposing` on this event.
+        if (e.nativeEvent.isComposing || e.keyCode === 229) return;
         if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
           e.preventDefault();
           void submit();

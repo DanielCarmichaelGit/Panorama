@@ -79,6 +79,10 @@ export function lifecycleRoutes(app: FastifyInstance, ctx: Ctx): void {
     requireCan(req, "lock");
     if (!ctx.config?.encryption) throw new HttpError(409, "not_encrypted", "Locking needs encryption to be on");
     const ev = appendEvent(getDb(ctx), { actorId: req.actor.id, type: "system.locked", payload: {}, signature: req.sig, now: ctx.now().toISOString() });
+    // Recorded here but never reaches any stream: closeAll() below ends every open stream
+    // response before this route returns, and the onResponse hook that would publish it only
+    // fires after that, on the (now closed) response. That is intended: there is nothing left
+    // listening once the database is about to close.
     record(req, ev);
     ctx.bus.closeAll();
     ctx.db!.close(); ctx.db = null;

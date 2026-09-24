@@ -20,7 +20,9 @@ const HEARTBEAT_MS = 15_000;
 
 export class EventBus {
   private subscribers = new Set<(e: StreamEvent) => void>();
-  private raws = new Set<FastifyReply["raw"]>();
+  // Keyed by the raw response, valued by the connecting actor's id, so a later revoke can find
+  // and end just that actor's stream(s) without touching anyone else's.
+  private streams = new Map<FastifyReply["raw"], string>();
 
   subscribe(fn: (e: StreamEvent) => void): () => void {
     this.subscribers.add(fn);
@@ -32,14 +34,29 @@ export class EventBus {
   }
 
   /** Tracked so closeAll can end every open stream response, e.g. when the database locks. */
-  track(raw: FastifyReply["raw"]): () => void {
-    this.raws.add(raw);
-    return () => this.raws.delete(raw);
+  track(raw: FastifyReply["raw"], actorId: string): () => void {
+    this.streams.set(raw, actorId);
+    return () => this.streams.delete(raw);
   }
 
   closeAll(): void {
-    for (const raw of this.raws) raw.end();
-    this.raws.clear();
+    for (const raw of this.streams.keys()) raw.end();
+    this.streams.clear();
+  }
+
+  /**
+   * A stream is opened with the actor's status and scopes as they stood at connect time, and
+   * never re-checked afterward: an agent revoked mid-stream would otherwise keep receiving
+   * in-scope events until it happens to disconnect on its own. So a revoke ends that agent's
+   * stream(s) directly, telling it why before doing so.
+   */
+  closeFor(actorId: string): void {
+    for (const [raw, id] of this.streams) {
+      if (id !== actorId) continue;
+      if (!raw.writableEnded) raw.write("event: revoked\ndata: {}\n\n");
+      raw.end();
+      this.streams.delete(raw);
+    }
   }
 }
 
@@ -64,7 +81,9 @@ function visibleTo(actor: FastifyRequest["actor"], ev: StreamEvent): boolean {
   if (actor.kind === "human") return true;
   const projectId = payloadProjectId(ev.payload);
   if (projectId) return inScope(actor, projectId);
-  if (ev.type === "agent.approved" || ev.type === "agent.revoked") {
+  // agent.revoked is not relayed here: closeFor ends that agent's stream directly with its own
+  // "revoked" frame instead, so the connection doesn't linger to also receive the business event.
+  if (ev.type === "agent.approved") {
     const id = (ev.payload as { id?: unknown } | null)?.id;
     return id === actor.id;
   }
@@ -76,6 +95,10 @@ export function installStream(app: FastifyInstance, ctx: Ctx): void {
     if (reply.statusCode >= 400 || !req.emitted?.length) return;
     for (const ev of req.emitted) {
       ctx.bus.publish({ seq: ev.seq, type: ev.type, payload: ev.payload, at: ev.createdAt });
+      if (ev.type === "agent.revoked") {
+        const id = (ev.payload as { id?: unknown } | null)?.id;
+        if (typeof id === "string") ctx.bus.closeFor(id);
+      }
     }
   });
 
@@ -91,7 +114,7 @@ export function installStream(app: FastifyInstance, ctx: Ctx): void {
     raw.on("error", () => {});
     raw.write(": connected\n\n");
 
-    const untrack = ctx.bus.track(raw);
+    const untrack = ctx.bus.track(raw, req.actor.id);
     const unsubscribe = ctx.bus.subscribe((ev) => {
       if (raw.writableEnded || !visibleTo(req.actor, ev)) return;
       raw.write(`id: ${ev.seq}\nevent: ${ev.type}\ndata: ${JSON.stringify(ev.payload)}\n\n`);

@@ -57,7 +57,22 @@ function commitFile(root, message) {
 // commit message with the three trailers, and commits. Split out from
 // recordAndCommit so a test can drive several commits through one session.
 let msgCounter = 0;
+function currentHeadOrNull(root) {
+  try {
+    return execFileSync("git", ["rev-parse", "-q", "--verify", "HEAD"], {
+      cwd: root,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    }).trim();
+  } catch {
+    return null;
+  }
+}
+
 function commitSessionState(root, id, { subject = "chore: commit", corruptDiffTrailer = false } = {}) {
+  // Matches precommit.mjs: capture HEAD as the manifest's own `base`
+  // before it moves, the same way the real hook does.
+  const base = currentHeadOrNull(root);
   const { diff, files } = stagedDiff(root);
   const diffHash = sha256(diff);
 
@@ -77,6 +92,7 @@ function commitSessionState(root, id, { subject = "chore: commit", corruptDiffTr
     count: verified.count,
     diffHash,
     files,
+    base,
     ts: new Date().toISOString(),
   };
   const { path: manifestPath, hash: manifestHash } = writeManifest(root, manifest);
@@ -268,7 +284,16 @@ test("commitDiff diffs against an explicit base instead of sha's real parent", (
 // accepted as a diff base, however the manifest tries to hash together
 // with it -- otherwise a fabricated base could make an unrelated,
 // possibly much larger real diff read as small and innocuous.
-test("verifyCommit rejects a manifest whose base is unrelated to the commit", (t) => {
+// Fix round 3: an unrelated (structurally invalid) base is not, on its
+// own, a failure -- verifyCommit falls back to the real parent, and only
+// flags a problem when that fallback diff ALSO fails to match. This test
+// covers the genuine failure: base is unrelated AND the manifest's
+// diffHash does not match the real parent's diff either (a fabricated or
+// corrupted manifest, not merely a rebased one). The "base is unrelated
+// but the diff still matches" case -- a clean rebase -- is covered by
+// "two recorded commits rebased onto a new base verify ok on every
+// column" below, and must NOT produce a problem.
+test("verifyCommit rejects a manifest whose base is unrelated and whose diff does not match the real parent either", (t) => {
   const root = makeRepo(t);
   recordAndCommit(root); // establishes an initial commit to branch the orphan off from
   const mainBranch = git(root, ["branch", "--show-current"]).trim();
@@ -284,13 +309,15 @@ test("verifyCommit rejects a manifest whose base is unrelated to the commit", (t
   appendEntry(root, id, { type: "prompt", text: "add b.txt" });
   writeFile(root, "b.txt", "hello\n");
   git(root, ["add", "b.txt"]);
-  const { diff, files } = stagedDiff(root);
-  const diffHash = sha256(diff);
-  appendEntry(root, id, { type: "commit", diffHash, files });
+  const { files } = stagedDiff(root); // real files list, kept honest
+  const fabricatedDiffHash = sha256("this diff does not correspond to reality");
+  appendEntry(root, id, { type: "commit", diffHash: fabricatedDiffHash, files });
   const entries = readSession(root, id);
   const verified = verifySession(entries);
 
-  // Craft a manifest that claims the unrelated orphan commit as its base.
+  // Craft a manifest that claims the unrelated orphan commit as its base
+  // AND carries a diffHash that matches neither that base nor the real
+  // parent.
   const manifest = {
     sessionId: id,
     actor: "tester",
@@ -298,7 +325,7 @@ test("verifyCommit rejects a manifest whose base is unrelated to the commit", (t
     intent: "second file",
     head: verified.head,
     count: verified.count,
-    diffHash,
+    diffHash: fabricatedDiffHash,
     files,
     base: unrelatedSha,
     ts: new Date().toISOString(),
@@ -310,7 +337,7 @@ test("verifyCommit rejects a manifest whose base is unrelated to the commit", (t
     "",
     `Provenance-Manifest: sha256:${manifestHash} ${manifestPath}`,
     `Provenance-Head: sha256:${verified.head}`,
-    `Provenance-Diff: sha256:${diffHash}`,
+    `Provenance-Diff: sha256:${fabricatedDiffHash}`,
     "",
   ].join("\n");
   const msgFile = path.join(root, ".git", "COMMIT_EDITMSG_UNRELATED_BASE");
@@ -322,6 +349,60 @@ test("verifyCommit rejects a manifest whose base is unrelated to the commit", (t
   const report = verifyCommit(root, sha);
   assert.equal(report.manifestOk, false);
   assert.ok(report.problems.some((p) => p.includes("base")), `expected a base problem, got: ${report.problems}`);
+});
+
+// Fix round 3: rebase never runs pre-commit (round 2 finding), so a
+// rebased commit's manifest is carried forward byte-for-byte, `base` and
+// all -- now naming the PRE-rebase parent, which is neither the rebased
+// commit's real (new) parent nor a sibling of it. A clean rebase replays
+// the same tree delta though, so the diff against the real parent still
+// matches what the manifest recorded; this must verify ok on every
+// column, not fail MANIFEST merely because `base` no longer resolves to
+// a provable relationship.
+test("two recorded commits rebased onto a new base verify ok on every column", (t) => {
+  const root = makeRepo(t);
+  writeFile(root, "root.txt", "root\n");
+  const rootSha = commitFile(root, "chore: initial");
+  const mainBranch = git(root, ["branch", "--show-current"]).trim();
+
+  const first = recordAndCommit(root, { subject: "feat: add a.txt" });
+
+  appendEntry(root, first.id, { type: "prompt", text: "now add b.txt" });
+  appendEntry(root, first.id, {
+    type: "tool",
+    tool: "Write",
+    input: { file_path: "b.txt", content: "world" },
+    files: ["b.txt"],
+  });
+  writeFile(root, "b.txt", "world\n");
+  git(root, ["add", "b.txt"]);
+  const second = commitSessionState(root, first.id, { subject: "feat: add b.txt" });
+
+  // A diverging commit, sibling of the two recorded commits (branches off
+  // the same root they were built on), to rebase onto.
+  git(root, ["checkout", "-q", "-b", "diverged", rootSha]);
+  writeFile(root, "unrelated.txt", "some other work entirely\n");
+  commitFile(root, "chore: unrelated work on another branch");
+  git(root, ["checkout", "-q", mainBranch]);
+
+  git(root, ["rebase", "diverged"]);
+
+  const rebasedShas = git(root, ["log", "--format=%H", "diverged..HEAD"])
+    .trim()
+    .split("\n")
+    .reverse();
+  assert.equal(rebasedShas.length, 2, `expected 2 rebased commits, got: ${rebasedShas.join(", ")}`);
+  assert.notEqual(rebasedShas[0], first.sha, "rebase must have produced new commit objects");
+  assert.notEqual(rebasedShas[1], second.sha, "rebase must have produced new commit objects");
+
+  for (const sha of rebasedShas) {
+    const report = verifyCommit(root, sha);
+    assert.equal(report.recorded, true, `${sha}: recorded`);
+    assert.equal(report.manifestOk, true, `${sha}: manifestOk, problems: ${report.problems.join(", ")}`);
+    assert.equal(report.diffOk, true, `${sha}: diffOk`);
+    assert.equal(report.filesOk, true, `${sha}: filesOk`);
+    assert.deepEqual(report.problems, []);
+  }
 });
 
 test("writeManifest hash is stable across key order", (t) => {

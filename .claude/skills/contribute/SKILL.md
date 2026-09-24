@@ -32,10 +32,11 @@ Every commit carries a record of the session that produced it: who, with what to
 
 - **In Claude Code**, a session starts and records itself automatically: hooks append your prompts and tool calls as you work.
 - **Anywhere else** (another agent, or a human), run `pnpm provenance start "<intent>"` first, `pnpm provenance note "<text>"` for context, `pnpm provenance end` when done. `pnpm provenance status` shows the open session, entry count, chain head, and what is staged.
-- Run `status` before every commit. A commit with no open session is refused by the pre-commit hook, which names the command to run; `PROVENANCE_SKIP=1 git commit ...` bypasses it, and the commit then verifies as unrecorded instead of failing silently.
+- Run `status` before every commit; a commit with no open session is refused (`PROVENANCE_SKIP=1` bypasses it, verifying as unrecorded).
+- **Amends, rebases, and cherry-picks** carry a manifest forward as an increment, not the whole diff: treat a chain of amends like a chain of commits. `prepare-commit-msg` only annotates the pending record; it cannot rewrite what pre-commit already staged.
 - **Never paste secrets into a prompt.** Prompts are recorded locally, in full, in `.provenance/sessions/`, so the record stays honest. That file is never committed, but treat it as if someone might read it.
 - `pnpm provenance verify [range]` checks recent commits (default: ahead of `origin/main`, or the last 20): trailers present, manifest genuinely bound to that commit, file list matches, signature, transcript match. Merges are exempt (their own row). A failing or unrecorded row is the one to look at hardest.
-- **Attaching a transcript to a PR**: export `.provenance/sessions/<id>.jsonl` (redact by hand if needed) and state its head hash, so a reviewer can check it against the `Provenance-Head` trailer.
+- **Attaching a transcript to a PR**: export `.provenance/sessions/<id>.jsonl` (redact if needed) and state its head hash against `Provenance-Head`.
 
 ## When the pre-commit hook refuses
 

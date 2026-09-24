@@ -108,3 +108,10 @@ caught them. What it does buy: an honest contributor's record survives by
 default, a dishonest one has to actively work to produce a false record
 instead of simply omitting one, and every commit either carries a
 transcript-backed explanation or visibly does not.
+
+For an amended commit, the manifest attests the increment since the last
+recording, not the commit's whole diff from its parent: treat a chain of
+amends the way you would a chain of ordinary commits, not as one commit
+with one diff. Rebase and cherry-pick carry a commit's manifest forward
+unchanged, base and all; `prepare-commit-msg` only annotates the pending
+record for visibility, it cannot rewrite what pre-commit already staged.

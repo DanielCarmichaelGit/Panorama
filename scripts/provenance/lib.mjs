@@ -340,11 +340,14 @@ export function verifyCommit(root, sha) {
   // real parent, so precommit.mjs always records the diff relative to
   // whatever HEAD was at that moment ("the change introduced by this
   // specific recording"), not necessarily the commit's total diff from
-  // its real git parent. `base` is trusted only once proven, from git
-  // history itself, to be either sha's real parent or a sibling of sha
-  // (isValidDiffBase) -- an ordinary commit's base is always its real
-  // parent, so this changes nothing for the overwhelming majority of
-  // commits, and never lets a manifest claim an unrelated base.
+  // its real git parent. `base` is trusted as the diff comparison point
+  // only once proven, from git history itself, to be either sha's real
+  // parent or a sibling of sha (isValidDiffBase) -- an ordinary commit's
+  // base is always its real parent, so this changes nothing for the
+  // overwhelming majority of commits. A `base` that is neither (a
+  // rebased commit's manifest, carried forward unchanged, naming its
+  // pre-rebase parent) is not treated as fraud on its own: see the
+  // fallback below, right before the diff is computed.
   let manifestObj = null;
   let manifestOk = false;
   if (trailers.manifest) {
@@ -373,18 +376,19 @@ export function verifyCommit(root, sha) {
     }
   }
 
-  let diffBase;
-  if (manifestObj && manifestObj.base) {
-    if (isValidDiffBase(root, manifestObj.base, sha)) {
-      diffBase = manifestObj.base;
-    } else {
-      // Not fatal on its own (the diff below falls back to the real
-      // parent, same as an unrecorded commit), but a manifest claiming an
-      // unrelated base is itself suspicious and worth surfacing.
-      problems.push("manifest base is not sha's real parent or a sibling of sha");
-      manifestOk = false;
-    }
-  }
+  // Fix round 3: a rebase carries a commit's manifest forward unchanged
+  // (rebase never runs pre-commit at all, so nothing rewrites it), so its
+  // `base` ends up naming the PRE-rebase parent: neither the new real
+  // parent nor a sibling of the rebased commit, since the rebased commit
+  // is a different object replayed onto a different parent entirely. That
+  // alone is not a problem: a clean rebase replays the same tree delta,
+  // so the diff against the real parent usually still matches what the
+  // manifest recorded. Fall back to the real parent silently when `base`
+  // is not structurally valid, and only treat it as a problem below (via
+  // the ordinary diffBoundOk check) when the real-parent diff ALSO fails
+  // to match.
+  const baseValid = manifestObj && manifestObj.base ? isValidDiffBase(root, manifestObj.base, sha) : null;
+  const diffBase = baseValid ? manifestObj.base : undefined;
   const { diff, files } = commitDiff(root, sha, diffBase);
   const diffHash = sha256(diff);
   let diffOk = false;
@@ -395,7 +399,16 @@ export function verifyCommit(root, sha) {
 
   if (manifestObj) {
     const diffBoundOk = manifestObj.diffHash === diffHash;
-    if (!diffBoundOk) problems.push("manifest diffHash does not match this commit's actual diff");
+    if (!diffBoundOk) {
+      if (manifestObj.base && baseValid === false) {
+        problems.push(
+          "manifest diffHash does not match the real parent's diff either, and its base is not sha's " +
+            "real parent or a sibling of sha (this commit may have been rebased onto a diverging change)"
+        );
+      } else {
+        problems.push("manifest diffHash does not match this commit's actual diff");
+      }
+    }
     manifestOk = manifestOk && diffBoundOk;
   }
 

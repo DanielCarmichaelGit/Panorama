@@ -5,6 +5,8 @@ describe("CreateProjectInput", () => {
   it("accepts an uppercase project key and rejects a lowercase one", () => {
     expect(CreateProjectInput.safeParse({ name: "Panorama", key: "PAN" }).success).toBe(true);
     expect(CreateProjectInput.safeParse({ name: "Panorama", key: "pan" }).success).toBe(false);
+    expect(CreateProjectInput.safeParse({ name: "Fire tower", key: "FIRE_TOWER" }).success).toBe(true);
+    expect(CreateProjectInput.safeParse({ name: "x", key: "A".repeat(33) }).success).toBe(false);
   });
 });
 
@@ -54,5 +56,12 @@ describe("DEFAULT_LANES", () => {
     expect(DEFAULT_LANES.find((l) => l.name === "Done")?.isDone).toBe(true);
     expect(DEFAULT_LANES.filter((l) => l.setsNeedsHuman)).toHaveLength(1);
     expect(DEFAULT_LANES.filter((l) => l.isDone)).toHaveLength(1);
+  });
+  it("gates Ready for Production on an eval score and Done on a human sign-off, others ungated", () => {
+    expect(DEFAULT_LANES.find((l) => l.name === "Ready for Production")?.evidenceRequirements).toEqual([{ typeId: "et_eval_score", count: 1 }]);
+    expect(DEFAULT_LANES.find((l) => l.name === "Done")?.evidenceRequirements).toEqual([{ typeId: "et_human_signoff", count: 1 }]);
+    for (const l of DEFAULT_LANES.filter((l) => l.name !== "Ready for Production" && l.name !== "Done")) {
+      expect(l.evidenceRequirements).toEqual([]);
+    }
   });
 });

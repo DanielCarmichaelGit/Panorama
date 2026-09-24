@@ -17,6 +17,9 @@ const ACTION_LABELS: Record<AgentAction, string> = {
   "ticket.update": "Edit tickets",
   "ticket.move": "Move tickets",
   "flag.set": "Set flags",
+  "comment.add": "Comment",
+  "evidence.add": "Attach evidence",
+  "attachment.add": "Upload files",
 };
 
 function when(iso: string | null): string {
@@ -107,7 +110,7 @@ function AgentRow({ agent, showLastSeen, error, children }: { agent: Actor; show
 }
 
 export function Agents() {
-  const agents = useAgents({ refetchInterval: 3000 });
+  const agents = useAgents();
   const revoke = useRevokeAgent();
   const [approving, setApproving] = useState<Actor | null>(null);
   const [working, setWorking] = useState<string | null>(null);

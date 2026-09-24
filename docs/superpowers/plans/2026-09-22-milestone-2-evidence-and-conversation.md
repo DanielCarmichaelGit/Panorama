@@ -728,3 +728,27 @@ describe("renderBlocks", () => {
 4. Attachments on an encrypted install are ciphertext on disk and are never served as `text/html`.
 5. Two browser tabs see each other's changes within a second without any polling.
 6. All previous acceptance items still hold, `pnpm test` and `pnpm e2e` pass, and the dash grep is 0.
+
+---
+
+### Task 12: Presence first: home reads the system, agents get cards, sidebar polish
+
+Added by the owner on 2026-09-24 after using the milestone 1 build: "it feels off that a ticket is the fundamental thing represented on first login". The job locked at design time is supervising agents; tickets are what agents produce. The first screen should read the state of the system.
+
+**Files:**
+- Modify: `packages/core/src/schemas.ts` (Actor gains `currentTicketId: string | null`), `packages/db/src/migrations.ts` (M4: `alter table actors add column current_ticket_id text references tickets(id)`), `packages/db/src/actors.ts` (`setCurrentTicket(db, actorId, ticketId | null)`, `toActor` reads it), `apps/server/src/routes/tickets.ts` (an agent that creates or moves a ticket becomes its assignee AND its `currentTicketId` is set to that ticket; when an agent moves a ticket into a done lane its `currentTicketId` clears; `GET /api/v1/agents` now also answers for any active actor with `read` and returns only `{id, name, kind, status, lastSeen, currentTicketId}` for agents, full rows for the human), `apps/server/src/bus.ts` (publish `agent.seen {id, lastSeen, currentTicketId}` from the auth hook at most once per agent per 30 s so presence updates live without polling), `apps/server/src/auth.ts` (call the throttle after `touchActor`)
+- Modify: `apps/web/src/views/Queue.tsx`, `apps/web/src/views/Agents.tsx`, `apps/web/src/views/Shell.tsx`, `apps/web/src/lib/hooks.ts`, `apps/web/src/lib/stream.ts` (`agent.seen` invalidates `["agents"]`), `apps/web/src/lib/iso.tsx` (`<AgentMark family size />`: one isometric block in a family, used as the agent avatar), `apps/web/src/styles/app.css`
+- Create: `apps/web/src/components/PresenceStrip.tsx`, `apps/web/src/components/AgentCard.tsx`
+- Test: `apps/server/src/presence.test.ts`, `apps/web/src/components/PresenceStrip.test.tsx`
+
+**Interfaces:**
+- `agentFamily(agentId: string): Family` (exported from `AgentCard.tsx`): a stable family from a hash of the id over `["sky","lilac","mint","coral","stone"]` excluding coral (coral is reserved for needs-human), so `["sky","lilac","mint","stone"]`.
+- `presenceLine(agents: Actor[], now: Date): string` (exported from `PresenceStrip.tsx`): "No agents connected yet" when none are active; otherwise "<n> agent(s) connected, <w> working" where working means `currentTicketId` set and `lastSeen` within 10 minutes; an agent seen more than 10 minutes ago counts as idle.
+- `<PresenceStrip agents tickets onOpen />`: a horizontal row of agent marks (AgentMark plus name in mono) each with a one-line status: "on FIRETOWER-3 for 12 min" (from the ticket's `updatedAt`), "idle", or "waiting for approval" in coral. Clicking a mark that is on a ticket opens that ticket. Renders under the Queue header on every state.
+- Queue empty states, by situation: no active agents: `h1` "No agents connected yet", sentence "Connect an agent and it will start reporting here.", primary button "Connect an agent" (navigates to `/agents`), ghost "New ticket". Agents connected, none flagged: `h1` "Nothing needs you", sentence from `presenceLine`, ghost "New ticket". The header line "<n> need you" stays when something is flagged.
+- Agents view: pending approvals first as coral cards with Approve and Reject; then a grid of `<AgentCard agent ticket />` (AgentMark 40px, name, status line as in the strip, last seen in mono, scopes summary "2 projects, 5 actions", Revoke ghost button); revoked agents collapsed under a disclosure "Revoked (n)". The empty state keeps the registration snippet but adds one sentence: "An agent registers itself with its own key. You approve it here before it can touch anything."
+- Sidebar polish: icons 20px regular; collapsed width 60px; in collapsed mode the active item is a 36px rounded square (`--r-input`) not a pill; Lock becomes an icon-only nav item with `title` and `aria-label` when collapsed; the collapse toggle is a 28px square ghost button pinned at the bottom edge with a `CaretLineLeft` or `CaretLineRight` icon; the project switcher in collapsed mode shows the first two letters of the key in mono inside a stone square.
+
+- [ ] **Step 1: Write the failing tests.** `presence.test.ts`: an approved agent creating a ticket gets `currentTicketId` set; moving it to Done clears it; `GET /api/v1/agents` as the agent returns 200 with only the public fields; the human's stream receives `agent.seen` after the agent's first request and not again within 30 s (use a controllable `now`). `PresenceStrip.test.tsx` (jsdom): `presenceLine` for none, one idle, two with one working; `agentFamily` is stable and never coral.
+- [ ] **Step 2: Run, confirm FAIL. Step 3: Implement. Step 4: Run** `pnpm test`, `pnpm --filter @panorama/web build`; check by hand at 1280 and 375 (collapsed and expanded sidebar, both Queue empty states, an agent card).
+- [ ] **Step 5: Commit** `feat: presence-first home, agent cards, sidebar polish`

@@ -1,18 +1,22 @@
 import { existsSync } from "node:fs";
 import Fastify from "fastify";
+import fastifyMultipart from "@fastify/multipart";
 import fastifyStatic from "@fastify/static";
 import { migrate, openDatabase, readConfig } from "@panorama/db";
 import { installAuth } from "./auth";
+import { EventBus, installStream } from "./bus";
 import type { Ctx } from "./context";
 import { installErrorHandler, notFoundBody } from "./errors";
 import { dbFile, lifecycleRoutes } from "./routes/lifecycle";
 import { agentRoutes } from "./routes/agents";
+import { attachmentRoutes } from "./routes/attachments";
 import { chainRoutes } from "./routes/chain";
 import { projectRoutes } from "./routes/projects";
+import { threadRoutes } from "./routes/thread";
 import { ticketRoutes } from "./routes/tickets";
 
 export async function buildApp(opts: { dataDir: string; now?: () => Date; webDist?: string; allowFastKdf?: boolean }): Promise<ReturnType<typeof Fastify> & { ctx: Ctx }> {
-  const app = Fastify({ logger: false, bodyLimit: 1_048_576 });
+  const app = Fastify({ logger: false, bodyLimit: 1_048_576, forceCloseConnections: true });
   const now = opts.now ?? (() => new Date());
   const ctx: Ctx = {
     dataDir: opts.dataDir,
@@ -22,6 +26,8 @@ export async function buildApp(opts: { dataDir: string; now?: () => Date; webDis
     nonces: new Map(),
     startedAt: now().getTime(),
     allowFastKdf: opts.allowFastKdf === true,
+    fileKey: null,
+    bus: new EventBus(),
   };
   if (ctx.config && !ctx.config.encryption) {
     ctx.db = openDatabase(dbFile(ctx), null);
@@ -39,6 +45,8 @@ export async function buildApp(opts: { dataDir: string; now?: () => Date; webDis
   });
   installErrorHandler(app);
 
+  await app.register(fastifyMultipart, { limits: { fileSize: 50 * 1024 * 1024, files: 1, fields: 5 } });
+
   const OPEN = new Set(["/api/v1/health", "/api/v1/status", "/api/v1/setup", "/api/v1/unlock"]);
   app.addHook("onRequest", async (req, reply) => {
     const path = req.url.split("?")[0];
@@ -52,7 +60,10 @@ export async function buildApp(opts: { dataDir: string; now?: () => Date; webDis
   agentRoutes(app, ctx);
   projectRoutes(app, ctx);
   ticketRoutes(app, ctx);
+  threadRoutes(app, ctx);
   chainRoutes(app, ctx);
+  attachmentRoutes(app, ctx);
+  installStream(app, ctx);
 
   if (opts.webDist && existsSync(opts.webDist)) {
     await app.register(fastifyStatic, { root: opts.webDist });

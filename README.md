@@ -72,11 +72,47 @@ timestamp
 nonce
 ```
 
-`scripts/demo-agent.ts` is a full working example: it generates a key, registers, waits for approval, creates a ticket, and moves it through lanes. Run it with:
+`sha256(body)` is the hash of the exact bytes sent as the request body. A `GET` request and every multipart upload (see Attachments below) carry no JSON body, so they are signed the same way: over the hash of the empty string, not over the multipart form. For an attachment upload, the `ticketId` field must be the first field in the form, before the file: the server reads it off the stream before it starts buffering the file's bytes, so a `ticketId` sent after the file is never seen.
+
+`scripts/demo-agent.ts` is a full working example. It generates a key, registers, waits for approval, creates a ticket, and moves it into In Progress. It then tries to move the ticket straight to Ready for Production, which the server refuses because the lane requires an eval score; the script prints the refusal, posts a comment, attaches a test run and an eval score as evidence, and moves the ticket into Ready for Production again, this time successfully. Run it with:
 
 ```
 pnpm demo:agent
 ```
+
+## Comments and threads
+
+Every ticket has a thread: comments, evidence, and attachments, ordered by when they happened. A comment is written as markdown in the ticket panel's composer, which supports the usual shorthand (`#`/`##`/`###` headings, `-` and `1.` lists, `>` quotes, `---` rules, backtick code, and `**bold**`) as you type, plus dropping or pasting an image or file straight into the editor, which uploads it and inserts an `attachment:id` reference at the cursor. Ctrl/Cmd+Enter posts the comment.
+
+```
+POST /api/v1/comments {"ticketId":"...","body":"...","attachmentIds":["..."]}
+```
+
+A comment's body is stored verbatim: there is no server side sanitisation, because a lossy rewrite would mangle plain markdown punctuation and an escaping one can be undone by the very engine that later decodes it. Rendering is where untrusted markup is made safe. The web client parses the body with `marked` and sanitises the result with DOMPurify before it ever reaches the DOM; a raw HTML block or a fenced ```` ```html ```` block is sanitised the same way and then rendered inside a sandboxed iframe with its own restrictive Content-Security-Policy, isolated from the rest of the page. Attachments are never served with a `text/html` content type, so an uploaded `.html` file cannot execute as a page of its own; it only ever renders inside that same sandboxed frame.
+
+## Evidence and gates
+
+An evidence type describes one kind of proof (a test run, an eval score, a linked pull request, a screenshot, a file, a human sign-off, or a free form custom result) and how it is scored pass, fail, or info. A lane can require a count of one or more evidence types before a ticket may enter it; the ticket panel and the Board both show the lanes a ticket cannot yet enter, and why.
+
+```
+POST /api/v1/evidence {"ticketId":"...","typeId":"et_eval_score","payload":{"score":0.94}}
+```
+
+Moving a ticket into a lane it does not yet qualify for is refused with `422`:
+
+```json
+{"error":{"code":"gate","message":"Ready for Production needs evidence first","details":{"laneId":"...","missing":[{"typeId":"et_eval_score","name":"Eval score","need":1,"have":0}]}}}
+```
+
+This refusal is enforced on the server, so it holds no matter how the move is attempted: a signed REST call from an agent, a drag on the Board, or the lane select in the ticket panel's keyboard shortcut. Some evidence types are human only, most notably a sign-off: an agent that tries to attach one gets `403`, even with every other scope granted.
+
+## Attachments
+
+A file is uploaded as a signed multipart `POST` to `/api/v1/attachments`, with the `ticketId` field first and the `file` field second. On an encrypted install, the bytes are written to disk as ciphertext, keyed the same way the database is. An attachment is served back only under its own content type, never as `text/html`, so an uploaded page cannot run as one; see Comments and threads above for how an `.html` attachment or a raw HTML block in a comment is rendered instead.
+
+## Live updates
+
+Once unlocked, the browser holds one signed `GET /api/v1/stream` connection open (Server-Sent Events) and reconnects with backoff if it drops. Every ticket, comment, evidence, attachment, agent, lane, and project change is published there as it happens, so two browser tabs, or a human's browser and a script polling nothing at all, see each other's changes within about a second, with no polling.
 
 ## Tests
 
@@ -90,11 +126,17 @@ runs the unit and integration test suite with Vitest.
 pnpm e2e
 ```
 
-runs the Playwright end to end test, which builds the app, starts a server on a temporary data directory, and drives a full first run: setup, first project, agent registration and approval, a ticket flagged for a human, clearing that flag, and a locked reload that rejects the wrong password and accepts the right one.
+runs the Playwright end to end suite: two specs, each against its own server on its own port and its own temporary data directory, so they run without sharing state. The first drives a full first run: setup, first project, agent registration and approval, the demo agent's gated move into Ready for Production, a ticket flagged for a human, clearing that flag and seeing the demo agent's comment and evidence in the thread, and a locked reload that rejects the wrong password and accepts the right one. The second drives the gate flow directly in the browser: a lane select refusing a move with the missing evidence named, adding that evidence through the dialog, the move succeeding, the ticket showing up under the right column on the Board, and a markdown heading posted through the composer rendering in the thread.
 
 ## Milestone status
 
-Panorama is at milestone 1 of 5: the foundation (monorepo, database, setup and unlock, human key, agent registration and approval, signing, hash chain, projects, lanes, tickets, REST, app shell with sidebar, Queue, ticket panel, lock screen). See `docs/superpowers/specs` for the full design and `todo/` for what is planned next.
+Panorama is at milestone 2 of 5: evidence and conversation (evidence types and gated lanes, comments and threads, attachments, the live SSE stream, the Board, the demo agent, end to end coverage of the gate flow) on top of milestone 1's foundation (monorepo, database, setup and unlock, human key, agent registration and approval, signing, hash chain, projects, lanes, tickets, REST, app shell with sidebar, Queue, ticket panel, lock screen). See `docs/superpowers/specs` for the full design and `todo/` for what is planned next.
+
+Board virtualisation for very long lanes is planned for milestone 4; today every card in a lane renders at once.
+
+## Licences
+
+Every dependency Panorama ships is under a permissive licence: MIT, ISC, BSD, Apache 2.0, MPL 2.0, or OFL. The one exception is `argparse`, a transitive dependency of the markdown editor, which is under the Python Software Foundation licence; that licence is also permissive and imposes no obligation beyond keeping its own notice.
 
 ## License
 

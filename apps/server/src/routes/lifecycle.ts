@@ -4,6 +4,7 @@ import type { FastifyInstance } from "fastify";
 import { ARGON, SetupInput, UnlockInput, verifyRequest } from "@panorama/core";
 import { appendEvent, insertActor, migrate, openDatabase, writeConfig } from "@panorama/db";
 import { getDb, requireCan } from "../auth";
+import { record } from "../bus";
 import type { Ctx } from "../context";
 import { HttpError } from "../errors";
 
@@ -41,12 +42,14 @@ export function lifecycleRoutes(app: FastifyInstance, ctx: Ctx): void {
       const now = ctx.now().toISOString();
       db.transaction(() => {
         insertActor(db, { id: "human", kind: "human", name: "Owner", publicKey: input.publicKey, scopes: null, status: "active", lastSeen: now, createdAt: now });
-        appendEvent(db, { actorId: "human", type: "system.setup", payload: { encryption: input.encryption }, signature: String(req.headers["x-pan-sig"]), now });
+        const ev = appendEvent(db, { actorId: "human", type: "system.setup", payload: { encryption: input.encryption }, signature: String(req.headers["x-pan-sig"]), now });
+        record(req, ev);
       })();
       const config = { kdfSalt: input.kdfSalt, argon: input.argon, humanPublicKey: input.publicKey, encryption: input.encryption };
       writeConfig(ctx.dataDir, config);
       ctx.config = config;
       ctx.db = db;
+      ctx.fileKey = input.encryption ? Buffer.from(input.dbKey as string, "hex") : null;
       return { ok: true };
     } catch (e) {
       // Nothing here existed before this request, so take the whole half-built database with us.
@@ -59,6 +62,7 @@ export function lifecycleRoutes(app: FastifyInstance, ctx: Ctx): void {
   app.post("/api/v1/unlock", async (req) => {
     if (!ctx.config) throw new HttpError(409, "not_setup", "Panorama is not set up");
     if (ctx.db) return { ok: true };
+    const encryption = ctx.config.encryption;
     const { dbKey } = UnlockInput.parse(req.body);
     try {
       ctx.db = openDatabase(dbFile(ctx), dbKey);
@@ -67,14 +71,22 @@ export function lifecycleRoutes(app: FastifyInstance, ctx: Ctx): void {
       throw new HttpError(500, "open_failed", "The database is there but could not be opened", { reason: (e as Error).message });
     }
     migrate(ctx.db);
+    ctx.fileKey = encryption ? Buffer.from(dbKey, "hex") : null;
     return { ok: true };
   });
 
   app.post("/api/v1/lock", async (req) => {
     requireCan(req, "lock");
     if (!ctx.config?.encryption) throw new HttpError(409, "not_encrypted", "Locking needs encryption to be on");
-    appendEvent(getDb(ctx), { actorId: req.actor.id, type: "system.locked", payload: {}, signature: req.sig, now: ctx.now().toISOString() });
+    const ev = appendEvent(getDb(ctx), { actorId: req.actor.id, type: "system.locked", payload: {}, signature: req.sig, now: ctx.now().toISOString() });
+    // Recorded here but never reaches any stream: closeAll() below ends every open stream
+    // response before this route returns, and the onResponse hook that would publish it only
+    // fires after that, on the (now closed) response. That is intended: there is nothing left
+    // listening once the database is about to close.
+    record(req, ev);
+    ctx.bus.closeAll();
     ctx.db!.close(); ctx.db = null;
+    ctx.fileKey = null;
     return { ok: true };
   });
 }

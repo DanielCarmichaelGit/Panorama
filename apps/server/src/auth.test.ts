@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ARGON_FAST, deriveKeys, signRequest } from "@panorama/core";
 import { buildApp } from "./app";
-import { setupApp } from "./test/helpers";
+import { multipart, setupApp } from "./test/helpers";
 
 const URL = "/api/v1/me";
 
@@ -44,5 +44,21 @@ describe("request freshness", () => {
     const headers = await signRequest(ak.seed, id, "GET", URL, "");
     expect((await s.app.inject({ method: "GET", url: URL, headers })).json().error.code).toBe("pending");
     expect(s.app.ctx.nonces.size).toBe(before);
+  });
+
+  it("verifies a multipart upload against the empty string body, not its bytes", async () => {
+    const s = await setupApp(false);
+    const { project } = (await s.human("POST", "/api/v1/projects", { name: "P", key: "PP" })).json;
+    const t = (await s.human("POST", "/api/v1/tickets", { projectId: project.id, title: "x" })).json;
+    const body = multipart({ ticketId: t.id }, { name: "a.txt", mime: "text/plain", bytes: Buffer.from("hi") });
+
+    const okHeaders = { ...(await signRequest(s.keys.seed, "human", "POST", "/api/v1/attachments", "")), "content-type": body.contentType };
+    const ok = await s.app.inject({ method: "POST", url: "/api/v1/attachments", payload: body.body, headers: okHeaders });
+    expect(ok.statusCode).toBe(200);
+
+    const badHeaders = { ...(await signRequest(s.keys.seed, "human", "POST", "/api/v1/attachments", body.body.toString("utf8"))), "content-type": body.contentType };
+    const bad = await s.app.inject({ method: "POST", url: "/api/v1/attachments", payload: body.body, headers: badHeaders });
+    expect(bad.statusCode).toBe(401);
+    expect(bad.json().error.code).toBe("bad_signature");
   });
 });

@@ -31,5 +31,16 @@ const lane = (name: string) => lanes.find((l: any) => l.name === name).id;
 const t = (await call("POST", "/api/v1/tickets", { projectId: project.id, title: "Demo: wire outbox retries", metadata: { tokens: 18422 } })).json;
 console.log(`Created ${t.key}`);
 await call("POST", `/api/v1/tickets/${t.id}/move`, { laneId: lane("In Progress") });
+
+const refused = await call("POST", `/api/v1/tickets/${t.id}/move`, { laneId: lane("Ready for Production") });
+if (refused.status !== 422) throw new Error(`expected a gate refusal, got ${refused.status}: ${JSON.stringify(refused.json)}`);
+for (const m of refused.json.error.details.missing) {
+  console.log(`Gate refused: ${m.name}, ${m.have} of ${m.need}`);
+}
+
+await call("POST", "/api/v1/comments", { ticketId: t.id, body: "## Test run\n\nAll 212 tests pass." });
+await call("POST", "/api/v1/evidence", { ticketId: t.id, typeId: "et_test_run", payload: { passed: 212, failed: 0 } });
+await call("POST", "/api/v1/evidence", { ticketId: t.id, typeId: "et_eval_score", payload: { score: 0.94 } });
+
 const done = (await call("POST", `/api/v1/tickets/${t.id}/move`, { laneId: lane("Ready for Production") })).json;
 console.log(`Moved ${t.key} to Ready for Production. Flags: ${done.flags.join(", ")}`);

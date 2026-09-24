@@ -20,7 +20,7 @@ const LANES: [number, [Family, number][]][] = [[0, [["sky", 1], ["sky", 1]]], [5
 export function LaneScene({ settle = false }: { settle?: boolean }) {
   let i = 0;
   return (
-    <svg viewBox="-150 -40 440 250" width="100%" style={{ maxHeight: 240 }} role="img" aria-label="Lanes drawn as platforms with tickets as blocks">
+    <svg viewBox="-140 -22 415 262" className="iso-scene" role="img" aria-label="Lanes drawn as platforms with tickets as blocks">
       {LANES.map(([x, blocks]) => (
         <g key={x}>
           <IsoBox x={x} y={0} z={0} w={4} d={7} h={0.4} family="stone" />

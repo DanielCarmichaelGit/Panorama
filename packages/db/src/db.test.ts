@@ -71,6 +71,7 @@ describe("projects and tickets", () => {
     const { project, lanes } = d.createProject(db, { name: "Panorama", key: "PAN" }, NOW);
     expect(lanes.map((l) => l.name)).toEqual(["Backlog", "Ready", "In Progress", "Eval", "Ready for Production", "Done"]);
     expect(lanes[4].setsNeedsHuman).toBe(true);
+    expect(lanes[4].evidenceRequirements).toEqual([{ typeId: "et_eval_score", count: 1 }]);
     expect(d.listLanes(db, project.id)).toHaveLength(6);
   });
   it("numbers tickets per project, defaults to the first lane, and flags on entry to a needs-human lane", () => {

@@ -1,4 +1,5 @@
 import type { Config, DB } from "@panorama/db";
+import type { EventBus } from "./bus";
 
 export interface Ctx {
   dataDir: string;
@@ -11,4 +12,9 @@ export interface Ctx {
   startedAt: number;
   /** Set only for tests and the end to end run, where a real Argon2 pass is too slow. */
   allowFastKdf: boolean;
+  /** The database key, ready to encrypt attachment files. Set at setup/unlock when encryption
+   *  is on, cleared at lock, and always null when encryption is off. */
+  fileKey: Buffer | null;
+  /** Fans out committed events to open server-sent-event streams. */
+  bus: EventBus;
 }

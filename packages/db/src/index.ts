@@ -5,3 +5,4 @@ export * from "./events";
 export * from "./actors";
 export * from "./projects";
 export * from "./tickets";
+export * from "./thread";

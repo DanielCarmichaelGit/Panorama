@@ -4,13 +4,9 @@ import { CaretDown, CaretRight } from "@phosphor-icons/react";
 import type { Lane, Project, Ticket } from "@panorama/core";
 import { LaneScene } from "../lib/iso";
 import { useAgents, useQueue, useTickets } from "../lib/hooks";
+import { isTypingTarget } from "../lib/keys";
 import { TicketRow } from "../components/TicketRow";
 import { NewTicket } from "../components/NewTicket";
-
-function isTypingTarget(): boolean {
-  const el = document.activeElement as HTMLElement | null;
-  return !!el && (["INPUT", "TEXTAREA", "SELECT"].includes(el.tagName) || el.isContentEditable);
-}
 
 export function Queue() {
   const { project, lanes } = useOutletContext<{ project: Project; lanes: Lane[] }>();

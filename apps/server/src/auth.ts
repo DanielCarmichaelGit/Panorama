@@ -34,7 +34,12 @@ export function installAuth(app: FastifyInstance, ctx: Ctx, openPaths: Set<strin
     const actor = getActor(db, String(req.headers["x-pan-actor"] ?? ""));
     if (!actor) throw new HttpError(401, "unknown_actor", "Unknown actor");
     const nowMs = ctx.now().getTime();
-    const ok = await verifyRequest(actor.publicKey, req.headers as any, req.method, req.url, (req as any).rawBody ?? "", nowMs);
+    // signRequest hashes a UTF-8 string, so a binary multipart body cannot be signed byte for
+    // byte. Those uploads sign the empty string instead: the actor, path, timestamp and nonce
+    // are still bound, just not the file bytes themselves.
+    const contentType = String(req.headers["content-type"] ?? "");
+    const signedBody = contentType.startsWith("multipart/") ? "" : (req as any).rawBody ?? "";
+    const ok = await verifyRequest(actor.publicKey, req.headers as any, req.method, req.url, signedBody, nowMs);
     if (!ok) throw new HttpError(401, "bad_signature", "Signature check failed");
 
     // The nonce cache is memory only, so a request captured before this process started

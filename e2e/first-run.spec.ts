@@ -32,6 +32,12 @@ test("first run, agent approval, clearing the queue", async ({ page }) => {
   await page.getByRole("button", { name: "Clear needs human" }).click();
   await expect(page.getByText("Nothing needs you")).toBeVisible();
 
+  if (!(await page.getByRole("dialog").isVisible().catch(() => false))) {
+    await row.click();
+  }
+  await expect(page.getByRole("heading", { name: "Test run" })).toBeVisible();
+  await expect(page.locator(".chip", { hasText: /^PASS/ })).toHaveCount(2);
+
   await page.reload();
   await expect(page.getByRole("heading", { name: "Unlock" })).toBeVisible();
   await page.getByLabel("Password", { exact: true }).fill("not-the-password-1");

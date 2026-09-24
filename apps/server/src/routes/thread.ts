@@ -38,7 +38,13 @@ export function threadRoutes(app: FastifyInstance, ctx: Ctx): void {
     if (!lane) throw new HttpError(404, "not_found", "No such lane");
     requireCan(req, "lane.edit", lane.projectId);
     const { requirements } = LaneRequirementsInput.parse(req.body);
-    for (const r of requirements) if (!getEvidenceType(db, r.typeId)) throw new HttpError(400, "validation", `No such evidence type: ${r.typeId}`);
+    // One count per type, or the gate would have two answers for the same requirement.
+    const seen = new Set<string>();
+    for (const r of requirements) {
+      if (!getEvidenceType(db, r.typeId)) throw new HttpError(400, "validation", `No such evidence type: ${r.typeId}`);
+      if (seen.has(r.typeId)) throw new HttpError(400, "validation", `That lane already requires ${getEvidenceType(db, r.typeId)!.name}`, { typeId: r.typeId });
+      seen.add(r.typeId);
+    }
     return db.transaction(() => {
       const out = setLaneRequirements(db, lane.id, requirements);
       log(db, req, "lane.requirements_set", { id: lane.id, projectId: lane.projectId, requirements });

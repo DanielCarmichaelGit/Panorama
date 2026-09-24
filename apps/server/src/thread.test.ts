@@ -67,4 +67,11 @@ describe("comments and lanes", () => {
     const types = listEvents(w.app.ctx.db!).map((e) => e.type);
     expect(types).toContain("lane.requirements_set"); expect(verifyChain(listEvents(w.app.ctx.db!)).ok).toBe(true);
   });
+  it("refuses lane requirements that name the same evidence type twice", async () => {
+    const w = await world(); const ready = w.lane("Ready");
+    const dup = await w.human("PUT", `/api/v1/lanes/${ready.id}/requirements`, { requirements: [{ typeId: "et_test_run", count: 1 }, { typeId: "et_test_run", count: 2 }] });
+    expect(dup.status).toBe(400);
+    expect(dup.json.error.code).toBe("validation");
+    expect((await w.human("GET", `/api/v1/projects/${w.project.id}/lanes`)).json.find((l: any) => l.id === ready.id).evidenceRequirements).toEqual([]);
+  });
 });

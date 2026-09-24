@@ -4,6 +4,21 @@ import { useSetLaneRequirements } from "../lib/hooks";
 import { useFocusTrap } from "../lib/useFocusTrap";
 
 /**
+ * One row per evidence type, in the order the rows were first given. Two rows can end up on the
+ * same type once a row's type is changed, and the server refuses that outright, so the larger of
+ * the two counts wins: it is the one that satisfies both rows.
+ */
+export function merge(rows: LaneRequirement[]): LaneRequirement[] {
+  const out: LaneRequirement[] = [];
+  for (const row of rows) {
+    const seen = out.find((r) => r.typeId === row.typeId);
+    if (seen) seen.count = Math.max(seen.count, row.count);
+    else out.push({ ...row });
+  }
+  return out;
+}
+
+/**
  * Human-signed dialog editing one lane's evidence requirements (`PUT
  * /api/v1/lanes/:id/requirements`). Opened from the Board's lane header.
  */
@@ -34,7 +49,7 @@ export function LaneRequirements({ lane, types, onClose }: { lane: Lane; types: 
   async function save(e: React.FormEvent) {
     e.preventDefault();
     try {
-      await setRequirements.mutateAsync({ id: lane.id, requirements: rows });
+      await setRequirements.mutateAsync({ id: lane.id, requirements: merge(rows) });
       onClose();
     } catch {
       // setRequirements.error renders below

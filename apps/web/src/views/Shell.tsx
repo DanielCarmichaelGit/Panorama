@@ -6,7 +6,7 @@ import type { Project } from "@panorama/core";
 import type { Status } from "../App";
 import { api } from "../lib/api";
 import { session } from "../lib/session";
-import { useLanes, useProjects } from "../lib/hooks";
+import { useLanes, useProjects, useStream } from "../lib/hooks";
 import { useFocusTrap } from "../lib/useFocusTrap";
 import { FirstProject } from "./FirstProject";
 import { TicketPanel } from "./TicketPanel";
@@ -72,6 +72,7 @@ function MenuSheet({ onClose, children }: { onClose: () => void; children: React
 
 export function Shell({ status, chainOk }: { status: Status; chainOk: boolean }) {
   const projects = useProjects();
+  const streamStatus = useStream();
   const [collapsed, setCollapsed] = useState(readCollapsed);
   const [projectOverride, setProjectOverride] = useState<string | null>(null);
   const [lockError, setLockError] = useState("");
@@ -165,6 +166,7 @@ export function Shell({ status, chainOk }: { status: Status; chainOk: boolean })
         </button>
         <div className="foot">
           <span className="mono muted">{chainOk ? "chain verified" : "chain broken"}</span>
+          <span className="mono muted">{streamStatus === "open" ? "live" : "reconnecting"}</span>
           {status.encryption && (
             <button type="button" className="btn ghost" onClick={handleLock}>
               <Lock size={16} weight="regular" aria-hidden="true" /> Lock
@@ -193,6 +195,7 @@ export function Shell({ status, chainOk }: { status: Status; chainOk: boolean })
         <MenuSheet onClose={closeMenu}>
           {current && <ProjectSwitcher list={list} current={current} onChange={(id) => { setProjectOverride(id); closeMenu(); }} />}
           <span className="mono muted">{chainOk ? "chain verified" : "chain broken"}</span>
+          <span className="mono muted">{streamStatus === "open" ? "live" : "reconnecting"}</span>
           {status.encryption && (
             <button type="button" className="btn ghost" onClick={handleLock}>
               <Lock size={16} weight="regular" aria-hidden="true" /> Lock

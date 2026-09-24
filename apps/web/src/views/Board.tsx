@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useOutletContext, useSearchParams } from "react-router-dom";
+import { useNavigate, useOutletContext, useSearchParams } from "react-router-dom";
 import { DndContext, DragOverlay, PointerSensor, useDroppable, useSensor, useSensors } from "@dnd-kit/core";
 import type { DragEndEvent, DragStartEvent } from "@dnd-kit/core";
 import type { Board as BoardType, EvidenceType, Lane, Project, Ticket } from "@panorama/core";
@@ -7,7 +7,6 @@ import { ApiError } from "../lib/api";
 import { useAgents, useBoard, useBoards, useEvidenceTypes, useGates, useMoveTicket } from "../lib/hooks";
 import { BoardCard, BoardCardContent } from "../components/BoardCard";
 import { laneOptionLabel, missingMessage } from "../components/GateList";
-import { LaneRequirements } from "../components/LaneRequirements";
 import { NewBoard } from "../components/NewBoard";
 import { NewTicket } from "../components/NewTicket";
 
@@ -100,10 +99,10 @@ export function Board() {
   const evidenceTypes = useEvidenceTypes().data ?? [];
   const move = useMoveTicket();
   const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
 
   const [activeId, setActiveId] = useState<string | null>(null);
   const [dropError, setDropError] = useState<DropError | null>(null);
-  const [reqLane, setReqLane] = useState<Lane | null>(null);
   const [showNewBoard, setShowNewBoard] = useState(false);
   const [showNewTicket, setShowNewTicket] = useState(false);
 
@@ -224,7 +223,7 @@ export function Board() {
                 busy={busy}
                 title={title}
                 error={dropError?.laneId === lane.id ? dropError.message : null}
-                onOpenRequirements={() => setReqLane(lane)}
+                onOpenRequirements={() => navigate("/settings?tab=lanes")}
               />
             );
           })}
@@ -239,7 +238,6 @@ export function Board() {
           )}
         </DragOverlay>
       </DndContext>
-      {reqLane && <LaneRequirements lane={reqLane} types={evidenceTypes} onClose={() => setReqLane(null)} />}
       {showNewBoard && <NewBoard projectId={project.id} onClose={closeNewBoard} />}
       {showNewTicket && <NewTicket projectId={project.id} boardId={selectedBoardId} returnTo="board" onClose={closeNewTicket} />}
     </div>

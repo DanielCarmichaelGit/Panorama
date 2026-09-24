@@ -1,6 +1,23 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { Actor, Attachment, Board, Comment, Evidence, EvidenceType, Family, Lane, LaneRequirement, Project, Scopes, Ticket } from "@panorama/core";
+import type {
+  Actor,
+  Attachment,
+  Board,
+  Comment,
+  Epic,
+  Evidence,
+  EvidenceType,
+  Family,
+  FieldDefinition,
+  FieldKind,
+  Lane,
+  LaneRequirement,
+  Project,
+  Scopes,
+  Tag,
+  Ticket,
+} from "@panorama/core";
 import { api } from "./api";
 import { session } from "./session";
 import { connectStream, invalidationsFor } from "./stream";
@@ -41,6 +58,23 @@ export const useBoard = (projectId: string | undefined) => useTickets(projectId)
 
 export const useEvidenceTypes = () =>
   useQuery({ queryKey: ["evidence-types"], queryFn: () => api<EvidenceType[]>("GET", "/api/v1/evidence-types"), staleTime: Infinity });
+
+export const useEpics = (projectId: string | undefined, includeArchived?: boolean) =>
+  useQuery({
+    queryKey: ["epics", projectId],
+    queryFn: () => api<Epic[]>("GET", `/api/v1/epics?projectId=${projectId}${includeArchived ? "&archived=true" : ""}`),
+    enabled: !!projectId,
+  });
+
+export const useTags = (projectId: string | undefined) =>
+  useQuery({ queryKey: ["tags", projectId], queryFn: () => api<Tag[]>("GET", `/api/v1/tags?projectId=${projectId}`), enabled: !!projectId });
+
+export const useFields = (projectId: string | undefined) =>
+  useQuery({
+    queryKey: ["fields", projectId],
+    queryFn: () => api<FieldDefinition[]>("GET", `/api/v1/fields?projectId=${projectId}`),
+    enabled: !!projectId,
+  });
 
 export const useThread = (ticketId: string | undefined) =>
   useQuery({ queryKey: ["thread", ticketId], queryFn: () => api<ThreadData>("GET", `/api/v1/tickets/${ticketId}/thread`), enabled: !!ticketId });
@@ -172,6 +206,98 @@ export const useSetLaneRequirements = () => {
       qc.invalidateQueries({ queryKey: ["lanes"] });
       qc.invalidateQueries({ queryKey: ["gates"] });
     },
+  });
+};
+
+/** Human only: creates an epic. Epics show as chips on tickets, so ticket and queue caches move too. */
+export const useCreateEpic = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { projectId: string; name: string; description?: string; family?: Family }) => api<Epic>("POST", "/api/v1/epics", v),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["epics"] });
+      qc.invalidateQueries({ queryKey: ["tickets"] });
+      qc.invalidateQueries({ queryKey: ["queue"] });
+    },
+  });
+};
+
+/** Human only: edits, reorders, or archives an epic. */
+export const useUpdateEpic = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: {
+      id: string;
+      patch: { name?: string; description?: string | null; family?: Family; position?: number; archived?: boolean };
+    }) => api<Epic>("PATCH", `/api/v1/epics/${v.id}`, v.patch),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["epics"] });
+      qc.invalidateQueries({ queryKey: ["tickets"] });
+      qc.invalidateQueries({ queryKey: ["queue"] });
+    },
+  });
+};
+
+/** Human only: creates a tag. Tags show as chips on tickets, so ticket and queue caches move too. */
+export const useCreateTag = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { projectId: string; name: string; family?: Family }) => api<Tag>("POST", "/api/v1/tags", v),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["tags"] });
+      qc.invalidateQueries({ queryKey: ["tickets"] });
+      qc.invalidateQueries({ queryKey: ["queue"] });
+    },
+  });
+};
+
+/** Human only: archives a tag. Values already on tickets stay, but it stops being offered. */
+export const useArchiveTag = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api<Tag>("POST", `/api/v1/tags/${id}/archive`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["tags"] });
+      qc.invalidateQueries({ queryKey: ["tickets"] });
+      qc.invalidateQueries({ queryKey: ["queue"] });
+    },
+  });
+};
+
+/** Human only: creates a custom ticket field definition. */
+export const useCreateField = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: {
+      projectId: string;
+      name: string;
+      key: string;
+      kind: FieldKind;
+      options?: { value: string; label: string }[];
+      required: boolean;
+    }) => api<FieldDefinition>("POST", "/api/v1/fields", v),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["fields"] }),
+  });
+};
+
+/** Human only: edits, reorders, or archives a field definition. */
+export const useUpdateField = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: {
+      id: string;
+      patch: { name?: string; options?: { value: string; label: string }[]; required?: boolean; position?: number; archived?: boolean };
+    }) => api<FieldDefinition>("PATCH", `/api/v1/fields/${v.id}`, v.patch),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["fields"] }),
+  });
+};
+
+/** Human only: archives a field definition. Values already stored stay, just hidden. */
+export const useArchiveField = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api<FieldDefinition>("POST", `/api/v1/fields/${id}/archive`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["fields"] }),
   });
 };
 

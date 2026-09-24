@@ -8,6 +8,7 @@ import { Agents } from "./views/Agents";
 import { Board } from "./views/Board";
 import { LockScreen } from "./views/LockScreen";
 import { Queue } from "./views/Queue";
+import { Settings } from "./views/Settings";
 import { Shell } from "./views/Shell";
 import type { ChainState } from "./views/unlock";
 
@@ -49,6 +50,7 @@ export function App() {
           <Route path="/" element={<Queue />} />
           <Route path="/board" element={<Board />} />
           <Route path="/agents" element={<Agents />} />
+          <Route path="/settings" element={<Settings />} />
           <Route path="/t/:id" element={<Queue />} />
           <Route path="/board/t/:id" element={<Board />} />
         </Route>

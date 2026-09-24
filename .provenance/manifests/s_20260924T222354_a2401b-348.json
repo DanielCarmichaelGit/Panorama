@@ -1,0 +1,31 @@
+{
+  "sessionId": "s_20260924T222354_a2401b",
+  "actor": "Daniel Carmichael",
+  "tool": "claude-code",
+  "intent": "unstated",
+  "head": "b158f30bb9af1cb8948c89b9ace42a26255ef8ea26766c9bb73c33748fd5fc8f",
+  "count": 348,
+  "diffHash": "b994afefbb833a881c09e55ba4778b49beb71a1da1d1319201b198d2526b45e3",
+  "files": [
+    "apps/web/src/App.tsx",
+    "apps/web/src/components/RequirementRows.tsx",
+    "apps/web/src/components/settings/EpicsTab.tsx",
+    "apps/web/src/components/settings/EvidenceTab.tsx",
+    "apps/web/src/components/settings/FieldsTab.test.tsx",
+    "apps/web/src/components/settings/FieldsTab.tsx",
+    "apps/web/src/components/settings/LanesTab.tsx",
+    "apps/web/src/components/settings/TagsTab.test.tsx",
+    "apps/web/src/components/settings/TagsTab.tsx",
+    "apps/web/src/lib/hooks.ts",
+    "apps/web/src/lib/reorder.test.ts",
+    "apps/web/src/lib/reorder.ts",
+    "apps/web/src/lib/stream.test.ts",
+    "apps/web/src/lib/stream.ts",
+    "apps/web/src/styles/app.css",
+    "apps/web/src/views/Board.tsx",
+    "apps/web/src/views/Settings.tsx",
+    "apps/web/src/views/Shell.tsx"
+  ],
+  "base": "261e861b0b115bc952c398981dbb25740a5e5094",
+  "ts": "2026-09-24T22:55:03.108Z"
+}

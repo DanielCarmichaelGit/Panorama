@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, NavLink, Outlet, useMatch, useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
-import { CaretLineLeft, CaretLineRight, Kanban, List, Lock, Robot, Tray } from "@phosphor-icons/react";
+import { CaretLineLeft, CaretLineRight, GearSix, Kanban, List, Lock, Robot, Tray } from "@phosphor-icons/react";
 import type { Project } from "@panorama/core";
 import type { Status } from "../App";
 import { api } from "../lib/api";
@@ -108,6 +108,7 @@ export function Shell({ status, chainOk }: { status: Status; chainOk: boolean })
         if (e.key === "q") { e.preventDefault(); navigate("/"); }
         else if (e.key === "b") { e.preventDefault(); navigate("/board"); }
         else if (e.key === "a") { e.preventDefault(); navigate("/agents"); }
+        else if (e.key === "s") { e.preventDefault(); navigate("/settings"); }
         return;
       }
       if (e.key === "g") { pendingG = true; timer = window.setTimeout(reset, 900); }
@@ -164,6 +165,10 @@ export function Shell({ status, chainOk }: { status: Status; chainOk: boolean })
           <Robot size={22} weight="regular" aria-hidden="true" />
           <span className="label">Agents</span>
         </NavLink>
+        <NavLink to="/settings" className="nav-item" aria-label="Settings" title="Settings">
+          <GearSix size={22} weight="regular" aria-hidden="true" />
+          <span className="label">Settings</span>
+        </NavLink>
         <button type="button" className="nav-item menu-item" onClick={() => setMenuOpen(true)} aria-haspopup="dialog" aria-expanded={menuOpen}>
           <List size={22} weight="regular" aria-hidden="true" />
           <span className="label">Menu</span>
@@ -199,6 +204,9 @@ export function Shell({ status, chainOk }: { status: Status; chainOk: boolean })
       {menuOpen && (
         <MenuSheet onClose={closeMenu}>
           {current && <ProjectSwitcher list={list} current={current} onChange={(id) => { setProjectOverride(id); closeMenu(); }} />}
+          <Link to="/settings" className="btn ghost" onClick={closeMenu}>
+            <GearSix size={16} weight="regular" aria-hidden="true" /> Settings
+          </Link>
           <span className="mono muted">{chainOk ? "chain verified" : "chain broken"}</span>
           <span className="mono muted">{streamStatus === "open" ? "live" : "reconnecting"}</span>
           {status.encryption && (

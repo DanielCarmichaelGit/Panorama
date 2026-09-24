@@ -122,5 +122,14 @@ export function invalidationsFor(type: string, data: any): unknown[][] {
   if (type.startsWith("board.")) {
     return [["boards", data.projectId]];
   }
+  if (type.startsWith("epic.")) {
+    return [["epics"]];
+  }
+  if (type.startsWith("tag.")) {
+    return [["tags"]];
+  }
+  if (type.startsWith("field.")) {
+    return [["fields"]];
+  }
   return [];
 }

@@ -96,4 +96,10 @@ describe("invalidationsFor", () => {
     expect(invalidationsFor("lane.created", {})).toEqual([["lanes"], ["projects"], ["gates"]]);
     expect(invalidationsFor("project.created", {})).toEqual([["lanes"], ["projects"], ["gates"]]);
   });
+
+  it("invalidates epics, tags, and fields on their own events", () => {
+    expect(invalidationsFor("epic.archived", {})).toEqual([["epics"]]);
+    expect(invalidationsFor("tag.created", {})).toEqual([["tags"]]);
+    expect(invalidationsFor("field.updated", {})).toEqual([["fields"]]);
+  });
 });

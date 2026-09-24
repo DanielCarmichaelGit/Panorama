@@ -72,7 +72,7 @@ export function NewTicket({
   const uploadedRef = useRef<UploadedAttachment[]>([]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const dialogRef = useFocusTrap<HTMLDivElement>(() => onClose());
+  const dialogRef = useFocusTrap<HTMLDivElement>(() => cancel());
 
   const effectiveLane = laneId || lanes[0]?.id || "";
 
@@ -87,6 +87,23 @@ export function NewTicket({
       have: 0,
     }));
   const busy = create.isPending || update.isPending || setFlag.isPending || addComment.isPending || !!busyStep;
+
+  const ticketPath = (ticket: Ticket) => (returnTo === "board" ? `/board/t/${ticket.id}` : `/t/${ticket.id}`);
+
+  /**
+   * Dismissing the dialog. If the ticket itself was already created and only a later step failed,
+   * it exists on the server and abandoning it here would leave it unfindable, so cancelling opens
+   * it instead and the panel says what did not save.
+   */
+  function cancel() {
+    const created = createdRef.current;
+    if (!created) {
+      onClose();
+      return;
+    }
+    navigate(`${ticketPath(created)}?notice=partial`);
+    onClose(created);
+  }
 
   function addFiles(newFiles: File[]) {
     setFiles((fs) => [...fs, ...newFiles.map((file) => ({ id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, file }))]);
@@ -154,7 +171,7 @@ export function NewTicket({
       }
 
       setBusyStep("");
-      navigate(returnTo === "board" ? `/board/t/${ticket.id}` : `/t/${ticket.id}`);
+      navigate(ticketPath(ticket));
       onClose(ticket);
     } catch (err) {
       setBusyStep("");
@@ -163,7 +180,7 @@ export function NewTicket({
   }
 
   return createPortal(
-    <div className="modal-back" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+    <div className="modal-back" onMouseDown={(e) => { if (e.target === e.currentTarget) cancel(); }}>
       <div
         className="modal card new-ticket-modal"
         role="dialog"
@@ -275,7 +292,7 @@ export function NewTicket({
           {busyStep && <p className="muted mono">{busyStep}</p>}
           {error && <p className="error" role="alert">{error}</p>}
           <div className="nt-footer">
-            <button type="button" className="btn ghost" onClick={() => onClose()}>Cancel</button>
+            <button type="button" className="btn ghost" onClick={cancel}>Cancel</button>
             <button type="submit" className="btn" disabled={!title.trim() || busy}>{busy ? "Creating" : "Create"}</button>
             <span className="mono muted nt-hint">Ctrl or Cmd plus Enter to create</span>
           </div>

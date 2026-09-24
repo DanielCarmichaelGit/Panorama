@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { X } from "@phosphor-icons/react";
 import { useAgents, useEvidenceTypes, useGates, useLanes, useMoveTicket, useSetFlag, useTicket, useUpdateTicket } from "../lib/hooks";
 import { AddEvidence } from "../components/AddEvidence";
@@ -17,7 +18,14 @@ function metaValue(v: unknown): string {
   return String(v);
 }
 
+/** What a `?notice=` on the ticket route means, in the panel's own words. */
+const NOTICES: Record<string, string> = {
+  partial: "Ticket created; some details did not save",
+};
+
 export function TicketPanel({ id, onClose }: { id: string; onClose: () => void }) {
+  const [searchParams] = useSearchParams();
+  const notice = NOTICES[searchParams.get("notice") ?? ""];
   const ticket = useTicket(id);
   const lanes = useLanes(ticket.data?.projectId);
   const agents = useAgents().data ?? [];
@@ -120,6 +128,7 @@ export function TicketPanel({ id, onClose }: { id: string; onClose: () => void }
           <X size={16} weight="regular" aria-hidden="true" />
         </button>
       </div>
+      {notice && <p className="error" role="alert">{notice}</p>}
       <input
         className="title-input"
         aria-label="Title"

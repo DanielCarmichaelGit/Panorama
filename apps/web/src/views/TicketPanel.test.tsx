@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Lane, Ticket } from "@panorama/core";
@@ -28,7 +29,7 @@ const ticket: Ticket = {
 const lanes = [lane({}), lane({ id: "l2", name: "Ready", position: 1 })];
 
 /** Renders the panel with the gates query held open until `resolveGates` is called. */
-function renderPanel() {
+function renderPanel(entry = "/t/t1") {
   let resolveGates!: (v: Record<string, unknown>) => void;
   const gates = new Promise<Record<string, unknown>>((resolve) => { resolveGates = resolve; });
   vi.mocked(api).mockImplementation((async (method: string, path: string) => {
@@ -44,7 +45,9 @@ function renderPanel() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   render(
     <QueryClientProvider client={client}>
-      <TicketPanel id="t1" onClose={() => {}} />
+      <MemoryRouter initialEntries={[entry]} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+        <TicketPanel id="t1" onClose={() => {}} />
+      </MemoryRouter>
     </QueryClientProvider>,
   );
   return { resolveGates };
@@ -71,5 +74,19 @@ describe("TicketPanel lane select", () => {
 
     resolveGates({ l1: [], l2: [{ typeId: "et_test_run", name: "Test run", need: 1, have: 0 }] });
     await waitFor(() => expect(option("Ready (needs Test run)").disabled).toBe(true));
+  });
+});
+
+describe("TicketPanel notice", () => {
+  it("says what did not save when the ticket arrives from a half-finished create", async () => {
+    renderPanel("/t/t1?notice=partial");
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toBe("Ticket created; some details did not save");
+  });
+
+  it("shows nothing when there is no notice", async () => {
+    renderPanel();
+    await screen.findByRole("option", { name: "Ready" });
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 });

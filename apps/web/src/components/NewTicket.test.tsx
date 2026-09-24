@@ -42,7 +42,12 @@ const agent = (over: Partial<Actor>): Actor => ({
 
 function LocationProbe() {
   const loc = useLocation();
-  return <div data-testid="location">{loc.pathname}</div>;
+  return (
+    <>
+      <div data-testid="location">{loc.pathname}</div>
+      <div data-testid="search">{loc.search}</div>
+    </>
+  );
 }
 
 function editor(): any {
@@ -259,6 +264,47 @@ describe("NewTicket", () => {
       body: "Both files",
       attachmentIds: ["att-a.txt", "att-b.txt"],
     });
+  });
+
+  it("keeps a ticket whose later steps failed and opens it on Cancel, with a notice", async () => {
+    const onClose = vi.fn();
+    const apiImpl = async (method: string, path: string, body?: unknown) => {
+      if (method === "GET" && path === "/api/v1/projects/p1/boards") return [board({})];
+      if (method === "GET" && path === "/api/v1/projects/p1/lanes") return [lane({})];
+      if (method === "GET" && path === "/api/v1/agents") return [];
+      if (method === "GET" && path === "/api/v1/evidence-types") return [signoffType];
+      if (method === "POST" && path === "/api/v1/tickets") {
+        return { id: "t1", projectId: "p1", boardId: "b1", key: "PAN-1", title: (body as any).title, laneId: "l1", number: 1, position: 1, flags: [], assigneeId: null, startDate: null, dueDate: null, metadata: {}, archived: false, createdAt: "", updatedAt: "" };
+      }
+      throw new Error(`unexpected ${method} ${path}`);
+    };
+    vi.mocked(uploadFile).mockRejectedValue(new Error("network blip"));
+
+    renderDialog({ boards: [board({})], agents: [], apiImpl, onClose });
+    await screen.findByRole("dialog", { name: "New ticket" });
+
+    fireEvent.change(screen.getByLabelText("Title"), { target: { value: "Ship it" } });
+    const fileInput = document.getElementById("nt-file-input") as HTMLInputElement;
+    await act(async () => {
+      fireEvent.change(fileInput, { target: { files: [new File(["a"], "a.txt", { type: "text/plain" })] } });
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create" }));
+    await screen.findByRole("alert");
+
+    // The ticket exists on the server; cancelling must open it rather than orphan it.
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.getByTestId("location").textContent).toBe("/t/t1"));
+    expect(screen.getByTestId("search").textContent).toBe("?notice=partial");
+    expect(onClose).toHaveBeenCalledWith(expect.objectContaining({ id: "t1" }));
+  });
+
+  it("just closes on Cancel when no ticket was created", async () => {
+    const onClose = vi.fn();
+    renderDialog({ onClose });
+    await screen.findByRole("dialog", { name: "New ticket" });
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.getByTestId("location").textContent).toBe("/");
+    expect(onClose).toHaveBeenCalledWith();
   });
 
   it("saves assignee, dates, and needs human via PATCH and the flag endpoint before posting", async () => {

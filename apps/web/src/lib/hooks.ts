@@ -206,12 +206,20 @@ export const useStream = (): "open" | "closed" => {
       if (controllerRef.current) return;
       const controller = new AbortController();
       controllerRef.current = controller;
+      // Events that happened while the connection was down never arrived, so the caches are
+      // stale by an unknown amount. On every reopen after a drop, refetch everything rather
+      // than guessing which keys moved on.
+      let dropped = false;
       connectStream({
         signal: controller.signal,
         onEvent: (e) => {
           for (const queryKey of invalidationsFor(e.type, e.data)) qc.invalidateQueries({ queryKey });
         },
-        onStatus: setStatus,
+        onStatus: (s) => {
+          if (s === "closed") dropped = true;
+          else if (dropped) { dropped = false; qc.invalidateQueries(); }
+          setStatus(s);
+        },
       });
     }
     function stop() {

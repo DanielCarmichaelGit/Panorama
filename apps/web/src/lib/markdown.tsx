@@ -27,22 +27,56 @@ function altOf(imgTag: string): string {
   return m ? m[1] : "";
 }
 
-const IMG_ATTACHMENT_RE = /<img\b[^>]*\bsrc="attachment:([^"]*)"[^>]*>/g;
-const A_ATTACHMENT_RE = /<a\b[^>]*\bhref="attachment:([^"]*)"[^>]*>([\s\S]*?)<\/a>/g;
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+
+function attachmentIdOf(href: string): string | null {
+  return href.startsWith("attachment:") ? href.slice("attachment:".length) : null;
+}
 
 /**
- * Downgrades any `attachment:` image or link whose id fails `isValidAttachmentId` (server ids
- * are `[A-Za-z0-9-]{1,64}`; anything else, e.g. `../secret?x=1`, is a crafted reference, not a
- * real attachment) into plain text: an `<img>` becomes its alt text, an `<a>` becomes its inner
- * text. This runs after DOMPurify, which only cares that the URL scheme is `attachment:`, not
- * about the shape of what follows it. A bad id must never survive as a real `<img>`/`<a>`
- * element, because those are exactly what AttachmentImage/AttachmentLink and useAttachmentUrl's
- * fetch below would otherwise be handed.
+ * Walks the marked token tree (recursing into every nested `.tokens` array, a list's `.items`,
+ * and a table's `.header`/`.rows` cells) and, for every image or link token whose href is an
+ * `attachment:` reference with an id that fails `isValidAttachmentId`, turns that token into a
+ * plain text token holding its own raw markdown source, HTML-escaped.
+ *
+ * This is deliberately a token-tree transform, not a string transform: it runs on the parsed
+ * tokens *before* marked.parser or DOMPurify ever see any HTML, so there is exactly one place
+ * later that turns markup into a string (marked.parser) and exactly one place that sanitises
+ * that string (DOMPurify, in sanitizeRich below), each running once over the whole thing. An
+ * earlier version of this function ran as a regex pass on DOMPurify's own *output* string,
+ * splicing a captured `alt=""` attribute value back in as if it were trusted markup; because
+ * DOMPurify had already run, that spliced text never got sanitised at all, and a crafted alt
+ * text like `<img src=1 onerror=alert(1) data-x=` came back out as a live, scriptable element
+ * once the final string was set via dangerouslySetInnerHTML. Never do that again: transforming
+ * a sanitised HTML *string* can always reintroduce exactly the markup DOMPurify just removed.
  */
-function neutralizeInvalidAttachmentRefs(html: string): string {
-  return html
-    .replace(IMG_ATTACHMENT_RE, (whole, id: string) => (isValidAttachmentId(id) ? whole : altOf(whole)))
-    .replace(A_ATTACHMENT_RE, (whole, id: string, inner: string) => (isValidAttachmentId(id) ? whole : inner));
+function neutralizeInvalidAttachmentTokens(tokens: Token[] | undefined): void {
+  if (!tokens) return;
+  for (const token of tokens) {
+    const t = token as Record<string, unknown>;
+    if ((t.type === "image" || t.type === "link") && typeof t.href === "string") {
+      const id = attachmentIdOf(t.href);
+      if (id !== null && !isValidAttachmentId(id)) {
+        const raw = t.raw as string;
+        t.type = "text";
+        t.text = escapeHtml(raw);
+        delete t.tokens;
+        delete t.href;
+        delete t.title;
+        continue;
+      }
+    }
+    neutralizeInvalidAttachmentTokens(t.tokens as Token[] | undefined);
+    if (t.type === "list") neutralizeInvalidAttachmentTokens(t.items as Token[] | undefined);
+    if (t.type === "table") {
+      for (const cell of (t.header as { tokens: Token[] }[] | undefined) ?? []) neutralizeInvalidAttachmentTokens(cell.tokens);
+      for (const row of (t.rows as { tokens: Token[] }[][] | undefined) ?? []) {
+        for (const cell of row) neutralizeInvalidAttachmentTokens(cell.tokens);
+      }
+    }
+  }
 }
 
 /**
@@ -50,17 +84,16 @@ function neutralizeInvalidAttachmentRefs(html: string): string {
  * Comment bodies are stored verbatim on the server (no server-side sanitisation), so this is
  * the only sanitiser standing between a comment and the DOM: styles, iframes and script-bearing
  * tags are stripped outright, inline style attributes are dropped, and only a safe set of URL
- * schemes survive on links and images. `attachment:` ids are additionally restricted to the
- * server's id shape, so a crafted id can never reach a fetch URL or an href.
+ * schemes survive on links and images. `attachment:` ids are restricted to the server's id shape
+ * separately, at the token level (see neutralizeInvalidAttachmentTokens), before this ever runs.
  */
 function sanitizeRich(html: string): string {
-  const clean = purify().sanitize(html, {
+  return purify().sanitize(html, {
     USE_PROFILES: { html: true },
     FORBID_TAGS: ["style", "iframe", "object", "embed", "form", "input", "script"],
     FORBID_ATTR: ["style"],
     ALLOWED_URI_REGEXP,
   });
-  return neutralizeInvalidAttachmentRefs(clean);
 }
 
 /**
@@ -93,6 +126,10 @@ function rawHtmlOf(t: Token): string {
  */
 export function renderBlocks(md: string): Block[] {
   const tokensList = marked.lexer(md, { gfm: true });
+  // Downgrade any attachment: image/link with a bad id to plain text before anything below
+  // turns tokens into an HTML string. See neutralizeInvalidAttachmentTokens for why this must
+  // happen at the token level rather than as a post-sanitise string transform.
+  neutralizeInvalidAttachmentTokens(tokensList);
   const blocks: Block[] = [];
   let group: Token[] = [];
 

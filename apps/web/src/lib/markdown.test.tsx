@@ -55,5 +55,21 @@ describe("renderBlocks", () => {
     expect(b.html).not.toContain("<a>");
     expect(b.html).toContain("shot");
     expect(b.html).toContain("f");
+
+    // Regression: a bad id must be neutralised before marked.parser ever turns it into HTML, not
+    // by editing DOMPurify's output afterward. An earlier version of this downgrade ran as a
+    // regex pass over the *sanitised* html string, splicing a captured alt="" attribute value
+    // back in unescaped; because that ran after DOMPurify, the spliced text was never sanitised,
+    // and this exact alt text reparsed into a live, scriptable <img onerror> once set through
+    // dangerouslySetInnerHTML. The fix works at the marked token level instead, so DOMPurify
+    // still gets exactly one pass over the final string, alt text included.
+    const [poc] = renderBlocks("![<img src=1 onerror=alert(1) data-x=](attachment:../secret)");
+    expect(poc.kind).toBe("rich");
+    // "onerror" as visible, escaped text (part of the author's literal alt text, now displayed
+    // as ordinary text) is fine and expected; what must never exist is a DOM element carrying a
+    // live onerror attribute, which is what these two DOM-level checks confirm.
+    const parsed = new DOMParser().parseFromString(poc.html, "text/html");
+    expect(parsed.querySelector("img[onerror]")).toBeNull();
+    expect(parsed.querySelector("img")).toBeNull();
   });
 });

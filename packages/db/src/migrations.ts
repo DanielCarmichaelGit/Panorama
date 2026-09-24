@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { DEFAULT_EVIDENCE_TYPES } from "@panorama/core";
 import type { DB } from "./open";
 const M1 = `
@@ -52,8 +53,48 @@ create trigger evidence_no_delete before delete on evidence begin select raise(a
 const M4 = `
 alter table actors add column current_ticket_id text references tickets(id);
 `;
-const MIGRATIONS = [M1, M2, M3, M4];
-export function migrate(db: DB): void {
+// Boards group tickets inside a project the way epics categorise them (added by the owner on
+// 2026-09-24). The table is plain SQL, but the backfill needs a UUID per existing project and a
+// row scan, so M5 is a function migration rather than a static string like M1-M4: every project
+// that predates this migration gets a default board named after it, family stone, position 0,
+// and every one of its tickets is pointed at that board. From here on `board_id` is required by
+// the repositories (createTicket always supplies one), even though SQLite cannot retrofit a NOT
+// NULL constraint onto an existing column without rebuilding the table.
+function M5(db: DB): void {
+  db.exec(`
+    create table boards(id text primary key, project_id text not null references projects(id), name text not null,
+      description text, family text not null, position integer not null, created_at text not null);
+    create index boards_project on boards(project_id, position);
+    alter table tickets add column board_id text references boards(id);
+  `);
+  const now = "2026-09-24T00:00:00.000Z";
+  const projects = db.prepare("select id, name from projects").all() as { id: string; name: string }[];
+  const insertBoard = db.prepare("insert into boards(id, project_id, name, description, family, position, created_at) values(?,?,?,?,?,?,?)");
+  const backfillTickets = db.prepare("update tickets set board_id = ? where project_id = ?");
+  for (const p of projects) {
+    const boardId = randomUUID();
+    insertBoard.run(boardId, p.id, p.name, null, "stone", 0, now);
+    backfillTickets.run(boardId, p.id);
+  }
+}
+type Migration = string | ((db: DB) => void);
+const MIGRATIONS: Migration[] = [M1, M2, M3, M4, M5];
+
+/** Applies migrations up to (not including index) `version`. Exported so a test can stop a
+ *  fresh database at M4, seed pre-boards data, then call `migrate` to exercise the M5 backfill
+ *  the way an upgrading install would actually hit it. */
+export function migrateTo(db: DB, version: number): void {
   const current = db.pragma("user_version", { simple: true }) as number;
-  for (let i = current; i < MIGRATIONS.length; i++) db.transaction(() => { db.exec(MIGRATIONS[i]); db.pragma(`user_version = ${i + 1}`); })();
+  for (let i = current; i < version; i++) {
+    db.transaction(() => {
+      const m = MIGRATIONS[i];
+      if (typeof m === "string") db.exec(m);
+      else m(db);
+      db.pragma(`user_version = ${i + 1}`);
+    })();
+  }
+}
+
+export function migrate(db: DB): void {
+  migrateTo(db, MIGRATIONS.length);
 }

@@ -8,7 +8,9 @@ test("gates refuse a move without evidence, then allow one with it", async ({ pa
 
   await page.getByLabel("Project name").fill("Gatekeeper");
   await page.getByRole("button", { name: "Create project" }).click();
-  await expect(page.getByText("Nothing needs you")).toBeVisible();
+  // No agent ever connects in this test, so the Queue leads with connecting one rather than
+  // the connected-but-idle "Nothing needs you" (Task 12's presence-first home).
+  await expect(page.getByText("No agents connected yet")).toBeVisible();
 
   await page.getByRole("button", { name: "New ticket" }).click();
   await page.getByLabel("Title").fill("Ship the release notes");

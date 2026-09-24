@@ -65,6 +65,26 @@ describe("checkpoints", () => {
   });
 });
 
+describe("M5 migration backfill", () => {
+  it("gives every pre-existing project a default board and points its tickets at it", () => {
+    const dir = mkdtempSync(join(tmpdir(), "pan-"));
+    const db = d.openDatabase(join(dir, "p.db"), null);
+    d.migrateTo(db, 4); // stop right after M4: no boards table, no tickets.board_id column yet
+
+    db.prepare("insert into projects(id, key, name, next_number, created_at) values(?,?,?,?,?)").run("proj1", "PAN", "Panorama", 2, NOW);
+    db.prepare("insert into lanes(id, project_id, name, position, family) values(?,?,?,?,?)").run("lane1", "proj1", "Backlog", 0, "stone");
+    db.prepare("insert into tickets(id, project_id, number, title, lane_id, position, created_at, updated_at) values(?,?,?,?,?,?,?,?)")
+      .run("t1", "proj1", 1, "Pre-existing ticket", "lane1", 1, NOW, NOW);
+
+    d.migrate(db); // completes the upgrade to M5, running the backfill
+
+    const boards = d.listBoards(db, "proj1");
+    expect(boards).toEqual([{ id: boards[0].id, projectId: "proj1", name: "Panorama", description: null, family: "stone", position: 0, createdAt: "2026-09-24T00:00:00.000Z" }]);
+    expect(d.getTicket(db, "t1")!.boardId).toBe(boards[0].id);
+    db.close();
+  });
+});
+
 describe("projects and tickets", () => {
   it("creates a project with the six default lanes", () => {
     const { db } = fresh();
@@ -73,6 +93,27 @@ describe("projects and tickets", () => {
     expect(lanes[4].setsNeedsHuman).toBe(true);
     expect(lanes[4].evidenceRequirements).toEqual([{ typeId: "et_eval_score", count: 1 }]);
     expect(d.listLanes(db, project.id)).toHaveLength(6);
+  });
+  it("creates a default board named after the project, family stone, and lands new tickets on it", () => {
+    const { db } = fresh();
+    const { project, boards } = d.createProject(db, { name: "Panorama", key: "PAN" }, NOW);
+    expect(boards).toEqual([{ id: boards[0].id, projectId: project.id, name: "Panorama", description: null, family: "stone", position: 0, createdAt: NOW }]);
+    expect(d.listBoards(db, project.id)).toEqual(boards);
+    const t = d.createTicket(db, { projectId: project.id, title: "One" }, NOW);
+    expect(t.boardId).toBe(boards[0].id);
+  });
+  it("creates a second board and can put a ticket on it explicitly; listTickets filters by board", () => {
+    const { db } = fresh();
+    const { project, boards } = d.createProject(db, { name: "Panorama", key: "PAN" }, NOW);
+    const second = d.createBoard(db, { projectId: project.id, name: "Growth", family: "sky" }, NOW);
+    expect(second.position).toBe(1);
+    expect(d.getBoard(db, second.id)).toEqual(second);
+    const onDefault = d.createTicket(db, { projectId: project.id, title: "default board" }, NOW);
+    const onSecond = d.createTicket(db, { projectId: project.id, title: "second board", boardId: second.id }, NOW);
+    expect(onDefault.boardId).toBe(boards[0].id);
+    expect(onSecond.boardId).toBe(second.id);
+    expect(d.listTickets(db, { boardId: second.id }).map((t) => t.id)).toEqual([onSecond.id]);
+    expect(d.listTickets(db, { projectId: project.id }).map((t) => t.id).sort()).toEqual([onDefault.id, onSecond.id].sort());
   });
   it("numbers tickets per project, defaults to the first lane, and flags on entry to a needs-human lane", () => {
     const { db } = fresh();

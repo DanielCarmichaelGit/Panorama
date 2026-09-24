@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { Lane, Project, Ticket } from "@panorama/core";
+import type { Board as BoardType, Lane, Project, Ticket } from "@panorama/core";
 import { api } from "../lib/api";
 import { Board, groupByLane } from "./Board";
 
@@ -36,9 +36,13 @@ const lanes = [
 ];
 
 const ticket = (over: Partial<Ticket>): Ticket => ({
-  id: "t1", projectId: "p1", number: 1, key: "PAN-1", title: "Fix bug", laneId: "l1", position: 1,
+  id: "t1", projectId: "p1", boardId: "b1", number: 1, key: "PAN-1", title: "Fix bug", laneId: "l1", position: 1,
   flags: [], assigneeId: null, startDate: null, dueDate: null, metadata: {}, archived: false,
   createdAt: "", updatedAt: "", ...over,
+});
+
+const board = (over: Partial<BoardType>): BoardType => ({
+  id: "b1", projectId: "p1", name: "Panorama", description: null, family: "stone", position: 0, createdAt: "", ...over,
 });
 
 describe("groupByLane", () => {
@@ -58,10 +62,11 @@ describe("groupByLane", () => {
   });
 });
 
-function renderBoard(tickets: Ticket[]) {
+function renderBoard(tickets: Ticket[], boards: BoardType[] = [board({})]) {
   outletContext = { project, lanes };
   vi.mocked(api).mockImplementation(async (method: string, path: string) => {
     if (path === `/api/v1/tickets?projectId=${project.id}`) return tickets;
+    if (path === `/api/v1/projects/${project.id}/boards`) return boards;
     if (path === "/api/v1/agents") return [];
     if (path === "/api/v1/evidence-types") return [];
     if (path.endsWith("/gates")) return {};
@@ -103,5 +108,38 @@ describe("Board", () => {
     expect(within(backlogHeading.closest("section")!).getByText("No tickets")).toBeTruthy();
     const prodHeading = screen.getByRole("heading", { name: "Ready for Production" });
     expect(within(prodHeading.closest("section")!).getByText("No tickets")).toBeTruthy();
+  });
+
+  it("renders the board select defaulting to the project's one board, with a New board option", async () => {
+    renderBoard([]);
+    await screen.findByRole("heading", { name: "Backlog" });
+
+    const select = screen.getByLabelText("Board") as HTMLSelectElement;
+    expect(select.value).toBe("b1");
+    const options = within(select).getAllByRole("option").map((o) => (o as HTMLOptionElement).textContent);
+    expect(options).toEqual(["Panorama", "New board"]);
+  });
+
+  it("with two boards, filters cards and counts to the selected one", async () => {
+    const boards = [board({ id: "b1", name: "Panorama", position: 0 }), board({ id: "b2", name: "Growth", position: 1 })];
+    renderBoard(
+      [
+        ticket({ id: "t1", laneId: "l1", key: "PAN-1", boardId: "b1" }),
+        ticket({ id: "t2", laneId: "l1", key: "PAN-2", title: "On growth", boardId: "b2" }),
+      ],
+      boards,
+    );
+
+    const backlogHeading = await screen.findByRole("heading", { name: "Backlog" });
+    const backlogLane = backlogHeading.closest("section")!;
+    expect(await within(backlogLane).findByText("1")).toBeTruthy();
+    expect(screen.getByRole("link", { name: /PAN-1/ })).toBeTruthy();
+    expect(screen.queryByRole("link", { name: /PAN-2/ })).toBeNull();
+
+    fireEvent.change(screen.getByLabelText("Board"), { target: { value: "b2" } });
+
+    await screen.findByRole("link", { name: /PAN-2/ });
+    expect(screen.queryByRole("link", { name: /PAN-1/ })).toBeNull();
+    expect(within(backlogHeading.closest("section")!).getByText("1")).toBeTruthy();
   });
 });

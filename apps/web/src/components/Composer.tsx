@@ -23,7 +23,7 @@ export function composerMarkdown(editor: Editor): string {
 
 interface UploadItem { id: string; name: string; progress: number }
 
-function extensions() {
+function extensions(placeholder: string) {
   return [
     StarterKit.configure({
       heading: { levels: [1, 2, 3] },
@@ -36,7 +36,7 @@ function extensions() {
     // Inline, not a block: a dropped screenshot sits in the paragraph flow like the rest of the
     // comment's markdown, matching how <Markdown> renders `![name](attachment:id)` elsewhere.
     Image.configure({ inline: true, allowBase64: false }),
-    Placeholder.configure({ placeholder: "Write a comment" }),
+    Placeholder.configure({ placeholder }),
     Markdown.configure({ html: true, transformPastedText: true, transformCopiedText: true }),
   ];
 }
@@ -47,8 +47,27 @@ function extensions() {
  * upload. Uploaded files become an `attachment:id` reference inserted at the cursor and are
  * remembered in `attachmentIds` for the post; the comment body itself is always
  * `composerMarkdown(editor)`, i.e. the editor's live document serialised to markdown.
+ *
+ * `mode: "draft"` is for a ticket that does not exist yet (the New ticket dialog's description
+ * field): there is no ticket id to upload against, so the Comment button is hidden and a drop or
+ * paste never calls `uploadFile` itself. Instead it hands the raw `File`s to `onFilesAdded`, and
+ * the caller uploads them once the ticket is created; `onChange` fires on every edit with the
+ * editor's live markdown (and whatever `attachmentIds` this composer has inserted itself, which
+ * in draft mode stays empty since it never uploads).
  */
-export function Composer({ ticketId, onPosted }: { ticketId: string; onPosted: () => void }) {
+export function Composer({
+  ticketId,
+  onPosted,
+  mode = "post",
+  onChange,
+  onFilesAdded,
+}: {
+  ticketId?: string;
+  onPosted?: () => void;
+  mode?: "post" | "draft";
+  onChange?: (markdown: string, attachmentIds: string[]) => void;
+  onFilesAdded?: (files: File[]) => void;
+}) {
   const addComment = useAddComment();
   const [uploads, setUploads] = useState<UploadItem[]>([]);
   const [attachmentIds, setAttachmentIds] = useState<string[]>([]);
@@ -60,6 +79,7 @@ export function Composer({ ticketId, onPosted }: { ticketId: string; onPosted: (
   useEffect(() => () => { mountedRef.current = false; }, []);
 
   function uploadOne(file: File, ed: Editor) {
+    if (!ticketId) return;
     const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     setUploads((u) => [...u, { id, name: file.name, progress: 0 }]);
     uploadFile(ticketId, file, (fraction) => {
@@ -87,24 +107,29 @@ export function Composer({ ticketId, onPosted }: { ticketId: string; onPosted: (
   }
 
   const editor = useEditor({
-    extensions: extensions(),
+    extensions: extensions(mode === "draft" ? "Describe the work" : "Write a comment"),
     content: "",
     // TipTap 3 does not re-render on every transaction by default, which left the Comment
     // button disabled after typing. The button reads editor.isEmpty, so opt in.
     shouldRerenderOnTransaction: true,
+    onUpdate: mode === "draft" ? ({ editor: ed }) => onChange?.(composerMarkdown(ed), attachmentIds) : undefined,
     editorProps: {
-      attributes: { role: "textbox", "aria-multiline": "true", "aria-label": "Comment" },
+      attributes: { role: "textbox", "aria-multiline": "true", "aria-label": mode === "draft" ? "Description" : "Comment" },
       handleDrop(_view, event) {
         const files = event.dataTransfer?.files;
-        if (!editor || !files || files.length === 0) return false;
+        if (!files || files.length === 0) return false;
         event.preventDefault();
+        if (mode === "draft") { onFilesAdded?.(Array.from(files)); return true; }
+        if (!editor) return false;
         Array.from(files).forEach((f) => uploadOne(f, editor));
         return true;
       },
       handlePaste(_view, event) {
         const files = event.clipboardData?.files;
-        if (!editor || !files || files.length === 0) return false;
+        if (!files || files.length === 0) return false;
         event.preventDefault();
+        if (mode === "draft") { onFilesAdded?.(Array.from(files)); return true; }
+        if (!editor) return false;
         Array.from(files).forEach((f) => uploadOne(f, editor));
         return true;
       },
@@ -116,6 +141,7 @@ export function Composer({ ticketId, onPosted }: { ticketId: string; onPosted: (
   }, [editor]);
 
   async function submit() {
+    if (mode === "draft" || !ticketId) return;
     if (!editor || editor.isEmpty || addComment.isPending) return;
     const body = composerMarkdown(editor).trim();
     if (!body) return;
@@ -124,7 +150,7 @@ export function Composer({ ticketId, onPosted }: { ticketId: string; onPosted: (
       await addComment.mutateAsync({ ticketId, body, attachmentIds: attachmentIds.length > 0 ? attachmentIds : undefined });
       editor.commands.clearContent();
       setAttachmentIds([]);
-      onPosted();
+      onPosted?.();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not post the comment.");
     }
@@ -153,11 +179,13 @@ export function Composer({ ticketId, onPosted }: { ticketId: string; onPosted: (
         <p key={u.id} className="upload-row mono muted">Uploading {u.name} {u.progress}%</p>
       ))}
       {error && <p className="error" role="alert">{error}</p>}
-      <div className="composer-actions">
-        <button type="button" className="btn" disabled={isEmpty || addComment.isPending} onClick={submit}>
-          {addComment.isPending ? "Posting" : "Comment"}
-        </button>
-      </div>
+      {mode !== "draft" && (
+        <div className="composer-actions">
+          <button type="button" className="btn" disabled={isEmpty || addComment.isPending} onClick={submit}>
+            {addComment.isPending ? "Posting" : "Comment"}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

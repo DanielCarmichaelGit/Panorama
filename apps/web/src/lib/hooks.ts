@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { Actor, Attachment, Comment, Evidence, EvidenceType, Lane, LaneRequirement, Project, Scopes, Ticket } from "@panorama/core";
+import type { Actor, Attachment, Board, Comment, Evidence, EvidenceType, Family, Lane, LaneRequirement, Project, Scopes, Ticket } from "@panorama/core";
 import { api } from "./api";
 import { session } from "./session";
 import { connectStream, invalidationsFor } from "./stream";
@@ -16,6 +16,9 @@ export const useProjects = () => useQuery({ queryKey: ["projects"], queryFn: () 
 
 export const useLanes = (projectId: string | undefined) =>
   useQuery({ queryKey: ["lanes", projectId], queryFn: () => api<Lane[]>("GET", `/api/v1/projects/${projectId}/lanes`), enabled: !!projectId });
+
+export const useBoards = (projectId: string | undefined) =>
+  useQuery({ queryKey: ["boards", projectId], queryFn: () => api<Board[]>("GET", `/api/v1/projects/${projectId}/boards`), enabled: !!projectId });
 
 export const useQueue = (projectId: string | undefined) =>
   useQuery({
@@ -106,11 +109,20 @@ export const useCreateProject = () => {
 export const useCreateTicket = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (v: { projectId: string; title: string }) => api<Ticket>("POST", "/api/v1/tickets", v),
+    mutationFn: (v: { projectId: string; title: string; boardId?: string; laneId?: string; metadata?: Record<string, unknown> }) =>
+      api<Ticket>("POST", "/api/v1/tickets", v),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["queue"] });
       qc.invalidateQueries({ queryKey: ["tickets"] });
     },
+  });
+};
+
+export const useCreateBoard = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { projectId: string; name: string; description?: string; family?: Family }) => api<Board>("POST", "/api/v1/boards", v),
+    onSuccess: (_, v) => qc.invalidateQueries({ queryKey: ["boards", v.projectId] }),
   });
 };
 

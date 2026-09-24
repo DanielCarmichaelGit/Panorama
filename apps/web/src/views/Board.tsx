@@ -1,13 +1,17 @@
 import { useState } from "react";
-import { useOutletContext } from "react-router-dom";
+import { useOutletContext, useSearchParams } from "react-router-dom";
 import { DndContext, DragOverlay, PointerSensor, useDroppable, useSensor, useSensors } from "@dnd-kit/core";
 import type { DragEndEvent, DragStartEvent } from "@dnd-kit/core";
-import type { EvidenceType, Lane, Project, Ticket } from "@panorama/core";
+import type { Board as BoardType, EvidenceType, Lane, Project, Ticket } from "@panorama/core";
 import { ApiError } from "../lib/api";
-import { useAgents, useBoard, useEvidenceTypes, useGates, useMoveTicket } from "../lib/hooks";
+import { useAgents, useBoard, useBoards, useEvidenceTypes, useGates, useMoveTicket } from "../lib/hooks";
 import { BoardCard, BoardCardContent } from "../components/BoardCard";
 import { laneOptionLabel, missingMessage } from "../components/GateList";
 import { LaneRequirements } from "../components/LaneRequirements";
+import { NewBoard } from "../components/NewBoard";
+import { NewTicket } from "../components/NewTicket";
+
+const NEW_BOARD_OPTION = "__new";
 
 /** Groups tickets by lane, sorted by position within each lane; every lane gets an entry, even an empty one. */
 export function groupByLane(tickets: Ticket[], lanes: Lane[]): Record<string, Ticket[]> {
@@ -91,22 +95,49 @@ function LaneColumn({
 export function Board() {
   const { project, lanes } = useOutletContext<{ project: Project; lanes: Lane[] }>();
   const board = useBoard(project.id);
+  const boardsQuery = useBoards(project.id);
   const agents = useAgents().data ?? [];
   const evidenceTypes = useEvidenceTypes().data ?? [];
   const move = useMoveTicket();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const [activeId, setActiveId] = useState<string | null>(null);
   const [dropError, setDropError] = useState<DropError | null>(null);
   const [reqLane, setReqLane] = useState<Lane | null>(null);
+  const [showNewBoard, setShowNewBoard] = useState(false);
+  const [showNewTicket, setShowNewTicket] = useState(false);
 
   const activeGates = useGates(activeId ?? undefined);
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
 
   const laneList = [...lanes].sort((a, b) => a.position - b.position);
-  const tickets = board.data ?? [];
+  const boardList = [...(boardsQuery.data ?? [])].sort((a, b) => a.position - b.position);
+  const urlBoardId = searchParams.get("board");
+  const selectedBoardId = urlBoardId && boardList.some((b) => b.id === urlBoardId) ? urlBoardId : (boardList[0]?.id ?? "");
+  const allTickets = board.data ?? [];
+  const tickets = allTickets.filter((t) => t.boardId === selectedBoardId);
   const groups = groupByLane(tickets, laneList);
   const activeTicket = tickets.find((t) => t.id === activeId) ?? null;
+
+  function selectBoard(value: string) {
+    if (value === NEW_BOARD_OPTION) { setShowNewBoard(true); return; }
+    const next = new URLSearchParams(searchParams);
+    next.set("board", value);
+    setSearchParams(next, { replace: true });
+  }
+
+  function closeNewBoard(created?: BoardType) {
+    setShowNewBoard(false);
+    if (!created) return;
+    const next = new URLSearchParams(searchParams);
+    next.set("board", created.id);
+    setSearchParams(next, { replace: true });
+  }
+
+  function closeNewTicket() {
+    setShowNewTicket(false);
+  }
 
   function handleDragStart(e: DragStartEvent) {
     setDropError(null);
@@ -136,7 +167,7 @@ export function Board() {
     );
   }
 
-  if (board.isPending) {
+  if (board.isPending || boardsQuery.isPending) {
     return (
       <div className="view">
         <h1>Board</h1>
@@ -145,19 +176,30 @@ export function Board() {
     );
   }
 
-  if (board.isError) {
+  if (board.isError || boardsQuery.isError) {
     return (
       <div className="view">
         <h1>Board</h1>
         <p className="error" role="alert">Could not load the board.</p>
-        <button className="btn" onClick={() => board.refetch()}>Try again</button>
+        <button className="btn" onClick={() => { board.refetch(); boardsQuery.refetch(); }}>Try again</button>
       </div>
     );
   }
 
   return (
     <div className="view board-view">
-      <h1>Board</h1>
+      <div className="board-head">
+        <h1>Board</h1>
+        <div className="field">
+          <label htmlFor="board-select">Board</label>
+          <select id="board-select" className="input" value={selectedBoardId} onChange={(e) => selectBoard(e.target.value)}>
+            {boardList.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+            <option value={NEW_BOARD_OPTION}>New board</option>
+          </select>
+        </div>
+        <div className="spacer" />
+        <button type="button" className="btn" onClick={() => setShowNewTicket(true)}>New ticket</button>
+      </div>
       <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd} onDragCancel={() => setActiveId(null)}>
         <div className="board">
           {laneList.map((lane) => {
@@ -198,6 +240,8 @@ export function Board() {
         </DragOverlay>
       </DndContext>
       {reqLane && <LaneRequirements lane={reqLane} types={evidenceTypes} onClose={() => setReqLane(null)} />}
+      {showNewBoard && <NewBoard projectId={project.id} onClose={closeNewBoard} />}
+      {showNewTicket && <NewTicket projectId={project.id} boardId={selectedBoardId} returnTo="board" onClose={closeNewTicket} />}
     </div>
   );
 }

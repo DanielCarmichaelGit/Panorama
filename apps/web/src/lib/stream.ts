@@ -119,5 +119,8 @@ export function invalidationsFor(type: string, data: any): unknown[][] {
   if (type.startsWith("lane.") || type.startsWith("project.")) {
     return [["lanes"], ["projects"], ["gates"]];
   }
+  if (type.startsWith("board.")) {
+    return [["boards", data.projectId]];
+  }
   return [];
 }

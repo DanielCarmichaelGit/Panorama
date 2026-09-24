@@ -30,9 +30,12 @@ export interface Project { id: string; key: string; name: string; createdAt: str
 
 export interface Lane { id: string; projectId: string; name: string; position: number; family: Family; setsNeedsHuman: boolean; isDone: boolean; evidenceRequirements: LaneRequirement[] }
 
+export interface Board { id: string; projectId: string; name: string; description: string | null; family: Family; position: number; createdAt: string }
+
 export interface Ticket {
   id: string;
   projectId: string;
+  boardId: string;
   number: number;
   key: string;
   title: string;
@@ -104,10 +107,21 @@ export type CreateProjectInput = z.infer<typeof CreateProjectInput>;
 export const CreateTicketInput = z.object({
   projectId: z.string().min(1),
   title: z.string().min(1).max(200),
+  boardId: z.string().min(1).optional(),
   laneId: z.string().min(1).optional(),
   metadata: z.record(z.unknown()).optional(),
 });
 export type CreateTicketInput = z.infer<typeof CreateTicketInput>;
+
+export const CreateBoardInput = z
+  .object({
+    projectId: z.string().min(1),
+    name: z.string().min(1).max(80),
+    description: z.string().max(500).optional(),
+    family: z.enum(FAMILIES).optional(),
+  })
+  .strict();
+export type CreateBoardInput = z.infer<typeof CreateBoardInput>;
 
 export const UpdateTicketInput = z
   .object({

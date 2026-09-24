@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { checkGate, CreateTicketInput, FlagInput, MoveTicketInput, UpdateTicketInput } from "@panorama/core";
-import { appendEvent, archiveTicket, createTicket, getActor, getEvidenceType, getLane, getProject, getTicket, listEvidence, listTickets, moveTicket, queue, setCurrentTicket, setFlag, updateTicket, type DB } from "@panorama/db";
+import { appendEvent, archiveTicket, createTicket, getActor, getBoard, getEvidenceType, getLane, getProject, getTicket, listEvidence, listTickets, moveTicket, queue, setCurrentTicket, setFlag, updateTicket, type DB } from "@panorama/db";
 import { getDb, inScope, requireCan } from "../auth";
 import { record } from "../bus";
 import type { Ctx } from "../context";
@@ -16,9 +16,9 @@ export function ticketRoutes(app: FastifyInstance, ctx: Ctx): void {
   };
 
   app.get("/api/v1/tickets", async (req: any) => {
-    const { projectId, laneId, flag } = req.query as Record<string, string | undefined>;
+    const { projectId, boardId, laneId, flag } = req.query as Record<string, string | undefined>;
     requireCan(req, "read", projectId);
-    return listTickets(getDb(ctx), { projectId, laneId, flag }).filter((t) => inScope(req.actor, t.projectId));
+    return listTickets(getDb(ctx), { projectId, boardId, laneId, flag }).filter((t) => inScope(req.actor, t.projectId));
   });
 
   app.get("/api/v1/queue", async (req: any) => {
@@ -34,10 +34,11 @@ export function ticketRoutes(app: FastifyInstance, ctx: Ctx): void {
     if (!getProject(db, input.projectId)) throw new HttpError(404, "not_found", "No such project");
     requireCan(req, "ticket.create", input.projectId);
     if (input.laneId && getLane(db, input.laneId)?.projectId !== input.projectId) throw new HttpError(400, "wrong_project", "That lane belongs to another project");
+    if (input.boardId && getBoard(db, input.boardId)?.projectId !== input.projectId) throw new HttpError(400, "wrong_project", "That board belongs to another project");
     return db.transaction(() => {
       const t = createTicket(db, { ...input, assigneeId: req.actor.kind === "agent" ? req.actor.id : null }, iso());
       if (req.actor.kind === "agent") setCurrentTicket(db, req.actor.id, t.id);
-      log(db, req, "ticket.created", { id: t.id, projectId: t.projectId, key: t.key, title: t.title, laneId: t.laneId });
+      log(db, req, "ticket.created", { id: t.id, projectId: t.projectId, boardId: t.boardId, key: t.key, title: t.title, laneId: t.laneId });
       return t;
     })();
   });

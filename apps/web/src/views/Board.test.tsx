@@ -3,9 +3,9 @@ import { cleanup, fireEvent, render, screen, within } from "@testing-library/rea
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { Board as BoardType, Lane, Project, Ticket } from "@panorama/core";
+import type { Board as BoardType, Epic, Lane, Project, Tag, Ticket } from "@panorama/core";
 import { api } from "../lib/api";
-import { Board, groupByLane } from "./Board";
+import { Board, filterTickets, groupByLane } from "./Board";
 
 vi.mock("../lib/api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../lib/api")>();
@@ -46,6 +46,14 @@ const board = (over: Partial<BoardType>): BoardType => ({
   id: "b1", projectId: "p1", name: "Panorama", description: null, family: "stone", position: 0, createdAt: "", ...over,
 });
 
+const epic = (over: Partial<Epic>): Epic => ({
+  id: "e1", projectId: "p1", name: "Growth", description: null, family: "sky", position: 0, archived: false, createdAt: "", ...over,
+});
+
+const tag = (over: Partial<Tag>): Tag => ({
+  id: "tg1", projectId: "p1", name: "Bug", family: "coral", archived: false, createdAt: "", ...over,
+});
+
 describe("groupByLane", () => {
   it("groups tickets under their lane in position order", () => {
     const t1 = ticket({ id: "t1", laneId: "l1", position: 2 });
@@ -63,20 +71,49 @@ describe("groupByLane", () => {
   });
 });
 
-function renderBoard(tickets: Ticket[], boards: BoardType[] = [board({})]) {
+describe("filterTickets", () => {
+  const t1 = ticket({ id: "t1", epicId: "e1", tagIds: ["tg1"] });
+  const t2 = ticket({ id: "t2", epicId: "e2", tagIds: ["tg1", "tg2"] });
+  const t3 = ticket({ id: "t3", epicId: null, tagIds: [] });
+
+  it("returns every ticket when no filters are set", () => {
+    expect(filterTickets([t1, t2, t3], {})).toEqual([t1, t2, t3]);
+  });
+
+  it("filters by epic only", () => {
+    expect(filterTickets([t1, t2, t3], { epicId: "e1" })).toEqual([t1]);
+  });
+
+  it("filters by tags only, requiring every selected tag", () => {
+    expect(filterTickets([t1, t2, t3], { tagIds: ["tg1", "tg2"] })).toEqual([t2]);
+  });
+
+  it("filters by epic and tags together", () => {
+    expect(filterTickets([t1, t2, t3], { epicId: "e2", tagIds: ["tg1"] })).toEqual([t2]);
+  });
+});
+
+function renderBoard(
+  tickets: Ticket[],
+  boards: BoardType[] = [board({})],
+  options: { epics?: Epic[]; tags?: Tag[]; initialEntries?: string[] } = {},
+) {
+  const { epics = [], tags = [], initialEntries = ["/"] } = options;
   outletContext = { project, lanes };
   vi.mocked(api).mockImplementation(async (method: string, path: string) => {
     if (path === `/api/v1/tickets?projectId=${project.id}`) return tickets;
     if (path === `/api/v1/projects/${project.id}/boards`) return boards;
     if (path === "/api/v1/agents") return [];
     if (path === "/api/v1/evidence-types") return [];
+    if (path === `/api/v1/epics?projectId=${project.id}`) return epics;
+    if (path === `/api/v1/tags?projectId=${project.id}`) return tags;
     if (path.endsWith("/gates")) return {};
     throw new Error(`unexpected ${method} ${path}`);
   });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
-      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+      <MemoryRouter initialEntries={initialEntries} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         <Board />
       </MemoryRouter>
     </QueryClientProvider>,
@@ -144,5 +181,64 @@ describe("Board", () => {
     await screen.findByRole("link", { name: /PAN-2/ });
     expect(screen.queryByRole("link", { name: /PAN-1/ })).toBeNull();
     expect(within(backlogHeading.closest("section")!).getByText("1")).toBeTruthy();
+  });
+
+  it("with ?epic= in the URL, renders only matching cards and updates the lane count", async () => {
+    const epics = [epic({ id: "e1", name: "Growth" }), epic({ id: "e2", name: "Platform" })];
+    renderBoard(
+      [
+        ticket({ id: "t1", laneId: "l1", key: "PAN-1", epicId: "e1" }),
+        ticket({ id: "t2", laneId: "l1", key: "PAN-2", title: "Other epic", epicId: "e2" }),
+      ],
+      [board({})],
+      { epics, initialEntries: ["/?epic=e1"] },
+    );
+
+    const backlogHeading = await screen.findByRole("heading", { name: "Backlog" });
+    const backlogLane = backlogHeading.closest("section")!;
+    expect(await within(backlogLane).findByText("1")).toBeTruthy();
+    expect(screen.getByRole("link", { name: /PAN-1/ })).toBeTruthy();
+    expect(screen.queryByRole("link", { name: /PAN-2/ })).toBeNull();
+
+    const epicTrigger = screen.getByRole("button", { name: "Epic" });
+    expect(epicTrigger.textContent).toContain("Growth");
+  });
+
+  it("with ?tag= in the URL, renders only cards carrying every selected tag", async () => {
+    const tags = [tag({ id: "tg1", name: "Bug" }), tag({ id: "tg2", name: "Urgent" })];
+    renderBoard(
+      [
+        ticket({ id: "t1", laneId: "l1", key: "PAN-1", tagIds: ["tg1", "tg2"] }),
+        ticket({ id: "t2", laneId: "l1", key: "PAN-2", title: "Only bug", tagIds: ["tg1"] }),
+      ],
+      [board({})],
+      { tags, initialEntries: ["/?tag=tg1&tag=tg2"] },
+    );
+
+    await screen.findByRole("heading", { name: "Backlog" });
+    expect(screen.getByRole("link", { name: /PAN-1/ })).toBeTruthy();
+    expect(screen.queryByRole("link", { name: /PAN-2/ })).toBeNull();
+  });
+
+  it("shows a Clear filters button only when a filter is set, and clearing it restores every card", async () => {
+    const epics = [epic({ id: "e1", name: "Growth" })];
+    renderBoard(
+      [
+        ticket({ id: "t1", laneId: "l1", key: "PAN-1", epicId: "e1" }),
+        ticket({ id: "t2", laneId: "l1", key: "PAN-2", title: "No epic", epicId: null }),
+      ],
+      [board({})],
+      { epics, initialEntries: ["/?epic=e1"] },
+    );
+
+    await screen.findByRole("heading", { name: "Backlog" });
+    expect(screen.queryByRole("link", { name: /PAN-2/ })).toBeNull();
+    const clearBtn = screen.getByRole("button", { name: "Clear filters" });
+
+    fireEvent.click(clearBtn);
+
+    await screen.findByRole("link", { name: /PAN-2/ });
+    expect(screen.getByRole("link", { name: /PAN-1/ })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Clear filters" })).toBeNull();
   });
 });

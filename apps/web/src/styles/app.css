@@ -252,3 +252,4 @@ a{color:var(--accent)}
 .lane-settings-row{flex-direction:column;align-items:stretch}
 .lane-settings-head{display:flex;align-items:center;gap:.75rem;margin-bottom:.5rem}
 .picker-create-error{font-size:.8125rem;margin:0 0 .3rem}
+.chip-overflow{background:var(--stone-top);color:var(--stone-ink)}

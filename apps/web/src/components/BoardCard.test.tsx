@@ -34,12 +34,12 @@ const ticket: Ticket = {
   createdAt: "", updatedAt: "",
 };
 
-function renderCard() {
+function renderCard(overrides: Partial<Ticket> = {}, epics: any[] = [], tags: any[] = []) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
       <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-        <BoardCard ticket={ticket} lanes={lanes} agents={[]} types={[]} />
+        <BoardCard ticket={{ ...ticket, ...overrides }} lanes={lanes} agents={[]} types={[]} epics={epics} tags={tags} />
       </MemoryRouter>
     </QueryClientProvider>,
   );
@@ -94,5 +94,19 @@ describe("BoardCard keyboard move", () => {
 
     expect(screen.queryByRole("button", { name: "Move to" })).toBeNull();
     await waitFor(() => expect(document.activeElement).toBe(link));
+  });
+});
+
+describe("BoardCard chips", () => {
+  it("shows the epic chip on the card", () => {
+    vi.mocked(api).mockImplementation(async (method: string, path: string) => {
+      if (method === "GET" && path.endsWith("/gates")) return {};
+      throw new Error(`unexpected ${method} ${path}`);
+    });
+    const epics = [{ id: "e1", projectId: "p1", name: "Growth", description: null, family: "sky", position: 0, archived: false, createdAt: "" }];
+
+    renderCard({ epicId: "e1" }, epics);
+
+    expect(screen.getByText("Growth")).toBeTruthy();
   });
 });

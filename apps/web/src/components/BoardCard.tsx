@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useDraggable } from "@dnd-kit/core";
-import type { Actor, EvidenceType, Lane, Ticket } from "@panorama/core";
+import type { Actor, Epic, EvidenceType, Lane, Tag, Ticket } from "@panorama/core";
 import { ApiError } from "../lib/api";
 import { useGates, useMoveTicket, usePrefetchGates } from "../lib/hooks";
 import { isTypingTarget } from "../lib/keys";
-import { Chip } from "./Chip";
+import { Chip, EpicChip, TagChips } from "./Chip";
 import { laneOptionLabel, missingMessage } from "./GateList";
 import { Picker } from "./Picker";
 import { laneFamily } from "./TicketRow";
@@ -14,15 +14,31 @@ import { laneFamily } from "./TicketRow";
  * The card's visible content, shared between the interactive card (`BoardCard`) and the static
  * preview `Board` renders in its `DragOverlay` while the card is being dragged.
  */
-export function BoardCardContent({ ticket, lanes, agents }: { ticket: Ticket; lanes: Lane[]; agents: Pick<Actor, "id" | "name">[] }) {
+export function BoardCardContent({
+  ticket,
+  lanes,
+  agents,
+  epics,
+  tags,
+}: {
+  ticket: Ticket;
+  lanes: Lane[];
+  agents: Pick<Actor, "id" | "name">[];
+  epics: Epic[];
+  tags: Tag[];
+}) {
   const family = laneFamily(ticket, lanes);
   const agent = agents.find((a) => a.id === ticket.assigneeId);
+  const epic = epics.find((e) => e.id === ticket.epicId);
+  const ticketTags = ticket.tagIds.map((id) => tags.find((t) => t.id === id)).filter((t): t is Tag => !!t);
   return (
     <>
       <span className="mark" style={{ background: `var(--${family}-right)` }} aria-hidden="true" />
       <span className="mono muted id">{ticket.key}</span>
       <span className="ttl" title={ticket.title}>{ticket.title}</span>
       {agent && <span className="mono muted ag">{agent.name}</span>}
+      <EpicChip epic={epic} />
+      <TagChips tags={ticketTags} />
       {ticket.flags.includes("needs_human") && <Chip family="coral">Needs human</Chip>}
     </>
   );
@@ -43,7 +59,21 @@ function moveErrorMessage(err: unknown): string {
  * distance and the "m" shortcut usually already have the data instead of briefly showing every
  * lane as open.
  */
-export function BoardCard({ ticket, lanes, agents, types }: { ticket: Ticket; lanes: Lane[]; agents: Pick<Actor, "id" | "name">[]; types: EvidenceType[] }) {
+export function BoardCard({
+  ticket,
+  lanes,
+  agents,
+  types,
+  epics,
+  tags,
+}: {
+  ticket: Ticket;
+  lanes: Lane[];
+  agents: Pick<Actor, "id" | "name">[];
+  types: EvidenceType[];
+  epics: Epic[];
+  tags: Tag[];
+}) {
   const { attributes, listeners, setNodeRef } = useDraggable({ id: ticket.id, attributes: { tabIndex: -1 } });
   const move = useMoveTicket();
   const prefetchGates = usePrefetchGates();
@@ -107,7 +137,7 @@ export function BoardCard({ ticket, lanes, agents, types }: { ticket: Ticket; la
   return (
     <div ref={setNodeRef} className="bcard" {...listeners} {...attributes} onPointerDown={onPointerDown}>
       <Link ref={linkRef} to={`/board/t/${ticket.id}`} data-ticket={ticket.id} className="bcard-row" onFocus={warmGates} onKeyDown={onKeyDown}>
-        <BoardCardContent ticket={ticket} lanes={lanes} agents={agents} />
+        <BoardCardContent ticket={ticket} lanes={lanes} agents={agents} epics={epics} tags={tags} />
       </Link>
       {moveOpen && (
         <div className="move-to" onKeyDown={onSelectKeyDown}>

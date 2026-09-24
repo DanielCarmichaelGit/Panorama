@@ -11,6 +11,7 @@ import { dbFile, lifecycleRoutes } from "./routes/lifecycle";
 import { agentRoutes } from "./routes/agents";
 import { attachmentRoutes } from "./routes/attachments";
 import { chainRoutes } from "./routes/chain";
+import { modelRoutes } from "./routes/model";
 import { projectRoutes } from "./routes/projects";
 import { threadRoutes } from "./routes/thread";
 import { ticketRoutes } from "./routes/tickets";
@@ -61,6 +62,7 @@ export async function buildApp(opts: { dataDir: string; now?: () => Date; webDis
   agentRoutes(app, ctx);
   projectRoutes(app, ctx);
   ticketRoutes(app, ctx);
+  modelRoutes(app, ctx);
   threadRoutes(app, ctx);
   chainRoutes(app, ctx);
   attachmentRoutes(app, ctx);

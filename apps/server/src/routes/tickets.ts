@@ -1,22 +1,27 @@
 import type { FastifyInstance } from "fastify";
-import { checkGate, CreateTicketInput, FlagInput, type Lane, MoveTicketInput, UpdateTicketInput } from "@panorama/core";
-import { appendEvent, archiveTicket, createTicket, enterLane, getActor, getBoard, getEvidenceType, getLane, getProject, getTicket, listEvidence, listLanes, listTickets, moveTicket, queue, setCurrentTicket, setFlag, updateTicket, type DB } from "@panorama/db";
+import { checkGate, CreateTicketInput, FlagInput, type Lane, MoveTicketInput, UpdateTicketInput, validateFieldValues } from "@panorama/core";
+import { appendEvent, archiveTicket, createTicket, enterLane, getActor, getBoard, getEpic, getEvidenceType, getLane, getProject, getTag, getTicket, listEvidence, listFields, listLanes, listTickets, moveTicket, queue, setCurrentTicket, setFlag, updateTicket, type DB } from "@panorama/db";
 import { getDb, inScope, requireCan } from "../auth";
 import { record } from "../bus";
 import type { Ctx } from "../context";
+import { blockedByReasons } from "../gate";
 import { HttpError } from "../errors";
 
 export function ticketRoutes(app: FastifyInstance, ctx: Ctx): void {
   const iso = () => ctx.now().toISOString();
   const load = (db: DB, id: string) => { const t = getTicket(db, id); if (!t || t.archived) throw new HttpError(404, "not_found", "No such ticket"); return t; };
-  /** Refuses a lane a ticket cannot enter yet, in the one 422 shape both create and move use. */
-  const requireGate = (db: DB, lane: Lane, evidence: Parameters<typeof checkGate>[1]) => {
-    const missing = checkGate(lane.evidenceRequirements, evidence);
-    if (missing.length === 0) return;
-    throw new HttpError(422, "gate", `${lane.name} needs evidence first`, {
-      laneId: lane.id,
-      missing: missing.map((m) => ({ ...m, name: getEvidenceType(db, m.typeId)?.name ?? m.typeId })),
-    });
+  /**
+   * Refuses a lane a ticket cannot enter yet, in the one 422 shape both create and move use.
+   * Entering a lane with `isDone` also runs the dependency check, reporting an unmet `blocks`
+   * link as a `blocked_by` entry alongside any missing evidence. `ticketId` is omitted on
+   * create: a brand new ticket cannot yet be the target of a link, so there is nothing to check.
+   */
+  const requireGate = (db: DB, lane: Lane, evidence: Parameters<typeof checkGate>[1], projectId: string, ticketId?: string) => {
+    const missing = checkGate(lane.evidenceRequirements, evidence).map((m) => ({ ...m, name: getEvidenceType(db, m.typeId)?.name ?? m.typeId }));
+    const blockers = ticketId ? blockedByReasons(db, projectId, ticketId, lane) : [];
+    const all = [...missing, ...blockers];
+    if (all.length === 0) return;
+    throw new HttpError(422, "gate", `${lane.name} needs evidence first`, { laneId: lane.id, missing: all });
   };
   const log = (db: DB, req: any, type: string, payload: unknown) => {
     const ev = appendEvent(db, { actorId: req.actor.id, type, payload, signature: req.sig, now: iso() });
@@ -44,14 +49,31 @@ export function ticketRoutes(app: FastifyInstance, ctx: Ctx): void {
     requireCan(req, "ticket.create", input.projectId);
     if (input.laneId && getLane(db, input.laneId)?.projectId !== input.projectId) throw new HttpError(400, "wrong_project", "That lane belongs to another project");
     if (input.boardId && getBoard(db, input.boardId)?.projectId !== input.projectId) throw new HttpError(400, "wrong_project", "That board belongs to another project");
+    if (input.epicId !== undefined) {
+      const epic = getEpic(db, input.epicId);
+      if (!epic || epic.projectId !== input.projectId) throw new HttpError(400, "wrong_project", "That epic belongs to another project");
+    }
+    if (input.tagIds) {
+      for (const tagId of input.tagIds) {
+        const tag = getTag(db, tagId);
+        if (!tag || tag.projectId !== input.projectId || tag.archived) throw new HttpError(400, "validation", "That tag does not apply here", { tagId });
+      }
+    }
+    // successCriteria is human-only (criteria.edit), whether or not it is present on this input.
+    if (input.successCriteria !== undefined) requireCan(req, "criteria.edit", input.projectId);
+    // Required fields are enforced for the human's dialog only: an agent may create with fields
+    // missing, leaving the ticket to show "Needs fields" in the panel.
+    const defs = listFields(db, input.projectId, { includeArchived: true });
+    const fieldCheck = validateFieldValues(defs, input.fields ?? {}, { requireAll: req.actor.kind === "human" });
+    if (!fieldCheck.ok) throw new HttpError(400, "validation", "Bad field values", { issues: fieldCheck.issues });
     // Creating into a lane is entering it, so the same gate applies. A brand new ticket carries
     // no evidence at all, so every requirement the lane has is missing by definition.
     const lane = input.laneId ? getLane(db, input.laneId)! : listLanes(db, input.projectId)[0];
-    requireGate(db, lane, []);
+    requireGate(db, lane, [], input.projectId);
     return db.transaction(() => {
       const t = createTicket(db, { ...input, assigneeId: req.actor.kind === "agent" ? req.actor.id : null }, iso());
       if (req.actor.kind === "agent") setCurrentTicket(db, req.actor.id, t.id);
-      log(db, req, "ticket.created", { id: t.id, projectId: t.projectId, boardId: t.boardId, key: t.key, title: t.title, laneId: t.laneId });
+      log(db, req, "ticket.created", { id: t.id, projectId: t.projectId, boardId: t.boardId, key: t.key, title: t.title, laneId: t.laneId, epicId: t.epicId, tagIds: t.tagIds });
       const { ticket, flagged } = enterLane(db, t.id, t.laneId, iso());
       if (flagged) log(db, req, "ticket.flag_set", { id: t.id, projectId: t.projectId, flag: "needs_human", cause: "lane" });
       return ticket;
@@ -67,7 +89,28 @@ export function ticketRoutes(app: FastifyInstance, ctx: Ctx): void {
       if (req.actor.kind === "agent" && patch.assigneeId !== req.actor.id) throw new HttpError(403, "forbidden", "Agents may only assign themselves");
       if (!getActor(db, patch.assigneeId)) throw new HttpError(400, "validation", "No such actor");
     }
-    return db.transaction(() => { const out = updateTicket(db, t.id, patch, iso()); log(db, req, "ticket.updated", { id: t.id, projectId: t.projectId, patch }); return out; })();
+    if (patch.epicId !== undefined && patch.epicId !== null) {
+      const epic = getEpic(db, patch.epicId);
+      if (!epic || epic.projectId !== t.projectId) throw new HttpError(400, "wrong_project", "That epic belongs to another project");
+    }
+    if (patch.tagIds) {
+      for (const tagId of patch.tagIds) {
+        const tag = getTag(db, tagId);
+        if (!tag || tag.projectId !== t.projectId || tag.archived) throw new HttpError(400, "validation", "That tag does not apply here", { tagId });
+      }
+    }
+    if (patch.successCriteria !== undefined) requireCan(req, "criteria.edit", t.projectId);
+    if (patch.fields !== undefined) {
+      const defs = listFields(db, t.projectId, { includeArchived: true });
+      const fieldCheck = validateFieldValues(defs, patch.fields, { requireAll: false });
+      if (!fieldCheck.ok) throw new HttpError(400, "validation", "Bad field values", { issues: fieldCheck.issues });
+    }
+    const changed = Object.keys(patch);
+    return db.transaction(() => {
+      const out = updateTicket(db, t.id, patch, iso());
+      log(db, req, "ticket.updated", { id: t.id, projectId: t.projectId, changed });
+      return out;
+    })();
   });
 
   app.post("/api/v1/tickets/:id/move", async (req: any) => {
@@ -75,7 +118,7 @@ export function ticketRoutes(app: FastifyInstance, ctx: Ctx): void {
     const { laneId } = MoveTicketInput.parse(req.body); const lane = getLane(db, laneId);
     if (!lane) throw new HttpError(404, "not_found", "No such lane");
     if (lane.projectId !== t.projectId) throw new HttpError(400, "wrong_project", "That lane belongs to another project");
-    requireGate(db, lane, listEvidence(db, t.id));
+    requireGate(db, lane, listEvidence(db, t.id), t.projectId, t.id);
     return db.transaction(() => {
       if (req.actor.kind === "agent" && !t.assigneeId) updateTicket(db, t.id, { assigneeId: req.actor.id }, iso());
       const { ticket, flagged } = moveTicket(db, t.id, laneId, iso());

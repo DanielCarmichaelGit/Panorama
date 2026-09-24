@@ -20,6 +20,7 @@ import {
 import { getDb, requireCan } from "../auth";
 import { record } from "../bus";
 import type { Ctx } from "../context";
+import { blockedByReasons } from "../gate";
 import { HttpError } from "../errors";
 
 export function threadRoutes(app: FastifyInstance, ctx: Ctx): void {
@@ -125,7 +126,8 @@ export function threadRoutes(app: FastifyInstance, ctx: Ctx): void {
     const evidence = listEvidence(db, t.id);
     const out: Record<string, { typeId: string; name: string; need: number; have: number }[]> = {};
     for (const lane of listLanes(db, t.projectId)) {
-      out[lane.id] = checkGate(lane.evidenceRequirements, evidence).map((m) => ({ ...m, name: getEvidenceType(db, m.typeId)?.name ?? m.typeId }));
+      const missing = checkGate(lane.evidenceRequirements, evidence).map((m) => ({ ...m, name: getEvidenceType(db, m.typeId)?.name ?? m.typeId }));
+      out[lane.id] = [...missing, ...blockedByReasons(db, t.projectId, t.id, lane)];
     }
     return out;
   });

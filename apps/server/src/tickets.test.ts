@@ -175,4 +175,29 @@ describe("tickets", () => {
     expect(badActor.status).toBe(400);
     expect(badActor.json.error.code).toBe("validation");
   });
+
+  it("still lets a ticket with no dependency links move into Done normally (the gate's blocked_by extension has no effect when nothing links to it)", async () => {
+    const w = await world();
+    const done = w.lanes.find((l: any) => l.name === "Done");
+    const t = (await w.human("POST", "/api/v1/tickets", { projectId: w.project.id, title: "solo" })).json;
+    await w.human("POST", "/api/v1/evidence", { ticketId: t.id, typeId: "et_human_signoff", payload: {} });
+    const moved = await w.human("POST", `/api/v1/tickets/${t.id}/move`, { laneId: done.id });
+    expect(moved.status).toBe(200);
+    expect(moved.json.laneId).toBe(done.id);
+  });
+
+  it("reports gate blockers for a done lane through GET /tickets/:id/gates even before evidence is satisfied", async () => {
+    const w = await world();
+    const done = w.lanes.find((l: any) => l.name === "Done");
+    const a = (await w.human("POST", "/api/v1/tickets", { projectId: w.project.id, title: "A" })).json;
+    const b = (await w.human("POST", "/api/v1/tickets", { projectId: w.project.id, title: "B" })).json;
+    await w.human("POST", `/api/v1/tickets/${a.id}/links`, { toId: b.id, kind: "blocks" });
+    const gates = (await w.human("GET", `/api/v1/tickets/${b.id}/gates`)).json;
+    expect(gates[done.id]).toEqual(
+      expect.arrayContaining([
+        { typeId: "et_human_signoff", name: "Human sign-off", need: 1, have: 0 },
+        { typeId: "blocked_by", name: `Blocked by ${a.key}`, need: 1, have: 0 },
+      ]),
+    );
+  });
 });

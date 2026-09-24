@@ -23,6 +23,7 @@ const lane = (over: Partial<Lane>): Lane => ({
 
 const ticket: Ticket = {
   id: "t1", projectId: "p1", boardId: "b1", number: 1, key: "PAN-1", title: "Ship it", laneId: "l1", position: 1,
+  epicId: null, tagIds: [], successCriteria: "", fields: {},
   flags: [], assigneeId: null, startDate: null, dueDate: null, metadata: {}, archived: false, createdAt: "2026-09-24T10:00:00.000Z", updatedAt: "2026-09-24T10:00:00.000Z",
 };
 

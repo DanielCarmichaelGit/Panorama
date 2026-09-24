@@ -67,7 +67,7 @@ function M5(db: DB): void {
     create index boards_project on boards(project_id, position);
     alter table tickets add column board_id text references boards(id);
   `);
-  const now = "2026-09-24T00:00:00.000Z";
+  const now = new Date().toISOString();
   const projects = db.prepare("select id, name from projects").all() as { id: string; name: string }[];
   const insertBoard = db.prepare("insert into boards(id, project_id, name, description, family, position, created_at) values(?,?,?,?,?,?,?)");
   const backfillTickets = db.prepare("update tickets set board_id = ? where project_id = ?");

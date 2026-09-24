@@ -76,10 +76,18 @@ describe("M5 migration backfill", () => {
     db.prepare("insert into tickets(id, project_id, number, title, lane_id, position, created_at, updated_at) values(?,?,?,?,?,?,?,?)")
       .run("t1", "proj1", 1, "Pre-existing ticket", "lane1", 1, NOW, NOW);
 
+    const before = Date.now();
     d.migrate(db); // completes the upgrade to M5, running the backfill
+    const after = Date.now();
 
     const boards = d.listBoards(db, "proj1");
-    expect(boards).toEqual([{ id: boards[0].id, projectId: "proj1", name: "Panorama", description: null, family: "stone", position: 0, createdAt: "2026-09-24T00:00:00.000Z" }]);
+    expect(boards).toEqual([{ id: boards[0].id, projectId: "proj1", name: "Panorama", description: null, family: "stone", position: 0, createdAt: boards[0].createdAt }]);
+    // The backfill stamps the real time the migration runs, not a fixed literal: assert it
+    // parses as an ISO timestamp landing within this test's own run window.
+    const createdMs = new Date(boards[0].createdAt).getTime();
+    expect(Number.isNaN(createdMs)).toBe(false);
+    expect(createdMs).toBeGreaterThanOrEqual(before);
+    expect(createdMs).toBeLessThanOrEqual(after);
     expect(d.getTicket(db, "t1")!.boardId).toBe(boards[0].id);
     db.close();
   });

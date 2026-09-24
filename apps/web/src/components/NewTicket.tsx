@@ -8,6 +8,7 @@ import { useFocusTrap } from "../lib/useFocusTrap";
 import { Composer } from "./Composer";
 
 interface PendingFile { id: string; file: File }
+interface UploadedAttachment { id: string; filename: string; isImage: boolean }
 
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -61,6 +62,11 @@ export function NewTicket({
   // Once the ticket itself is created, remember it: a retry after a later step fails (an
   // upload, the description comment) must resume from there rather than creating a duplicate.
   const createdRef = useRef<Ticket | null>(null);
+  // Files that have already uploaded successfully, across retries: each one is dropped from
+  // `files` as soon as its upload resolves, so a retry after a mid-loop failure only re-uploads
+  // what is actually still left, and the description comment can reference every id uploaded so
+  // far, not just the ones from this particular attempt.
+  const uploadedRef = useRef<UploadedAttachment[]>([]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dialogRef = useFocusTrap<HTMLDivElement>(() => onClose());
@@ -115,16 +121,18 @@ export function NewTicket({
         await setFlag.mutateAsync({ id: ticket.id, flag: "needs_human", on: true });
       }
 
-      const attachmentIds: string[] = [];
-      const imageRefs: string[] = [];
       for (const f of files) {
         setBusyStep(`Uploading ${f.file.name}`);
         const attachment = await uploadFile(ticket.id, f.file);
-        attachmentIds.push(attachment.id);
-        if (attachment.mime.startsWith("image/")) imageRefs.push(`![${attachment.filename}](attachment:${attachment.id})`);
+        uploadedRef.current.push({ id: attachment.id, filename: attachment.filename, isImage: attachment.mime.startsWith("image/") });
+        // Drop it the moment its own upload succeeds, not after the whole loop: a later file's
+        // failure then leaves only the files that never made it through in `files`, so retrying
+        // re-uploads exactly those and none that already succeeded.
+        setFiles((fs) => fs.filter((x) => x.id !== f.id));
       }
-      setFiles([]);
 
+      const attachmentIds = uploadedRef.current.map((a) => a.id);
+      const imageRefs = uploadedRef.current.filter((a) => a.isImage).map((a) => `![${a.filename}](attachment:${a.id})`);
       const body = [description.trim(), ...imageRefs].filter(Boolean).join("\n\n");
       if (body) {
         setBusyStep("Posting the description");

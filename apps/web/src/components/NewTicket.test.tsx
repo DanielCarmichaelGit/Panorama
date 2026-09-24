@@ -174,6 +174,70 @@ describe("NewTicket", () => {
     await waitFor(() => expect(screen.getByTestId("location").textContent).toBe("/board/t/t1"));
   });
 
+  it("retries only the files still pending after a mid-loop upload failure, without duplicating an already-uploaded attachment", async () => {
+    let createCalls = 0;
+    const apiImpl = async (method: string, path: string, body?: unknown) => {
+      if (method === "GET" && path === "/api/v1/projects/p1/boards") return [board({})];
+      if (method === "GET" && path === "/api/v1/projects/p1/lanes") return [lane({})];
+      if (method === "GET" && path === "/api/v1/agents") return [];
+      if (method === "POST" && path === "/api/v1/tickets") {
+        createCalls++;
+        return { id: "t1", projectId: "p1", boardId: "b1", key: "PAN-1", title: (body as any).title, laneId: "l1", number: 1, position: 1, flags: [], assigneeId: null, startDate: null, dueDate: null, metadata: {}, archived: false, createdAt: "", updatedAt: "" };
+      }
+      if (method === "POST" && path === "/api/v1/comments") {
+        return { id: "c1", ticketId: "t1", actorId: "human", body: (body as any).body, attachmentIds: (body as any).attachmentIds ?? [], createdAt: "" };
+      }
+      throw new Error(`unexpected ${method} ${path}`);
+    };
+
+    const uploadCalls: string[] = [];
+    let bFailedOnce = false;
+    vi.mocked(uploadFile).mockImplementation(async (_ticketId: string, file: File) => {
+      uploadCalls.push(file.name);
+      if (file.name === "b.txt" && !bFailedOnce) {
+        bFailedOnce = true;
+        throw new Error("network blip");
+      }
+      return { id: `att-${file.name}`, ticketId: "t1", commentId: null, actorId: "human", filename: file.name, mime: "text/plain", size: file.size, sha256: "", createdAt: "" };
+    });
+
+    renderDialog({ boards: [board({})], agents: [], apiImpl });
+    await screen.findByRole("dialog", { name: "New ticket" });
+
+    fireEvent.change(screen.getByLabelText("Title"), { target: { value: "Ship it" } });
+
+    const fileInput = document.getElementById("nt-file-input") as HTMLInputElement;
+    const file1 = new File(["a"], "a.txt", { type: "text/plain" });
+    const file2 = new File(["b"], "b.txt", { type: "text/plain" });
+    await act(async () => {
+      fireEvent.change(fileInput, { target: { files: [file1, file2] } });
+    });
+
+    await act(async () => {
+      editor().commands.setContent("<p>Both files</p>");
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Create" }));
+
+    await screen.findByRole("alert");
+    expect(uploadCalls).toEqual(["a.txt", "b.txt"]);
+    // a.txt's upload already succeeded, so it is no longer listed as pending; b.txt failed and
+    // stays listed so the retry knows to try it again.
+    expect(screen.queryByText("a.txt")).toBeNull();
+    expect(screen.getByText("b.txt")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Create" }));
+
+    await waitFor(() => expect(screen.getByTestId("location").textContent).toBe("/t/t1"));
+    expect(uploadCalls).toEqual(["a.txt", "b.txt", "b.txt"]); // exactly one more upload, not a re-upload of a.txt
+    expect(createCalls).toBe(1); // the retry did not create a second ticket
+    expect(vi.mocked(api)).toHaveBeenCalledWith("POST", "/api/v1/comments", {
+      ticketId: "t1",
+      body: "Both files",
+      attachmentIds: ["att-a.txt", "att-b.txt"],
+    });
+  });
+
   it("saves assignee, dates, and needs human via PATCH and the flag endpoint before posting", async () => {
     const calls: { method: string; path: string; body?: unknown }[] = [];
     const apiImpl = async (method: string, path: string, body?: unknown) => {

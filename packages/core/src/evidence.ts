@@ -34,7 +34,7 @@ export interface LaneRequirement {
 const note = z.string().max(2000).optional();
 export const EvidencePayload: Record<EvidenceKind, z.ZodTypeAny> = {
   test_run: z.object({ passed: z.number().int().min(0), failed: z.number().int().min(0), output: z.string().max(20000).optional() }).strict(),
-  pr_link: z.object({ url: z.string().url().max(2000), title: z.string().max(200).optional() }).strict(),
+  pr_link: z.object({ url: z.string().url().max(2000).refine((u) => /^https?:\/\//i.test(u), "http(s) only"), title: z.string().max(200).optional() }).strict(),
   eval_score: z.object({ score: z.number().min(0).max(1), note }).strict(),
   screenshot: z.object({ note }).strict(),
   human_signoff: z.object({ note }).strict(),

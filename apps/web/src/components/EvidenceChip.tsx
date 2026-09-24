@@ -13,12 +13,18 @@ function detail(evidence: Evidence, type: EvidenceType): React.ReactNode {
     }
     case "eval_score":
       return String(payload.score);
-    case "pr_link":
+    case "pr_link": {
+      const url = String(payload.url);
+      const label = typeof payload.title === "string" && payload.title ? payload.title : "View";
+      // Older evidence predates the http(s) rule on the payload, and a stored `javascript:` or
+      // `data:` url would run on click. Anything but http(s) is shown as inert text instead.
+      if (!/^https?:\/\//i.test(url)) return <span>{url}</span>;
       return (
-        <a href={String(payload.url)} target="_blank" rel="noreferrer">
-          {typeof payload.title === "string" && payload.title ? payload.title : "View"}
+        <a href={url} target="_blank" rel="noreferrer noopener">
+          {label}
         </a>
       );
+    }
     default:
       return null;
   }

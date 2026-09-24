@@ -25,6 +25,12 @@ describe("evaluateEvidence", () => {
     expect(() => evaluateEvidence(t("pr_link"), { url: "not a url" })).toThrow();
     expect(() => evaluateEvidence(t("custom"), { result: "maybe" })).toThrow();
   });
+  it("accepts only http and https links for a pull request", () => {
+    expect(evaluateEvidence(t("pr_link"), { url: "http://example.com/pr/1" })).toBe("info");
+    expect(evaluateEvidence(t("pr_link"), { url: "HTTPS://example.com/pr/1" })).toBe("info");
+    expect(() => evaluateEvidence(t("pr_link"), { url: "javascript:alert(1)" })).toThrow();
+    expect(() => evaluateEvidence(t("pr_link"), { url: "data:text/html,<script>alert(1)</script>" })).toThrow();
+  });
 });
 
 describe("checkGate", () => {

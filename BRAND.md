@@ -58,7 +58,7 @@ Panorama is an application shell with views. It is carried by structure.
 One sentence: sidebar on the left, view header top left with a mono count beside the title, content rows running the full width, the open ticket as a right-hand panel, and nothing centred except empty states.
 
 - Sidebar: 232px, collapses to 56px (icons with tooltips). Holds project switcher, Queue, Board, Timeline, Epics, Automations, Agents, Settings, and the chain and lock status at the bottom.
-- Ticket detail: right panel, 520px, pushes content at widths above 1280px and overlays below. Full page route also exists for deep links.
+- Ticket detail: right panel, 60vw (never under 520px or over 1100px), pushes content at widths above 1600px and overlays below. Full page route also exists for deep links. (Widened by the owner on 2026-09-24.)
 - Gutter: 16px below 860px, 28px above, on everything that touches the content edge. Exact.
 - Below 860px the sidebar becomes a bottom sheet behind a menu button and rows drop agent and token fields.
 

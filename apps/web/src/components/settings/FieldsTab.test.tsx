@@ -12,8 +12,8 @@ vi.mock("../../lib/api", async (importOriginal) => {
 
 afterEach(cleanup);
 
-function renderTab() {
-  vi.mocked(api).mockResolvedValue([]);
+function renderTab(setupApi: () => void = () => vi.mocked(api).mockResolvedValue([])) {
+  setupApi();
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
@@ -55,5 +55,32 @@ describe("FieldsTab", () => {
     fireEvent.click(screen.getByLabelText("Kind"));
     fireEvent.click(screen.getByRole("option", { name: "Text" }));
     expect(screen.queryByText("Options")).toBeNull();
+  });
+
+  it("shows an alert when archiving a field fails", async () => {
+    const field = {
+      id: "f1",
+      projectId: "p1",
+      name: "Story points",
+      key: "story_points",
+      kind: "number" as const,
+      options: [],
+      required: false,
+      position: 0,
+      archived: false,
+      createdAt: "",
+    };
+    renderTab(() =>
+      vi.mocked(api).mockImplementation((method: string, path: string) => {
+        if (method === "GET") return Promise.resolve([field]);
+        if (path.endsWith("/archive")) return Promise.reject(new Error("Server refused the archive."));
+        return Promise.resolve(field);
+      }),
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "Archive" }));
+    fireEvent.click(screen.getByRole("button", { name: "Archive" }));
+
+    expect((await screen.findByRole("alert")).textContent).toBe("Server refused the archive.");
   });
 });

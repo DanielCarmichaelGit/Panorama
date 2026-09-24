@@ -4,6 +4,7 @@ import { ApiError } from "../../lib/api";
 import { useArchiveTag, useCreateTag, useTags } from "../../lib/hooks";
 import { Chip } from "../Chip";
 import { Picker } from "../Picker";
+import { TabState } from "./TabState";
 
 const FAMILY_LABELS: Record<Family, string> = { coral: "Coral", sky: "Sky", lilac: "Lilac", mint: "Mint", stone: "Stone" };
 const FAMILY_OPTIONS = FAMILIES.map((f) => ({ id: f, label: FAMILY_LABELS[f], family: f }));
@@ -77,18 +78,8 @@ export function TagsTab({ projectId }: { projectId: string }) {
   const tags = useTags(projectId);
   const list = useMemo(() => (tags.data ?? []).filter((t) => !t.archived), [tags.data]);
 
-  if (tags.isPending) {
-    return <div className="settings-list">{[0, 1].map((i) => <div key={i} className="skeleton" />)}</div>;
-  }
-
-  if (tags.isError) {
-    return (
-      <div>
-        <p className="error" role="alert">Could not load tags.</p>
-        <button type="button" className="btn" onClick={() => tags.refetch()}>Try again</button>
-      </div>
-    );
-  }
+  const state = TabState({ query: tags, label: "tags" });
+  if (state) return state;
 
   return (
     <div>

@@ -4,6 +4,7 @@ import { useCreateEpic, useEpics, useUpdateEpic } from "../../lib/hooks";
 import { swapNeighbour } from "../../lib/reorder";
 import { Chip } from "../Chip";
 import { Picker } from "../Picker";
+import { TabState } from "./TabState";
 
 const FAMILY_LABELS: Record<Family, string> = { coral: "Coral", sky: "Sky", lilac: "Lilac", mint: "Mint", stone: "Stone" };
 const FAMILY_OPTIONS = FAMILIES.map((f) => ({ id: f, label: FAMILY_LABELS[f], family: f }));
@@ -51,11 +52,13 @@ function EpicRow({
   index,
   count,
   onMove,
+  moveError,
 }: {
   epic: Epic;
   index: number;
   count: number;
   onMove: (dir: -1 | 1) => void;
+  moveError?: string;
 }) {
   const update = useUpdateEpic();
   const [editing, setEditing] = useState(false);
@@ -68,6 +71,7 @@ function EpicRow({
     setName(epic.name);
     setDescription(epic.description ?? "");
     setFamily(epic.family);
+    update.reset();
     setEditing(true);
   }
 
@@ -102,7 +106,7 @@ function EpicRow({
         <Picker id={`ee-family-${epic.id}`} label="Family" options={FAMILY_OPTIONS} value={family} swatch onChange={(v) => v && setFamily(v as Family)} />
         {update.isError && <p className="error" role="alert">{update.error instanceof Error ? update.error.message : "Could not save the epic."}</p>}
         <div className="modal-actions">
-          <button type="button" className="btn ghost" onClick={() => setEditing(false)}>Cancel</button>
+          <button type="button" className="btn ghost" onClick={() => { update.reset(); setEditing(false); }}>Cancel</button>
           <button type="submit" className="btn" disabled={!canSave}>{update.isPending ? "Saving" : "Save"}</button>
         </div>
       </form>
@@ -114,6 +118,10 @@ function EpicRow({
       <Chip family={epic.family}>{epic.name}</Chip>
       {epic.description && <span className="muted">{epic.description}</span>}
       <div className="spacer" />
+      {moveError && <p className="error" role="alert">{moveError}</p>}
+      {update.isError && (
+        <p className="error" role="alert">{update.error instanceof Error ? update.error.message : "Could not archive the epic."}</p>
+      )}
       {confirming ? (
         <span className="confirm-row">
           Archive {epic.name}? Tickets keep it, but it will not appear as an option.
@@ -139,6 +147,7 @@ function EpicRow({
 export function EpicsTab({ projectId }: { projectId: string }) {
   const epics = useEpics(projectId);
   const update = useUpdateEpic();
+  const [moveError, setMoveError] = useState<{ id: string; message: string } | null>(null);
 
   const list = useMemo(
     () => [...(epics.data ?? [])].filter((e) => !e.archived).sort((a, b) => a.position - b.position),
@@ -148,21 +157,17 @@ export function EpicsTab({ projectId }: { projectId: string }) {
   async function move(epic: Epic, dir: -1 | 1) {
     const pair = swapNeighbour(list, list.findIndex((e) => e.id === epic.id), dir);
     if (!pair) return;
-    await Promise.all(pair.map((p) => update.mutateAsync({ id: p.id, patch: { position: p.position } })));
+    setMoveError(null);
+    try {
+      await Promise.all(pair.map((p) => update.mutateAsync({ id: p.id, patch: { position: p.position } })));
+    } catch {
+      setMoveError({ id: epic.id, message: "Could not reorder" });
+      epics.refetch();
+    }
   }
 
-  if (epics.isPending) {
-    return <div className="settings-list">{[0, 1].map((i) => <div key={i} className="skeleton" />)}</div>;
-  }
-
-  if (epics.isError) {
-    return (
-      <div>
-        <p className="error" role="alert">Could not load epics.</p>
-        <button type="button" className="btn" onClick={() => epics.refetch()}>Try again</button>
-      </div>
-    );
-  }
+  const state = TabState({ query: epics, label: "epics" });
+  if (state) return state;
 
   return (
     <div>
@@ -170,7 +175,14 @@ export function EpicsTab({ projectId }: { projectId: string }) {
       <NewEpicForm projectId={projectId} />
       <div className="settings-list">
         {list.map((e, i) => (
-          <EpicRow key={e.id} epic={e} index={i} count={list.length} onMove={(dir) => move(e, dir)} />
+          <EpicRow
+            key={e.id}
+            epic={e}
+            index={i}
+            count={list.length}
+            onMove={(dir) => move(e, dir)}
+            moveError={moveError?.id === e.id ? moveError.message : undefined}
+          />
         ))}
       </div>
     </div>

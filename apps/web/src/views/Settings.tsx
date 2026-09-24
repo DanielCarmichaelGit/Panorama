@@ -63,7 +63,7 @@ export function Settings() {
             role="tab"
             id={`tab-${t.id}`}
             aria-selected={activeTab === t.id}
-            aria-controls={`panel-${t.id}`}
+            aria-controls={activeTab === t.id ? `panel-${t.id}` : undefined}
             tabIndex={activeTab === t.id ? 0 : -1}
             className="tab"
             onClick={() => selectTab(t.id)}

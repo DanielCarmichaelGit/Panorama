@@ -1,0 +1,23 @@
+{
+  "sessionId": "s_20260924T222354_a2401b",
+  "actor": "Daniel Carmichael",
+  "tool": "claude-code",
+  "intent": "unstated",
+  "head": "2d04260809e15edc77b1882b3771c62087b961204b3e4f7b640f9fe43e0744d2",
+  "count": 520,
+  "diffHash": "e673184f08b12ff33004991bf87e80145745553e505af597be4e1d82ea604236",
+  "files": [
+    "apps/web/src/components/settings/EpicsTab.test.tsx",
+    "apps/web/src/components/settings/EpicsTab.tsx",
+    "apps/web/src/components/settings/EvidenceTab.tsx",
+    "apps/web/src/components/settings/FieldsTab.test.tsx",
+    "apps/web/src/components/settings/FieldsTab.tsx",
+    "apps/web/src/components/settings/LanesTab.tsx",
+    "apps/web/src/components/settings/TabState.tsx",
+    "apps/web/src/components/settings/TagsTab.tsx",
+    "apps/web/src/lib/hooks.ts",
+    "apps/web/src/views/Settings.tsx"
+  ],
+  "base": "bf969ac890e8fe99cd3f4c1a784fee0f9d8fefcc",
+  "ts": "2026-09-24T23:07:32.773Z"
+}

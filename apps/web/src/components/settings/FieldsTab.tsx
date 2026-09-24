@@ -4,6 +4,7 @@ import { ApiError } from "../../lib/api";
 import { useArchiveField, useCreateField, useFields, useUpdateField } from "../../lib/hooks";
 import { swapNeighbour } from "../../lib/reorder";
 import { Picker } from "../Picker";
+import { TabState } from "./TabState";
 
 const KIND_LABELS: Record<FieldKind, string> = {
   text: "Text",
@@ -79,6 +80,11 @@ function activeOptions(options: OptionRow[]): OptionRow[] {
   return options.map((o) => ({ value: o.value.trim(), label: o.label.trim() })).filter((o) => o.value && o.label);
 }
 
+function hasDuplicateValues(options: OptionRow[]): boolean {
+  const values = activeOptions(options).map((o) => o.value);
+  return new Set(values).size !== values.length;
+}
+
 function NewFieldForm({ projectId }: { projectId: string }) {
   const create = useCreateField();
   const [name, setName] = useState("");
@@ -94,7 +100,9 @@ function NewFieldForm({ projectId }: { projectId: string }) {
   }
 
   const trimmedOptions = activeOptions(options);
-  const canCreate = name.trim() !== "" && key.trim() !== "" && (kind !== "select" || trimmedOptions.length > 0) && !create.isPending;
+  const duplicateOptions = kind === "select" && hasDuplicateValues(options);
+  const canCreate =
+    name.trim() !== "" && key.trim() !== "" && (kind !== "select" || trimmedOptions.length > 0) && !duplicateOptions && !create.isPending;
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -149,6 +157,7 @@ function NewFieldForm({ projectId }: { projectId: string }) {
         <input type="checkbox" checked={required} onChange={(e) => setRequired(e.target.checked)} /> Required
       </label>
       {kind === "select" && <OptionsEditor options={options} onChange={setOptions} />}
+      {duplicateOptions && <p className="error" role="alert">Option values must be unique.</p>}
       {create.isError && <p className="error" role="alert">{errorMessage(create.error, "Could not create the field.")}</p>}
       <button type="submit" className="btn" disabled={!canCreate}>{create.isPending ? "Creating" : "Create field"}</button>
     </form>
@@ -160,11 +169,13 @@ function FieldRow({
   index,
   count,
   onMove,
+  moveError,
 }: {
   field: FieldDefinition;
   index: number;
   count: number;
   onMove: (dir: -1 | 1) => void;
+  moveError?: string;
 }) {
   const update = useUpdateField();
   const archive = useArchiveField();
@@ -182,7 +193,9 @@ function FieldRow({
   }
 
   const trimmedOptions = activeOptions(options);
-  const canSave = name.trim() !== "" && (field.kind !== "select" || trimmedOptions.length > 0) && !update.isPending;
+  const duplicateOptions = field.kind === "select" && hasDuplicateValues(options);
+  const canSave =
+    name.trim() !== "" && (field.kind !== "select" || trimmedOptions.length > 0) && !duplicateOptions && !update.isPending;
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
@@ -213,6 +226,7 @@ function FieldRow({
           <input type="checkbox" checked={required} onChange={(e) => setRequired(e.target.checked)} /> Required
         </label>
         {field.kind === "select" && <OptionsEditor options={options} onChange={setOptions} />}
+        {duplicateOptions && <p className="error" role="alert">Option values must be unique.</p>}
         {update.isError && <p className="error" role="alert">{errorMessage(update.error, "Could not save the field.")}</p>}
         <div className="modal-actions">
           <button type="button" className="btn ghost" onClick={() => setEditing(false)}>Cancel</button>
@@ -230,6 +244,10 @@ function FieldRow({
       {field.required && <span className="mono muted">Required</span>}
       {field.kind === "select" && <span className="mono muted">{field.options.length} options</span>}
       <div className="spacer" />
+      {moveError && <p className="error" role="alert">{moveError}</p>}
+      {archive.isError && (
+        <p className="error" role="alert">{archive.error instanceof Error ? archive.error.message : "Could not archive the field."}</p>
+      )}
       {confirming ? (
         <span className="confirm-row">
           Archive {field.name}? Values stay stored but hidden.
@@ -255,6 +273,7 @@ function FieldRow({
 export function FieldsTab({ projectId }: { projectId: string }) {
   const fields = useFields(projectId);
   const update = useUpdateField();
+  const [moveError, setMoveError] = useState<{ id: string; message: string } | null>(null);
 
   const list = useMemo(
     () => [...(fields.data ?? [])].filter((f) => !f.archived).sort((a, b) => a.position - b.position),
@@ -264,21 +283,17 @@ export function FieldsTab({ projectId }: { projectId: string }) {
   async function move(field: FieldDefinition, dir: -1 | 1) {
     const pair = swapNeighbour(list, list.findIndex((f) => f.id === field.id), dir);
     if (!pair) return;
-    await Promise.all(pair.map((p) => update.mutateAsync({ id: p.id, patch: { position: p.position } })));
+    setMoveError(null);
+    try {
+      await Promise.all(pair.map((p) => update.mutateAsync({ id: p.id, patch: { position: p.position } })));
+    } catch {
+      setMoveError({ id: field.id, message: "Could not reorder" });
+      fields.refetch();
+    }
   }
 
-  if (fields.isPending) {
-    return <div className="settings-list">{[0, 1, 2].map((i) => <div key={i} className="skeleton" />)}</div>;
-  }
-
-  if (fields.isError) {
-    return (
-      <div>
-        <p className="error" role="alert">Could not load fields.</p>
-        <button type="button" className="btn" onClick={() => fields.refetch()}>Try again</button>
-      </div>
-    );
-  }
+  const state = TabState({ query: fields, label: "fields" });
+  if (state) return state;
 
   return (
     <div>
@@ -286,7 +301,14 @@ export function FieldsTab({ projectId }: { projectId: string }) {
       <NewFieldForm projectId={projectId} />
       <div className="settings-list">
         {list.map((f, i) => (
-          <FieldRow key={f.id} field={f} index={i} count={list.length} onMove={(dir) => move(f, dir)} />
+          <FieldRow
+            key={f.id}
+            field={f}
+            index={i}
+            count={list.length}
+            onMove={(dir) => move(f, dir)}
+            moveError={moveError?.id === f.id ? moveError.message : undefined}
+          />
         ))}
       </div>
     </div>

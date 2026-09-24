@@ -1,21 +1,12 @@
 import { useEvidenceTypes } from "../../lib/hooks";
+import { TabState } from "./TabState";
 
 /** Settings tab listing the built-in evidence types. Read-only until automations can define custom ones. */
 export function EvidenceTab() {
   const types = useEvidenceTypes();
 
-  if (types.isPending) {
-    return <div className="settings-list">{[0, 1, 2].map((i) => <div key={i} className="skeleton" />)}</div>;
-  }
-
-  if (types.isError) {
-    return (
-      <div>
-        <p className="error" role="alert">Could not load evidence types.</p>
-        <button type="button" className="btn" onClick={() => types.refetch()}>Try again</button>
-      </div>
-    );
-  }
+  const state = TabState({ query: types, label: "evidence types" });
+  if (state) return state;
 
   const list = types.data ?? [];
 

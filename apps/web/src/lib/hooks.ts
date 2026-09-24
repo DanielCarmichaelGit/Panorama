@@ -59,10 +59,10 @@ export const useBoard = (projectId: string | undefined) => useTickets(projectId)
 export const useEvidenceTypes = () =>
   useQuery({ queryKey: ["evidence-types"], queryFn: () => api<EvidenceType[]>("GET", "/api/v1/evidence-types"), staleTime: Infinity });
 
-export const useEpics = (projectId: string | undefined, includeArchived?: boolean) =>
+export const useEpics = (projectId: string | undefined) =>
   useQuery({
     queryKey: ["epics", projectId],
-    queryFn: () => api<Epic[]>("GET", `/api/v1/epics?projectId=${projectId}${includeArchived ? "&archived=true" : ""}`),
+    queryFn: () => api<Epic[]>("GET", `/api/v1/epics?projectId=${projectId}`),
     enabled: !!projectId,
   });
 

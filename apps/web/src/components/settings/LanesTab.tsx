@@ -3,6 +3,7 @@ import type { EvidenceType, Lane, LaneRequirement } from "@panorama/core";
 import { useEvidenceTypes, useSetLaneRequirements } from "../../lib/hooks";
 import { merge } from "../LaneRequirements";
 import { RequirementRows } from "../RequirementRows";
+import { TabState } from "./TabState";
 
 function LaneRow({ lane, types }: { lane: Lane; types: EvidenceType[] }) {
   const setRequirements = useSetLaneRequirements();
@@ -63,18 +64,8 @@ export function LanesTab({ lanes }: { lanes: Lane[] }) {
   const evidenceTypes = useEvidenceTypes();
   const list = [...lanes].sort((a, b) => a.position - b.position);
 
-  if (evidenceTypes.isPending) {
-    return <div className="settings-list">{[0, 1, 2].map((i) => <div key={i} className="skeleton" />)}</div>;
-  }
-
-  if (evidenceTypes.isError) {
-    return (
-      <div>
-        <p className="error" role="alert">Could not load evidence types.</p>
-        <button type="button" className="btn" onClick={() => evidenceTypes.refetch()}>Try again</button>
-      </div>
-    );
-  }
+  const state = TabState({ query: evidenceTypes, label: "evidence types" });
+  if (state) return state;
 
   return (
     <div>

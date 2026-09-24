@@ -14,11 +14,20 @@ describe("attachments", () => {
     expect(c.attachmentIds).toEqual([up.json.id]);
     expect((await w.agent("POST", "/api/v1/comments", { ticketId: w.t.id, body: "again", attachmentIds: [up.json.id] })).status).toBe(400);
   });
-  it("serves html as octet-stream, refuses unknown types, and hides files across scopes", async () => {
+  it("serves html and svg as octet-stream, refuses unknown types, and hides files across scopes", async () => {
     const w = await world();
     const html = await w.agent("POST", "/api/v1/attachments", undefined, multipart({ ticketId: w.t.id }, { name: "r.html", mime: "text/html", bytes: Buffer.from("<b>x</b>") }));
     const res = await w.app.inject({ method: "GET", url: `/api/v1/attachments/${html.json.id}`, headers: await signRequest(w.keys.seed, "human", "GET", `/api/v1/attachments/${html.json.id}`, "") });
     expect(res.headers["content-type"]).toBe("application/octet-stream");
+
+    // An svg is an image the browser will happily run script from, so it is never served as itself.
+    const svgBytes = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>');
+    const svg = await w.agent("POST", "/api/v1/attachments", undefined, multipart({ ticketId: w.t.id }, { name: "x.svg", mime: "image/svg+xml", bytes: svgBytes }));
+    expect(svg.status).toBe(200);
+    const svgRes = await w.app.inject({ method: "GET", url: `/api/v1/attachments/${svg.json.id}`, headers: await signRequest(w.keys.seed, "human", "GET", `/api/v1/attachments/${svg.json.id}`, "") });
+    expect(svgRes.headers["content-type"]).toBe("application/octet-stream");
+    expect(svgRes.headers["x-content-type-options"]).toBe("nosniff");
+    expect(svgRes.headers["content-disposition"]).toBe('attachment; filename="x.svg"');
     expect((await w.agent("POST", "/api/v1/attachments", undefined, multipart({ ticketId: w.t.id }, { name: "x.exe", mime: "application/x-msdownload", bytes: png }))).status).toBe(415);
     const other = (await w.human("POST", "/api/v1/projects", { name: "O", key: "OO" })).json;
     const { agent: outsider } = await agentIn(w, other.project.id);

@@ -1,11 +1,13 @@
 import { useState } from "react";
 import type { Status } from "../App";
 import { LaneScene } from "../lib/iso";
+import { generatePassword } from "../lib/password";
 import { setupFlow, unlockFlow, type ChainState } from "./unlock";
 
 export function LockScreen({ status, onDone }: { status: Status; onDone: (seed: Uint8Array, chain: ChainState) => void }) {
   const first = status.state === "uninitialized";
-  const [pw, setPw] = useState(""), [pw2, setPw2] = useState(""), [enc, setEnc] = useState(true), [busy, setBusy] = useState(false), [err, setErr] = useState("");
+  const [pw, setPw] = useState(""), [pw2, setPw2] = useState(""), [enc, setEnc] = useState(true), [busy, setBusy] = useState(false), [err, setErr] = useState(""), [shown, setShown] = useState(false);
+  function suggest() { const p = generatePassword(); setPw(p); setPw2(p); setShown(true); setErr(""); }
   async function submit(e: React.FormEvent) {
     e.preventDefault(); setErr("");
     if (first && pw.length < 12) return setErr("Use at least 12 characters.");
@@ -24,8 +26,10 @@ export function LockScreen({ status, onDone }: { status: Status; onDone: (seed: 
         <div className="mark">Panorama</div>
         <h1>{first ? "Set your password" : "Unlock"}</h1>
         <p className="muted">{first ? "It signs everything you approve and it is never stored. If you lose it, it cannot be recovered in this version." : status.encryption ? "Your database is encrypted. Schedules and agents wait until you unlock." : "Your password signs the actions only you can take."}</p>
-        <div className="field"><label htmlFor="pw">Password</label><input id="pw" className="input" type="password" autoFocus autoComplete={first ? "new-password" : "current-password"} value={pw} onChange={(e) => setPw(e.target.value)} /></div>
-        {first && <div className="field"><label htmlFor="pw2">Repeat password</label><input id="pw2" className="input" type="password" autoComplete="new-password" value={pw2} onChange={(e) => setPw2(e.target.value)} /></div>}
+        <div className="field"><label htmlFor="pw">Password</label><input id="pw" className={"input" + (shown ? " mono-input" : "")} type={shown ? "text" : "password"} autoFocus autoComplete={first ? "new-password" : "current-password"} spellCheck={false} value={pw} onChange={(e) => setPw(e.target.value)} /></div>
+        {first && <div className="field"><label htmlFor="pw2">Repeat password</label><input id="pw2" className={"input" + (shown ? " mono-input" : "")} type={shown ? "text" : "password"} autoComplete="new-password" spellCheck={false} value={pw2} onChange={(e) => setPw2(e.target.value)} /></div>}
+        {first && <div className="row-actions"><button type="button" className="btn ghost" onClick={suggest}>Suggest a password</button><button type="button" className="btn ghost" onClick={() => setShown((v) => !v)} aria-pressed={shown}>{shown ? "Hide" : "Show"}</button></div>}
+        {first && <p className="muted small">Write it down somewhere that is not this computer. Do not save it in a file, a note, a browser, or a password manager on this machine: an agent that can read the file can unlock the database and sign as you. A suggested password has about 129 bits of randomness, so knowing how it was made does not help anyone guess it.</p>}
         {first && <label className="check"><input type="checkbox" checked={enc} onChange={(e) => setEnc(e.target.checked)} /><span>Encrypt the database. Panorama then stays locked after a restart until you enter this password.</span></label>}
         {err && <p className="error" role="alert">{err}</p>}
         <button className="btn" disabled={busy || !pw}>{busy ? "Working" : first ? "Create" : "Unlock"}</button>

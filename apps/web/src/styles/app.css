@@ -24,6 +24,9 @@ a{color:var(--accent)}
 .lock{min-height:100%;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);align-items:center;gap:var(--gutter);padding:var(--gutter);max-width:1080px;margin:0 auto}
 .lock form{max-width:380px}
 .lock .art{display:flex;justify-content:center}
+.row-actions{display:flex;gap:8px;flex-wrap:wrap;margin:-.25rem 0 .75rem}
+.mono-input{font-family:var(--mono);font-size:.875rem;letter-spacing:.02em}
+.small{font-size:.8125rem;line-height:1.5}
 .iso-scene{display:block;width:100%;max-width:440px;height:auto}
 .lock .mark{font-weight:700;font-size:1.05rem;letter-spacing:-.01em;margin-bottom:2rem}
 .lock h1{margin-bottom:.75rem}.lock p{margin:0 0 1.5rem}

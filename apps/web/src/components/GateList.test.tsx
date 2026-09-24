@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import { GateList, nextLane } from "./GateList";
+import { GateList, laneOptionLabel, nextLane } from "./GateList";
 
 afterEach(cleanup);
 
@@ -33,7 +33,7 @@ describe("GateList", () => {
       name: "Review",
       evidenceRequirements: [{ typeId: "et_eval_score", count: 1 }, { typeId: "et_test_run", count: 1 }],
     });
-    render(<GateList lane={reviewLane} missing={[{ typeId: "et_eval_score", need: 1, have: 0 }]} types={types} />);
+    render(<GateList lane={reviewLane} missing={[{ typeId: "et_eval_score", name: "Eval score", need: 1, have: 0 }]} types={types} />);
 
     expect(screen.getByText("Eval score, 0 of 1")).toBeTruthy();
     expect(screen.getByText("Test run")).toBeTruthy();
@@ -48,5 +48,23 @@ describe("GateList", () => {
   it("says this is the last lane when there is no next lane", () => {
     render(<GateList lane={null} missing={[]} types={types} />);
     expect(screen.getByText("This is the last lane.")).toBeTruthy();
+  });
+});
+
+describe("laneOptionLabel", () => {
+  const reviewLane = lane({ id: "l2", name: "Review" });
+
+  it("is just the lane name when nothing is missing", () => {
+    expect(laneOptionLabel(reviewLane, [])).toBe("Review");
+  });
+
+  it("uses each miss's own name when present, without needing types", () => {
+    expect(laneOptionLabel(reviewLane, [{ typeId: "et_eval_score", name: "Eval score", need: 1, have: 0 }])).toBe("Review (needs Eval score)");
+  });
+
+  it("falls back to a types lookup when a miss carries no name", () => {
+    expect(
+      laneOptionLabel(reviewLane, [{ typeId: "et_test_run", need: 1, have: 0 } as any], types)
+    ).toBe("Review (needs Test run)");
   });
 });

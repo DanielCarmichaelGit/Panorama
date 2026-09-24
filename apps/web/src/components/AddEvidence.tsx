@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { EvidenceType, EvidenceResult } from "@panorama/core";
 import { ApiError } from "../lib/api";
 import { uploadFile } from "../lib/attachments";
@@ -14,6 +14,14 @@ interface ZodIssue {
 function issueLines(error: unknown): string[] | null {
   if (!(error instanceof ApiError) || !Array.isArray(error.details)) return null;
   return (error.details as ZodIssue[]).map((i) => `${i.path.length ? i.path.join(".") : "value"}: ${i.message}`);
+}
+
+/** A finite number from a text field, or null for blank/unparseable input (an empty field is never a silent 0). */
+function parsedNumber(s: string): number | null {
+  const trimmed = s.trim();
+  if (trimmed === "") return null;
+  const n = Number(trimmed);
+  return Number.isFinite(n) ? n : null;
 }
 
 /**
@@ -43,9 +51,15 @@ export function AddEvidence({ ticketId, types, onClose }: { ticketId: string; ty
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState("");
 
+  // Guards against a slow upload's response landing after a newer file selection (or a type
+  // switch) has moved on: each pickFile call claims the next number, and only applies its result
+  // if it's still the most recent one when the request resolves.
+  const uploadSeqRef = useRef(0);
+
   // Switching evidence type starts the form over: the fields shown, and what counts as valid,
   // change with the kind.
   useEffect(() => {
+    uploadSeqRef.current++;
     setPassed("0");
     setFailed("0");
     setOutput("");
@@ -60,16 +74,19 @@ export function AddEvidence({ ticketId, types, onClose }: { ticketId: string; ty
   }, [typeId]);
 
   async function pickFile(file: File) {
+    const seq = ++uploadSeqRef.current;
     setUploading(true);
     setUploadError("");
     try {
       const attachment = await uploadFile(ticketId, file);
+      if (uploadSeqRef.current !== seq) return; // a newer selection started since; this result is stale
       setAttachmentId(attachment.id);
       setFilename(attachment.filename);
     } catch (e) {
+      if (uploadSeqRef.current !== seq) return;
       setUploadError(e instanceof Error ? e.message : "Could not upload the file.");
     } finally {
-      setUploading(false);
+      if (uploadSeqRef.current === seq) setUploading(false);
     }
   }
 
@@ -78,15 +95,16 @@ export function AddEvidence({ ticketId, types, onClose }: { ticketId: string; ty
     if (!type) return null;
     switch (type.kind) {
       case "test_run": {
-        const p = Number(passed), f = Number(failed);
-        if (!Number.isInteger(p) || p < 0 || !Number.isInteger(f) || f < 0) return null;
+        const p = parsedNumber(passed), f = parsedNumber(failed);
+        if (p === null || !Number.isInteger(p) || p < 0) return null;
+        if (f === null || !Number.isInteger(f) || f < 0) return null;
         return { passed: p, failed: f, output: output.trim() || undefined };
       }
       case "pr_link":
         return url.trim() ? { url: url.trim(), title: title.trim() || undefined } : null;
       case "eval_score": {
-        const s = Number(score);
-        if (Number.isNaN(s) || s < 0 || s > 1) return null;
+        const s = parsedNumber(score);
+        if (s === null || s < 0 || s > 1) return null;
         return { score: s, note: note.trim() || undefined };
       }
       case "screenshot":

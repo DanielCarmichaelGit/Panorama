@@ -14,7 +14,8 @@ export function FirstProject() {
 
   function onNameChange(v: string) {
     setName(v);
-    if (!keyTouched) setKey(suggestKey(v));
+    // The key follows the name until the owner types their own; clearing the key hands it back.
+    if (!keyTouched || !key) setKey(suggestKey(v));
   }
 
   async function submit(e: React.FormEvent) {
@@ -36,7 +37,7 @@ export function FirstProject() {
         </div>
         <div className="field">
           <label htmlFor="proj-key">Key</label>
-          <input id="proj-key" className="input mono" value={key} maxLength={8} onChange={(e) => { setKeyTouched(true); setKey(e.target.value.toUpperCase()); }} />
+          <input id="proj-key" className="input mono" value={key} maxLength={8} onChange={(e) => { const v = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""); setKeyTouched(v !== ""); setKey(v || suggestKey(name)); }} />
         </div>
         {create.isError && <p className="error" role="alert">{create.error instanceof Error ? create.error.message : "Could not create the project."}</p>}
         <button className="btn" disabled={!name.trim() || !key.trim() || create.isPending}>{create.isPending ? "Creating" : "Create project"}</button>

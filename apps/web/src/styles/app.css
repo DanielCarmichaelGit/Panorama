@@ -30,7 +30,7 @@ a{color:var(--accent)}
 .check{display:flex;gap:.6rem;align-items:flex-start;margin-bottom:1.25rem}
 .checkbox-row{display:flex;align-items:center;gap:.5rem;margin:.3rem 0;font-weight:400}
 .banner{background:var(--coral-top);color:var(--coral-ink);padding:.7rem var(--gutter);font-weight:600}
-@media (max-width:860px){.lock{grid-template-columns:1fr;align-content:start}.lock .art{order:-1;margin-bottom:.5rem}.iso-scene{max-width:320px}}
+@media (max-width:860px){.lock{grid-template-columns:1fr;align-content:start}.lock .art{order:-1;margin-bottom:.5rem}.lock form{width:100%;margin:0 auto}.iso-scene{max-width:320px}}
 .shell{display:grid;grid-template-columns:232px minmax(0,1fr);min-height:100%}.shell.collapsed{grid-template-columns:56px minmax(0,1fr)}
 .side{background:var(--surface);border-right:1px solid var(--line);padding:16px 12px;display:flex;flex-direction:column;gap:4px;position:sticky;top:0;height:100vh;z-index:var(--z-sidebar);animation:fade 300ms var(--ease-in) both}
 .side .nav-item{display:flex;align-items:center;gap:.6rem;padding:.5rem .7rem;border-radius:var(--r-pill);color:var(--muted);text-decoration:none;font-weight:600;font-size:.875rem;border:0;background:none;cursor:pointer;transition:background var(--dur) var(--ease),color var(--dur) var(--ease)}

@@ -30,6 +30,27 @@ function editor(): any {
   return (window as any).__panEditor;
 }
 
+/**
+ * Types into the editor the way a browser does: a keydown per character, the character landing
+ * in the contenteditable's DOM, and an input event. ProseMirror's DOM observer notices the
+ * mutation and turns it into a transaction. Deliberately does not go through editor.commands,
+ * which would not reproduce a transaction that originates in the view.
+ */
+async function typeIntoEditor(text: string) {
+  const pm = document.querySelector(".ProseMirror") as HTMLElement;
+  pm.focus();
+  for (const ch of text) {
+    fireEvent.keyDown(pm, { key: ch });
+    const p = pm.querySelector("p")!;
+    const last = p.lastChild;
+    if (last && last.nodeType === Node.TEXT_NODE) last.textContent += ch;
+    else p.insertBefore(document.createTextNode(ch), p.querySelector("br"));
+    fireEvent.input(pm, { inputType: "insertText", data: ch });
+    fireEvent.keyUp(pm, { key: ch });
+    await Promise.resolve();
+  }
+}
+
 describe("Composer", () => {
   it("converts markdown shorthand as you type", async () => {
     renderComposer();
@@ -45,6 +66,19 @@ describe("Composer", () => {
     ed.commands.insertContent("item");
 
     expect(composerMarkdown(ed)).toBe("# Title\n\n- item");
+  });
+
+  it("enables the Comment button once text has been typed", async () => {
+    renderComposer();
+    await screen.findByTestId("composer");
+    const button = screen.getByRole("button", { name: "Comment" }) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+
+    await typeIntoEditor("hi");
+
+    await waitFor(() => expect(composerMarkdown(editor())).toBe("hi"));
+    // Nothing else re-renders the composer here; the button must track the editor on its own.
+    await waitFor(() => expect(button.disabled).toBe(false));
   });
 
   it("posts on Ctrl+Enter and clears the editor", async () => {

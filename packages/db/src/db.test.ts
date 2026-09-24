@@ -93,6 +93,29 @@ describe("M5 migration backfill", () => {
   });
 });
 
+describe("M6 migration", () => {
+  it("upgrades a database at version 5 with an existing ticket, leaving success_criteria empty and epic_id null", () => {
+    const dir = mkdtempSync(join(tmpdir(), "pan-"));
+    const db = d.openDatabase(join(dir, "p.db"), null);
+    d.migrateTo(db, 5); // stop right after M5: no epics, tags, links, fields tables yet
+
+    db.prepare("insert into projects(id, key, name, next_number, created_at) values(?,?,?,?,?)").run("proj1", "PAN", "Panorama", 2, NOW);
+    db.prepare("insert into lanes(id, project_id, name, position, family) values(?,?,?,?,?)").run("lane1", "proj1", "Backlog", 0, "stone");
+    db.prepare("insert into boards(id, project_id, name, family, position, created_at) values(?,?,?,?,?,?)").run("board1", "proj1", "Panorama", "stone", 0, NOW);
+    db.prepare("insert into tickets(id, project_id, board_id, number, title, lane_id, position, created_at, updated_at) values(?,?,?,?,?,?,?,?,?)")
+      .run("t1", "proj1", "board1", 1, "Pre-existing ticket", "lane1", 1, NOW, NOW);
+
+    d.migrate(db); // completes the upgrade to M6
+
+    const t = d.getTicket(db, "t1")!;
+    expect(t.epicId).toBeNull();
+    expect(t.successCriteria).toBe("");
+    expect(t.tagIds).toEqual([]);
+    expect(t.fields).toEqual({});
+    db.close();
+  });
+});
+
 describe("projects and tickets", () => {
   it("creates a project with the six default lanes", () => {
     const { db } = fresh();
@@ -172,5 +195,41 @@ describe("projects and tickets", () => {
     expect(d.setFlag(db, t.id, "blocked", false, NOW).flags).toEqual([]);
     d.archiveTicket(db, t.id, NOW);
     expect(d.listTickets(db, { projectId: project.id })).toHaveLength(0);
+  });
+  it("round trips epic, tags, success criteria, and fields through toTicket", () => {
+    const { db } = fresh();
+    const { project } = d.createProject(db, { name: "Panorama", key: "PAN" }, NOW);
+    const epic = d.createEpic(db, { projectId: project.id, name: "Onboarding" }, NOW);
+    const tag = d.createTag(db, { projectId: project.id, name: "Bug" }, NOW);
+    const field = d.createField(db, { projectId: project.id, name: "Severity", key: "severity", kind: "text" }, NOW);
+
+    const created = d.createTicket(
+      db,
+      { projectId: project.id, title: "Full ticket", epicId: epic.id, tagIds: [tag.id], successCriteria: "- [ ] ship it", fields: { [field.key]: "high" } },
+      NOW
+    );
+    expect(created.epicId).toBe(epic.id);
+    expect(created.tagIds).toEqual([tag.id]);
+    expect(created.successCriteria).toBe("- [ ] ship it");
+    expect(created.fields).toEqual({ severity: "high" });
+    expect(d.getTicket(db, created.id)).toEqual(created);
+
+    const updated = d.updateTicket(db, created.id, { epicId: null, tagIds: [], successCriteria: "done", fields: { severity: null } }, NOW);
+    expect(updated.epicId).toBeNull();
+    expect(updated.tagIds).toEqual([]);
+    expect(updated.successCriteria).toBe("done");
+    expect(updated.fields).toEqual({});
+  });
+  it("filters listTickets by epicId and tagId", () => {
+    const { db } = fresh();
+    const { project } = d.createProject(db, { name: "Panorama", key: "PAN" }, NOW);
+    const epic = d.createEpic(db, { projectId: project.id, name: "Onboarding" }, NOW);
+    const tag = d.createTag(db, { projectId: project.id, name: "Bug" }, NOW);
+    const inEpic = d.createTicket(db, { projectId: project.id, title: "in epic", epicId: epic.id }, NOW);
+    const tagged = d.createTicket(db, { projectId: project.id, title: "tagged", tagIds: [tag.id] }, NOW);
+    d.createTicket(db, { projectId: project.id, title: "plain" }, NOW);
+
+    expect(d.listTickets(db, { projectId: project.id, epicId: epic.id }).map((t) => t.id)).toEqual([inEpic.id]);
+    expect(d.listTickets(db, { projectId: project.id, tagId: tag.id }).map((t) => t.id)).toEqual([tagged.id]);
   });
 });

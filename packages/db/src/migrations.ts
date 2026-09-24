@@ -77,8 +77,34 @@ function M5(db: DB): void {
     backfillTickets.run(boardId, p.id);
   }
 }
+// The ticket model milestone (2b): epics group tickets the way boards do but looser, tags
+// classify freely (unique per project, case-insensitively, hence the lower(name) index),
+// ticket_links record dependencies and relations between tickets, and field_definitions with
+// ticket_field_values let the owner attach custom, typed data to tickets. tickets gains two
+// plain columns: epic_id (nullable, a ticket belongs to at most one epic) and success_criteria
+// (markdown, empty by default). A fresh install and an upgrade both just get the columns and
+// empty tables, so this is a static string like M1-M4, not a backfill function like M5.
+const M6 = `
+create table epics(id text primary key, project_id text not null references projects(id), name text not null, description text,
+  family text not null, position integer not null, archived integer not null default 0, created_at text not null);
+create index epics_project on epics(project_id, position);
+create table tags(id text primary key, project_id text not null references projects(id), name text not null, family text not null,
+  archived integer not null default 0, created_at text not null);
+create unique index tags_project_name on tags(project_id, lower(name));
+create table ticket_tags(ticket_id text not null references tickets(id), tag_id text not null references tags(id), primary key(ticket_id, tag_id));
+create table ticket_links(id text primary key, project_id text not null references projects(id), from_id text not null references tickets(id),
+  to_id text not null references tickets(id), kind text not null check(kind in('blocks','relates')), created_at text not null,
+  unique(from_id, to_id, kind));
+create table field_definitions(id text primary key, project_id text not null references projects(id), name text not null, key text not null,
+  kind text not null check(kind in('text','number','date','select','checkbox')), options text not null default '[]', required integer not null default 0,
+  position integer not null, archived integer not null default 0, created_at text not null, unique(project_id, key));
+create table ticket_field_values(ticket_id text not null references tickets(id), field_id text not null references field_definitions(id),
+  value text not null, primary key(ticket_id, field_id));
+alter table tickets add column epic_id text references epics(id);
+alter table tickets add column success_criteria text not null default '';
+`;
 type Migration = string | ((db: DB) => void);
-const MIGRATIONS: Migration[] = [M1, M2, M3, M4, M5];
+const MIGRATIONS: Migration[] = [M1, M2, M3, M4, M5, M6];
 
 /** Applies migrations up to (not including index) `version`. Exported so a test can stop a
  *  fresh database at M4, seed pre-boards data, then call `migrate` to exercise the M5 backfill

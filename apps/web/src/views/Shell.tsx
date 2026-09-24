@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, NavLink, Outlet, useMatch, useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
-import { CaretLeft, CaretRight, List, Lock, Robot, Tray } from "@phosphor-icons/react";
+import { CaretLeft, CaretRight, Kanban, List, Lock, Robot, Tray } from "@phosphor-icons/react";
 import type { Project } from "@panorama/core";
 import type { Status } from "../App";
 import { api } from "../lib/api";
@@ -85,12 +85,15 @@ export function Shell({ status, chainOk }: { status: Status; chainOk: boolean })
   const current = list.find((p) => p.id === projectOverride) ?? list[0] ?? null;
   const lanes = useLanes(current?.id);
   const ticketMatch = useMatch("/t/:id");
-  const ticketId = ticketMatch?.params.id;
+  const boardTicketMatch = useMatch("/board/t/:id");
+  const ticketId = ticketMatch?.params.id ?? boardTicketMatch?.params.id;
   const rootMatch = useMatch("/");
-  const queueCurrent = !!rootMatch || !!ticketId;
+  const queueCurrent = !!rootMatch || !!ticketMatch;
+  const boardMatch = useMatch("/board");
+  const boardCurrent = !!boardMatch || !!boardTicketMatch;
 
   function closeTicketPanel() {
-    navigate("/");
+    navigate(boardTicketMatch ? "/board" : "/");
     if (ticketId) {
       window.setTimeout(() => {
         document.querySelector<HTMLElement>(`[data-ticket="${ticketId}"]`)?.focus();
@@ -107,6 +110,7 @@ export function Shell({ status, chainOk }: { status: Status; chainOk: boolean })
       if (pendingG) {
         reset();
         if (e.key === "q") { e.preventDefault(); navigate("/"); }
+        else if (e.key === "b") { e.preventDefault(); navigate("/board"); }
         else if (e.key === "a") { e.preventDefault(); navigate("/agents"); }
         return;
       }
@@ -155,6 +159,10 @@ export function Shell({ status, chainOk }: { status: Status; chainOk: boolean })
         <Link to="/" className="nav-item" aria-label="Queue" title="Queue" aria-current={queueCurrent ? "page" : undefined}>
           <Tray size={18} weight="regular" aria-hidden="true" />
           <span className="label">Queue</span>
+        </Link>
+        <Link to="/board" className="nav-item" aria-label="Board" title="Board" aria-current={boardCurrent ? "page" : undefined}>
+          <Kanban size={18} weight="regular" aria-hidden="true" />
+          <span className="label">Board</span>
         </Link>
         <NavLink to="/agents" className="nav-item" aria-label="Agents" title="Agents">
           <Robot size={18} weight="regular" aria-hidden="true" />

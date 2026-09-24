@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { Actor, Attachment, Comment, Evidence, EvidenceType, Lane, Project, Scopes, Ticket } from "@panorama/core";
+import type { Actor, Attachment, Comment, Evidence, EvidenceType, Lane, LaneRequirement, Project, Scopes, Ticket } from "@panorama/core";
 import { api } from "./api";
 import { session } from "./session";
 import { connectStream, invalidationsFor } from "./stream";
@@ -32,6 +32,9 @@ export const useTicket = (id: string | undefined) =>
 
 export const useTickets = (projectId: string | undefined) =>
   useQuery({ queryKey: ["tickets", projectId], queryFn: () => api<Ticket[]>("GET", `/api/v1/tickets?projectId=${projectId}`), enabled: !!projectId });
+
+/** The Board's tickets: the same query as `useTickets`, so the two views share one cache entry. */
+export const useBoard = (projectId: string | undefined) => useTickets(projectId);
 
 export const useEvidenceTypes = () =>
   useQuery({ queryKey: ["evidence-types"], queryFn: () => api<EvidenceType[]>("GET", "/api/v1/evidence-types"), staleTime: Infinity });
@@ -129,6 +132,19 @@ export const useUpdateTicket = () => {
       qc.invalidateQueries({ queryKey: ["queue"] });
       qc.invalidateQueries({ queryKey: ["tickets"] });
       qc.invalidateQueries({ queryKey: ["ticket"] });
+    },
+  });
+};
+
+/** Human only: replaces a lane's evidence requirements. */
+export const useSetLaneRequirements = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { id: string; requirements: LaneRequirement[] }) =>
+      api<Lane>("PUT", `/api/v1/lanes/${v.id}/requirements`, { requirements: v.requirements }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["lanes"] });
+      qc.invalidateQueries({ queryKey: ["gates"] });
     },
   });
 };

@@ -5,6 +5,8 @@ describe("CreateProjectInput", () => {
   it("accepts an uppercase project key and rejects a lowercase one", () => {
     expect(CreateProjectInput.safeParse({ name: "Panorama", key: "PAN" }).success).toBe(true);
     expect(CreateProjectInput.safeParse({ name: "Panorama", key: "pan" }).success).toBe(false);
+    expect(CreateProjectInput.safeParse({ name: "Fire tower", key: "FIRE_TOWER" }).success).toBe(true);
+    expect(CreateProjectInput.safeParse({ name: "x", key: "A".repeat(33) }).success).toBe(false);
   });
 });
 

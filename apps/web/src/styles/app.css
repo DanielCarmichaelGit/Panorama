@@ -14,6 +14,8 @@ a{color:var(--accent)}
 .btn.ghost{background:transparent;color:var(--text);border-color:var(--line)}.btn.ghost:hover{border-color:var(--text);filter:none}
 .input{font:inherit;color:inherit;background:var(--surface);border:1px solid var(--line);border-radius:var(--r-input);padding:.55rem .7rem;width:100%;transition:border-color var(--dur) var(--ease)}
 .input:hover{border-color:var(--muted)}
+.input[readonly]{background:var(--stone-top);color:var(--muted);cursor:default}
+.input[readonly]:hover{border-color:var(--line)}
 .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-card)}
 .field{display:grid;gap:.35rem;margin-bottom:1rem}.field label{font-weight:600;font-size:.8125rem}
 .error{color:var(--coral-ink);background:var(--coral-top);border-radius:var(--r-input);padding:.5rem .7rem}

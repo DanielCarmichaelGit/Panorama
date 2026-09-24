@@ -96,7 +96,7 @@ export type ApproveAgentInput = z.infer<typeof ApproveAgentInput>;
 
 export const CreateProjectInput = z.object({
   name: z.string().min(1).max(80),
-  key: z.string().regex(/^[A-Z][A-Z0-9]{1,7}$/),
+  key: z.string().regex(/^[A-Z][A-Z0-9_]{0,31}$/),
 });
 export type CreateProjectInput = z.infer<typeof CreateProjectInput>;
 

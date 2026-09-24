@@ -2,21 +2,18 @@ import { useState } from "react";
 import { LaneScene } from "../lib/iso";
 import { useCreateProject } from "../lib/hooks";
 
-function suggestKey(name: string): string {
-  return name.replace(/[^A-Za-z]/g, "").slice(0, 3).toUpperCase();
+// The key prefixes every ticket (FIRETOWER-1). It is the name in capitals with spaces as
+// underscores, up to 32 characters, and it is not edited by hand.
+export function keyFor(name: string): string {
+  return name.trim().toUpperCase().replace(/\s+/g, "_").replace(/[^A-Z0-9_]/g, "").replace(/^[^A-Z]+/, "").slice(0, 32);
 }
 
 export function FirstProject() {
   const [name, setName] = useState("");
-  const [key, setKey] = useState("");
-  const [keyTouched, setKeyTouched] = useState(false);
+  const key = keyFor(name);
   const create = useCreateProject();
 
-  function onNameChange(v: string) {
-    setName(v);
-    // The key follows the name until the owner types their own; clearing the key hands it back.
-    if (!keyTouched || !key) setKey(suggestKey(v));
-  }
+  function onNameChange(v: string) { setName(v); }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -37,7 +34,7 @@ export function FirstProject() {
         </div>
         <div className="field">
           <label htmlFor="proj-key">Key</label>
-          <input id="proj-key" className="input mono" value={key} maxLength={8} onChange={(e) => { const v = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""); setKeyTouched(v !== ""); setKey(v || suggestKey(name)); }} />
+          <input id="proj-key" className="input mono" value={key} readOnly aria-readonly="true" tabIndex={-1} />
         </div>
         {create.isError && <p className="error" role="alert">{create.error instanceof Error ? create.error.message : "Could not create the project."}</p>}
         <button className="btn" disabled={!name.trim() || !key.trim() || create.isPending}>{create.isPending ? "Creating" : "Create project"}</button>

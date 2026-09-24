@@ -8,7 +8,6 @@ import { useAgents, useBoard, useEvidenceTypes, useGates, useMoveTicket } from "
 import { BoardCard, BoardCardContent } from "../components/BoardCard";
 import { laneOptionLabel, missingMessage } from "../components/GateList";
 import { LaneRequirements } from "../components/LaneRequirements";
-import { LaneScene } from "../lib/iso";
 
 /** Groups tickets by lane, sorted by position within each lane; every lane gets an entry, even an empty one. */
 export function groupByLane(tickets: Ticket[], lanes: Lane[]): Record<string, Ticket[]> {
@@ -159,7 +158,6 @@ export function Board() {
   return (
     <div className="view">
       <h1>Board</h1>
-      {tickets.length === 0 && <LaneScene />}
       <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd} onDragCancel={() => setActiveId(null)}>
         <div className="board">
           {laneList.map((lane) => {

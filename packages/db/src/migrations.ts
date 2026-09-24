@@ -46,7 +46,13 @@ create trigger evidence_no_delete before delete on evidence begin select raise(a
 // params values are hardcoded literals containing no quote characters, so interpolating
 // them into this migration string is safe. This is the one exception to bound parameters;
 // everything else in this file (and every other query in this package) uses them.
-const MIGRATIONS = [M1, M2, M3];
+// current_ticket_id is presence, not history: it tracks what an agent is on right now, set
+// and cleared as tickets are created and moved (see routes/tickets.ts), never logged as its
+// own chain event.
+const M4 = `
+alter table actors add column current_ticket_id text references tickets(id);
+`;
+const MIGRATIONS = [M1, M2, M3, M4];
 export function migrate(db: DB): void {
   const current = db.pragma("user_version", { simple: true }) as number;
   for (let i = current; i < MIGRATIONS.length; i++) db.transaction(() => { db.exec(MIGRATIONS[i]); db.pragma(`user_version = ${i + 1}`); })();

@@ -41,7 +41,7 @@ export function lifecycleRoutes(app: FastifyInstance, ctx: Ctx): void {
       migrate(db);
       const now = ctx.now().toISOString();
       db.transaction(() => {
-        insertActor(db, { id: "human", kind: "human", name: "Owner", publicKey: input.publicKey, scopes: null, status: "active", lastSeen: now, createdAt: now });
+        insertActor(db, { id: "human", kind: "human", name: "Owner", publicKey: input.publicKey, scopes: null, status: "active", lastSeen: now, currentTicketId: null, createdAt: now });
         const ev = appendEvent(db, { actorId: "human", type: "system.setup", payload: { encryption: input.encryption }, signature: String(req.headers["x-pan-sig"]), now });
         record(req, ev);
       })();

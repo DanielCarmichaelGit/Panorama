@@ -14,7 +14,7 @@ export function agentRoutes(app: FastifyInstance, ctx: Ctx): void {
     if (listActors(db).some((a) => a.publicKey === input.publicKey)) throw new HttpError(409, "duplicate_key", "That public key is already registered");
     const id = randomUUID(); const now = ctx.now().toISOString();
     db.transaction(() => {
-      insertActor(db, { id, kind: "agent", name: input.name, publicKey: input.publicKey, scopes: null, status: "pending", lastSeen: null, createdAt: now });
+      insertActor(db, { id, kind: "agent", name: input.name, publicKey: input.publicKey, scopes: null, status: "pending", lastSeen: null, currentTicketId: null, createdAt: now });
       const ev = appendEvent(db, { actorId: id, type: "agent.registered", payload: { id, name: input.name, publicKey: input.publicKey }, signature: "", now });
       record(req, ev);
     })();
@@ -23,7 +23,14 @@ export function agentRoutes(app: FastifyInstance, ctx: Ctx): void {
 
   app.get("/api/v1/me", async (req) => req.actor);
 
-  app.get("/api/v1/agents", async (req) => { requireCan(req, "agent.approve"); return listActors(getDb(ctx)).filter((a) => a.kind === "agent"); });
+  app.get("/api/v1/agents", async (req) => {
+    requireCan(req, "read");
+    const agents = listActors(getDb(ctx)).filter((a) => a.kind === "agent");
+    if (req.actor.kind === "human") return agents;
+    // Any active actor with read may see who else is connected, but an agent only ever sees
+    // the public shape of the others: no public keys or scopes.
+    return agents.map((a) => ({ id: a.id, name: a.name, kind: a.kind, status: a.status, lastSeen: a.lastSeen, currentTicketId: a.currentTicketId }));
+  });
 
   const change = (type: "agent.approved" | "agent.revoked") => async (req: any) => {
     requireCan(req, type === "agent.approved" ? "agent.approve" : "agent.revoke");

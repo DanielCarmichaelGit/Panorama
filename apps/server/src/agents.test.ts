@@ -26,7 +26,10 @@ describe("agents", () => {
     expect((await agent("POST", `/api/v1/agents/${id}/approve`, { scopes: { projects: "*", actions: ["read"] } })).status).toBe(403);
     expect((await human("POST", `/api/v1/agents/${id}/approve`, { scopes: { projects: "*", actions: ["read"] } })).status).toBe(200);
     expect((await agent("GET", "/api/v1/me")).json).toMatchObject({ id, status: "active" });
-    expect((await agent("GET", "/api/v1/agents")).status).toBe(403);
+    // Any active actor with read may list agents, but an agent only ever sees the public shape.
+    const seenByAgent = await agent("GET", "/api/v1/agents");
+    expect(seenByAgent.status).toBe(200);
+    expect(seenByAgent.json).toEqual([{ id, name: "claude-worker-1", kind: "agent", status: "active", lastSeen: expect.any(String), currentTicketId: null }]);
     expect((await human("GET", "/api/v1/agents")).json).toHaveLength(1);
     expect((await human("POST", `/api/v1/agents/${id}/revoke`)).status).toBe(200);
     expect((await agent("GET", "/api/v1/me")).json.error.code).toBe("revoked");

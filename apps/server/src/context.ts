@@ -17,4 +17,7 @@ export interface Ctx {
   fileKey: Buffer | null;
   /** Fans out committed events to open server-sent-event streams. */
   bus: EventBus;
+  /** Last time (ms) each agent's presence was published, so the auth hook can throttle
+   *  `agent.seen` to once per agent per 30s instead of once per request. */
+  agentSeenAt: Map<string, number>;
 }

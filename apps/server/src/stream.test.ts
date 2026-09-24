@@ -19,9 +19,11 @@ describe("stream", () => {
     const s = await setupApp();
     const { project } = (await s.human("POST", "/api/v1/projects", { name: "P", key: "PP" })).json;
     const other = (await s.human("POST", "/api/v1/projects", { name: "O", key: "OO" })).json;
-    const { agent } = await agentIn(s, project.id);
+    const { agent, agentId } = await agentIn(s, project.id);
     const h = await open(s.app, s.keys.seed, "human");
     const t = (await agent("POST", "/api/v1/tickets", { projectId: project.id, title: "x" })).json;
+    // The agent's first authenticated request also announces its presence to the human.
+    expect(await h.next()).toMatchObject({ type: "agent.seen", data: { id: agentId } });
     expect(await h.next()).toMatchObject({ type: "ticket.created", data: { id: t.id, projectId: project.id } });
     await s.human("POST", "/api/v1/tickets", { projectId: other.project.id, title: "y" });
     expect((await h.next()).type).toBe("ticket.created");
@@ -55,6 +57,9 @@ describe("stream", () => {
 
     const h = await open(s.app, s.keys.seed, "human");
     const a = await open(s.app, ak.seed, id, h.base);
+    // Opening its own stream is itself the agent's first authenticated request, so the human
+    // sees its presence announced before anything else happens.
+    expect(await h.next()).toMatchObject({ type: "agent.seen", data: { id } });
 
     await s.human("POST", `/api/v1/agents/${id}/revoke`, {});
     expect((await h.next()).type).toBe("agent.revoked");

@@ -28,6 +28,7 @@ export async function buildApp(opts: { dataDir: string; now?: () => Date; webDis
     allowFastKdf: opts.allowFastKdf === true,
     fileKey: null,
     bus: new EventBus(),
+    agentSeenAt: new Map(),
   };
   if (ctx.config && !ctx.config.encryption) {
     ctx.db = openDatabase(dbFile(ctx), null);

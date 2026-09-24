@@ -16,6 +16,17 @@ export function IsoBox(p: { x: number; y: number; z: number; w: number; d: numbe
   const f = isoBoxFaces(p.x, p.y, p.z, p.w, p.d, p.h), c = FAMILY[p.family];
   return <g className={p.className} style={p.style}><polygon points={f.left} fill={c.left} /><polygon points={f.right} fill={c.right} /><polygon points={f.top} fill={c.top} /></g>;
 }
+/** A single isometric block used as an agent's avatar, sized in pixels by `size`. */
+export function AgentMark({ family, size = 32 }: { family: Family; size?: number }) {
+  const f = isoBoxFaces(0, 0, 0, 2, 2, 1.6), c = FAMILY[family];
+  return (
+    <svg viewBox="-42 -40 84 88" width={size} height={size} className="agent-mark" aria-hidden="true">
+      <polygon points={f.left} fill={c.left} />
+      <polygon points={f.right} fill={c.right} />
+      <polygon points={f.top} fill={c.top} />
+    </svg>
+  );
+}
 const LANES: [number, [Family, number][]][] = [[0, [["sky", 1], ["sky", 1]]], [5, [["lilac", 1], ["coral", 1.4]]], [10, [["mint", 1], ["mint", 1], ["mint", 1]]]];
 export function LaneScene({ settle = false }: { settle?: boolean }) {
   let i = 0;

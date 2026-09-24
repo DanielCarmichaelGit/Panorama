@@ -88,7 +88,7 @@ describe("projects and tickets", () => {
   });
   it("builds the queue: needs-human first, then assigned work outside done lanes", () => {
     const { db } = fresh();
-    d.insertActor(db, { id: "ag1", kind: "agent", name: "a", publicKey: "22".repeat(32), scopes: null, status: "active", lastSeen: null, createdAt: NOW });
+    d.insertActor(db, { id: "ag1", kind: "agent", name: "a", publicKey: "22".repeat(32), scopes: null, status: "active", lastSeen: null, currentTicketId: null, createdAt: NOW });
     const { project, lanes } = d.createProject(db, { name: "P", key: "P" + "A" }, NOW);
     const a = d.createTicket(db, { projectId: project.id, title: "flagged" }, NOW);
     const b = d.createTicket(db, { projectId: project.id, title: "working", assigneeId: "ag1" }, NOW);

@@ -22,6 +22,7 @@ export interface Actor {
   scopes: Scopes | null;
   status: "pending" | "active" | "revoked";
   lastSeen: string | null;
+  currentTicketId: string | null;
   createdAt: string;
 }
 

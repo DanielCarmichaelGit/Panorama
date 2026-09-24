@@ -24,6 +24,22 @@ export function inScope(actor: Actor, projectId: string): boolean {
 const NONCE_TTL_MS = 120_000;
 const SWEEP_EVERY_MS = 30_000;
 const FUTURE_TOLERANCE_MS = 5_000;
+const PRESENCE_THROTTLE_MS = 30_000;
+
+/**
+ * Presence is not a chain event: it carries no signature and is never appended to the
+ * event log, so it is published straight to the bus instead of going through `record`.
+ * Throttled to once per agent per 30s so a busy agent doesn't put a frame on the human's
+ * stream for every request; `visibleTo` in bus.ts already keeps it off other agents'
+ * streams since its payload carries no `projectId` and its type is not `agent.approved`.
+ */
+function publishPresence(ctx: Ctx, actor: Actor, nowMs: number, lastSeen: string): void {
+  if (actor.kind !== "agent") return;
+  const last = ctx.agentSeenAt.get(actor.id) ?? 0;
+  if (nowMs - last < PRESENCE_THROTTLE_MS) return;
+  ctx.agentSeenAt.set(actor.id, nowMs);
+  ctx.bus.publish({ seq: nowMs, type: "agent.seen", payload: { id: actor.id, lastSeen, currentTicketId: actor.currentTicketId }, at: lastSeen });
+}
 
 export function installAuth(app: FastifyInstance, ctx: Ctx, openPaths: Set<string>): void {
   let lastSweep = 0;
@@ -59,7 +75,9 @@ export function installAuth(app: FastifyInstance, ctx: Ctx, openPaths: Set<strin
     if (ctx.nonces.has(nonce)) throw new HttpError(401, "replay", "Nonce already used");
     ctx.nonces.set(nonce, nowMs + NONCE_TTL_MS);
 
-    touchActor(db, actor.id, ctx.now().toISOString());
+    const nowIso = ctx.now().toISOString();
+    touchActor(db, actor.id, nowIso);
+    publishPresence(ctx, actor, nowMs, nowIso);
     req.actor = actor; req.sig = String(req.headers["x-pan-sig"]);
   });
 }

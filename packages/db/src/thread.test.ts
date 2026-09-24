@@ -6,7 +6,7 @@ import * as d from "./index";
 const NOW = "2026-09-22T10:00:00.000Z";
 function world() {
   const db = d.openDatabase(join(mkdtempSync(join(tmpdir(), "pan-")), "p.db"), null); d.migrate(db);
-  d.insertActor(db, { id: "human", kind: "human", name: "Owner", publicKey: "11".repeat(32), scopes: null, status: "active", lastSeen: null, createdAt: NOW });
+  d.insertActor(db, { id: "human", kind: "human", name: "Owner", publicKey: "11".repeat(32), scopes: null, status: "active", lastSeen: null, currentTicketId: null, createdAt: NOW });
   const { project, lanes } = d.createProject(db, { name: "P", key: "PP" }, NOW);
   const t = d.createTicket(db, { projectId: project.id, title: "x" }, NOW);
   return { db, project, lanes, t };

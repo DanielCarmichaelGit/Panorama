@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { checkGate, CreateTicketInput, FlagInput, MoveTicketInput, UpdateTicketInput } from "@panorama/core";
-import { appendEvent, archiveTicket, createTicket, getActor, getEvidenceType, getLane, getProject, getTicket, listEvidence, listTickets, moveTicket, queue, setFlag, updateTicket, type DB } from "@panorama/db";
+import { appendEvent, archiveTicket, createTicket, getActor, getEvidenceType, getLane, getProject, getTicket, listEvidence, listTickets, moveTicket, queue, setCurrentTicket, setFlag, updateTicket, type DB } from "@panorama/db";
 import { getDb, inScope, requireCan } from "../auth";
 import { record } from "../bus";
 import type { Ctx } from "../context";
@@ -36,6 +36,7 @@ export function ticketRoutes(app: FastifyInstance, ctx: Ctx): void {
     if (input.laneId && getLane(db, input.laneId)?.projectId !== input.projectId) throw new HttpError(400, "wrong_project", "That lane belongs to another project");
     return db.transaction(() => {
       const t = createTicket(db, { ...input, assigneeId: req.actor.kind === "agent" ? req.actor.id : null }, iso());
+      if (req.actor.kind === "agent") setCurrentTicket(db, req.actor.id, t.id);
       log(db, req, "ticket.created", { id: t.id, projectId: t.projectId, key: t.key, title: t.title, laneId: t.laneId });
       return t;
     })();
@@ -68,6 +69,7 @@ export function ticketRoutes(app: FastifyInstance, ctx: Ctx): void {
     return db.transaction(() => {
       if (req.actor.kind === "agent" && !t.assigneeId) updateTicket(db, t.id, { assigneeId: req.actor.id }, iso());
       const { ticket, flagged } = moveTicket(db, t.id, laneId, iso());
+      if (req.actor.kind === "agent") setCurrentTicket(db, req.actor.id, lane.isDone ? null : t.id);
       log(db, req, "ticket.moved", { id: t.id, projectId: t.projectId, from: t.laneId, to: laneId });
       if (flagged) log(db, req, "ticket.flag_set", { id: t.id, projectId: t.projectId, flag: "needs_human", cause: "lane" });
       return ticket;

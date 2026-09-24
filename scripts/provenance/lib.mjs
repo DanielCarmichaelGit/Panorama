@@ -114,7 +114,13 @@ function entryData(type, rest) {
       files: rest.files ?? [],
     };
   }
-  return rest;
+  // "note", "commit", "end", and any future type pass their fields through
+  // close to verbatim, so this is the one place a caller could otherwise
+  // smuggle hash/prev/seq/ts in. Drop them here, at the source, rather
+  // than relying only on appendEntry's field order to override three of
+  // the four (hash was not covered by that at all).
+  const { hash, prev, seq, ts, ...safe } = rest;
+  return safe;
 }
 
 export function appendEntry(root, id, fields, now = new Date()) {
@@ -178,20 +184,6 @@ export function stagedDiff(root) {
   return { diff, files };
 }
 
-// The staged diff against an explicit base tree-ish, for when the caller
-// already knows HEAD is not the right comparison point: precommit.mjs uses
-// this for `git commit --amend`, where at pre-commit time HEAD is still
-// the commit about to be replaced, not the amended commit's real parent
-// (HEAD's own parent). Unlike stagedDiff, `base` must already resolve
-// (there is no unborn-HEAD fallback), which is fine here since amending
-// requires an existing commit.
-export function stagedDiffAgainst(root, base) {
-  const diff = git(root, ["diff", "--cached", "--no-color", base, ...DIFF_PATHSPEC]);
-  const out = git(root, ["diff", "--cached", "--name-only", base, ...DIFF_PATHSPEC]);
-  const files = out.trim().split("\n").filter(Boolean);
-  return { diff, files };
-}
-
 // A root commit has no parent; "sha^" fails (git() now pipes that "fatal:"
 // line to a captured stderr rather than leaking it, per M2).
 function parentOf(root, sha) {
@@ -202,12 +194,41 @@ function parentOf(root, sha) {
   }
 }
 
-export function commitDiff(root, sha) {
-  const parent = parentOf(root, sha);
+function resolveOrNull(root, ref) {
+  try {
+    return git(root, ["rev-parse", "-q", "--verify", `${ref}^{commit}`]).trim();
+  } catch {
+    return null;
+  }
+}
+
+// commitDiff diffs a commit against an explicit base when given one,
+// otherwise against its real git parent (unchanged default behavior).
+// verifyCommit passes a manifest's own recorded `base` here once that
+// base has been structurally validated (see isValidDiffBase) -- for an
+// ordinary commit this is always the same as the real parent, so nothing
+// changes; it only differs for `git commit --amend` (see preparemsg.mjs).
+export function commitDiff(root, sha, base) {
+  const parent = base ?? parentOf(root, sha);
   const diff = git(root, ["diff", "--no-color", parent, sha, ...DIFF_PATHSPEC]);
   const out = git(root, ["diff", "--name-only", parent, sha, ...DIFF_PATHSPEC]);
   const files = out.trim().split("\n").filter(Boolean);
   return { diff, files };
+}
+
+// A manifest's `base` is trustworthy as a diff comparison point only when
+// it is structurally provable from git history itself, not merely
+// asserted: either it IS sha's real parent (the ordinary case), or it is
+// a sibling of sha -- some other commit sharing sha's real parent, which
+// is exactly the git-verifiable shape `git commit --amend` produces (the
+// pre-amend commit and the amended commit share one parent). An arbitrary,
+// unrelated commit fails both checks.
+function isValidDiffBase(root, base, sha) {
+  const baseSha = resolveOrNull(root, base);
+  if (!baseSha) return false;
+  const realParent = parentOf(root, sha);
+  if (baseSha === realParent) return true;
+  return parentOf(root, baseSha) === realParent;
 }
 
 // C1: files this commit ADDED (not modified, not merely present because an
@@ -306,22 +327,24 @@ export function verifyCommit(root, sha) {
   const recorded = Boolean(trailers.manifest && trailers.head && trailers.diff);
   if (!recorded) problems.push("missing provenance trailers");
 
-  // The commit's real diff and file list, computed once and reused both to
-  // check the Provenance-Diff trailer and to bind the manifest below.
-  const { diff, files } = commitDiff(root, sha);
-  const diffHash = sha256(diff);
-  let diffOk = false;
-  if (trailers.diff) {
-    diffOk = diffHash === trailers.diff;
-    if (!diffOk) problems.push("diff hash does not match trailer");
-  }
-
   // C1: a manifest that merely hashes correctly is not enough. An old,
   // still-tracked manifest from an earlier commit hashes correctly too.
-  // Bind it to THIS commit: its own diffHash and head must match what
-  // actually happened here, its path must be a real manifest path, and it
-  // must have been ADDED by this commit, not carried forward unchanged
-  // from one that already used it.
+  // Bind it to THIS commit: its path must be a real manifest path, it
+  // must have been ADDED by this commit (not carried forward unchanged
+  // from one that already used it), and its own head must match what
+  // actually happened here.
+  //
+  // Fetched before the diff below because an amended commit's manifest
+  // carries its own `base` (see preparemsg.mjs): at pre-commit time HEAD
+  // is still the commit about to be replaced, not the amended commit's
+  // real parent, so precommit.mjs always records the diff relative to
+  // whatever HEAD was at that moment ("the change introduced by this
+  // specific recording"), not necessarily the commit's total diff from
+  // its real git parent. `base` is trusted only once proven, from git
+  // history itself, to be either sha's real parent or a sibling of sha
+  // (isValidDiffBase) -- an ordinary commit's base is always its real
+  // parent, so this changes nothing for the overwhelming majority of
+  // commits, and never lets a manifest claim an unrelated base.
   let manifestObj = null;
   let manifestOk = false;
   if (trailers.manifest) {
@@ -338,19 +361,42 @@ export function verifyCommit(root, sha) {
         const headOk = manifestObj.head === trailers.head;
         if (!headOk) problems.push("manifest head does not match the Provenance-Head trailer");
 
-        const diffBoundOk = manifestObj.diffHash === diffHash;
-        if (!diffBoundOk) problems.push("manifest diffHash does not match this commit's actual diff");
-
         const addedOk = addedFiles(root, sha).includes(trailers.manifest.path);
         if (!addedOk) {
           problems.push("manifest was not added by this commit (it may be reused from an earlier one)");
         }
 
-        manifestOk = hashOk && headOk && diffBoundOk && addedOk;
+        manifestOk = hashOk && headOk && addedOk;
       } catch {
         problems.push("manifest file not found in commit");
       }
     }
+  }
+
+  let diffBase;
+  if (manifestObj && manifestObj.base) {
+    if (isValidDiffBase(root, manifestObj.base, sha)) {
+      diffBase = manifestObj.base;
+    } else {
+      // Not fatal on its own (the diff below falls back to the real
+      // parent, same as an unrecorded commit), but a manifest claiming an
+      // unrelated base is itself suspicious and worth surfacing.
+      problems.push("manifest base is not sha's real parent or a sibling of sha");
+      manifestOk = false;
+    }
+  }
+  const { diff, files } = commitDiff(root, sha, diffBase);
+  const diffHash = sha256(diff);
+  let diffOk = false;
+  if (trailers.diff) {
+    diffOk = diffHash === trailers.diff;
+    if (!diffOk) problems.push("diff hash does not match trailer");
+  }
+
+  if (manifestObj) {
+    const diffBoundOk = manifestObj.diffHash === diffHash;
+    if (!diffBoundOk) problems.push("manifest diffHash does not match this commit's actual diff");
+    manifestOk = manifestOk && diffBoundOk;
   }
 
   let filesOk = false;

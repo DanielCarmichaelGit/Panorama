@@ -79,7 +79,15 @@ read `-`) and it never fails the range on its own account.
   (`core.hooksPath=.githooks`): `pre-commit` refuses a commit with no
   session open (unless `PROVENANCE_SKIP=1`, which prints a warning and
   lets the commit through unrecorded), and otherwise writes the manifest
-  and stages it; `commit-msg` appends the three trailers.
+  (recording the diff against whatever HEAD is at that moment as the
+  manifest's own `base`) and stages it; `prepare-commit-msg` confirms
+  `git commit --amend` using git's own signal for it and notes that on the
+  pending record; `commit-msg` appends the three trailers. A commit made
+  by `git rebase` or `git cherry-pick` replaying existing commits does not
+  run `pre-commit` at all (git's own behavior, not this tool's) and so
+  lands honestly unrecorded, the same as `PROVENANCE_SKIP=1`; a `git
+  commit` run explicitly through `git rebase --exec` goes through the
+  normal hooks and is refused like any other commit with no session open.
 
 ## The skip escape hatch
 

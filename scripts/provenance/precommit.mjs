@@ -2,6 +2,21 @@
 // git pre-commit hook: refuse a commit with no open session, otherwise
 // write and stage the manifest for the current session and hand its path,
 // hashes, and staged tree hash to commitmsg.mjs through .provenance/pending.
+//
+// The diff is always computed against HEAD, and the manifest records that
+// HEAD as its own `base`. For an ordinary commit this is exactly the
+// commit's real git parent, so nothing about verification changes. For
+// `git commit --amend`, HEAD at pre-commit time is still the commit about
+// to be replaced, not the amended commit's real (grandparent) parent --
+// pre-commit has no reliable way to know this in advance (prepare-commit-
+// msg does, via git's own source/sha arguments, but runs after pre-commit,
+// and by then the tree git will commit is already fixed; nothing staged
+// from a later hook makes it into the commit). Recording `base` unconditionally,
+// rather than trying to guess the eventual real parent, means the manifest
+// is always correct by construction: it describes the change introduced
+// since whatever HEAD was at this exact recording, which verifyCommit
+// accepts once it can prove, from git history itself, that base is either
+// sha's real parent or a sibling of sha (see isValidDiffBase in lib.mjs).
 
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
@@ -11,7 +26,6 @@ import {
   paths,
   currentSession,
   stagedDiff,
-  stagedDiffAgainst,
   sha256,
   appendEntry,
   readSession,
@@ -19,38 +33,8 @@ import {
   writeManifest,
 } from "./lib.mjs";
 
-const EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
-
 function pendingPath(root) {
   return path.join(paths(root).dir, "pending");
-}
-
-// At pre-commit time HEAD is still whatever commit is about to be
-// replaced (for a normal commit, that IS the new commit's parent; for
-// `git commit --amend`, the new commit's real parent is HEAD's own
-// parent). Git gives hooks no direct amend signal at this point in the
-// hook sequence (prepare-commit-msg, which does get one, runs after
-// pre-commit) -- the reliable indirect signal is the invoking git
-// process's own command line, inspected through its pid.
-function isAmend() {
-  try {
-    const cmd = execFileSync("ps", ["-o", "command=", "-p", String(process.ppid)], { encoding: "utf8" });
-    return /--amend\b/.test(cmd);
-  } catch {
-    return false; // ps unavailable or the pid is already gone: assume not.
-  }
-}
-
-function amendDiffBase(root) {
-  try {
-    return execFileSync("git", ["rev-parse", "-q", "--verify", "HEAD^"], {
-      cwd: root,
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "pipe"],
-    }).trim();
-  } catch {
-    return EMPTY_TREE; // amending a root commit: it has no parent either.
-  }
 }
 
 // I3: a pending file only means anything for the exact commit precommit.mjs
@@ -62,6 +46,18 @@ function amendDiffBase(root) {
 function clearPending(root) {
   const p = pendingPath(root);
   if (fs.existsSync(p)) fs.unlinkSync(p);
+}
+
+function currentHeadOrNull(root) {
+  try {
+    return execFileSync("git", ["rev-parse", "-q", "--verify", "HEAD"], {
+      cwd: root,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    }).trim();
+  } catch {
+    return null; // unborn HEAD: this is the repository's first commit.
+  }
 }
 
 function main() {
@@ -83,7 +79,8 @@ function main() {
     process.exit(1);
   }
 
-  const { diff, files } = isAmend() ? stagedDiffAgainst(root, amendDiffBase(root)) : stagedDiff(root);
+  const base = currentHeadOrNull(root);
+  const { diff, files } = stagedDiff(root);
   const diffHash = sha256(diff);
 
   appendEntry(root, sessionId, { type: "commit", diffHash, files });
@@ -105,6 +102,7 @@ function main() {
     count: verified.count,
     diffHash,
     files,
+    base,
     ts: new Date().toISOString(),
   };
   const { path: manifestPath, hash: manifestHash } = writeManifest(root, manifest);

@@ -15,7 +15,6 @@ import {
   readSession,
   verifySession,
   stagedDiff,
-  stagedDiffAgainst,
   commitDiff,
   writeManifest,
   parseTrailers,
@@ -184,6 +183,32 @@ test("appendEntry ignores a caller-supplied seq, ts, or prev", (t) => {
   assert.equal(verified.count, 2);
 });
 
+// A caller-supplied `hash` was not protected by appendEntry's field order
+// (only seq/ts/prev were): entryData itself must drop it, for every entry
+// type that passes fields through close to verbatim ("note", "commit",
+// "end"). Left unhandled, a forged `hash` field leaks into the content
+// that gets hashed at write time but is stripped by destructuring before
+// verifySession recomputes it at read time -- an asymmetry that made the
+// chain always look broken rather than cleanly rejecting the bad input.
+test("appendEntry drops a caller-supplied hash for every pass-through entry type", (t) => {
+  const root = makeRepo(t);
+  const { id } = startSession(root, { actor: "tester", tool: "cli", intent: "do a thing" });
+
+  appendEntry(root, id, { type: "note", text: "one", hash: "forged-note".padEnd(64, "0") });
+  appendEntry(root, id, { type: "commit", diffHash: "a".repeat(64), files: [], hash: "forged-commit".padEnd(64, "0") });
+  appendEntry(root, id, { type: "end", hash: "forged-end".padEnd(64, "0") });
+
+  const entries = readSession(root, id);
+  assert.equal(entries.length, 4);
+  for (const e of entries.slice(1)) {
+    assert.doesNotMatch(e.hash, /forged/, "no forged hash should ever appear as the stored hash");
+  }
+
+  const verified = verifySession(entries);
+  assert.equal(verified.ok, true, `chain should verify cleanly; got: ${JSON.stringify(verified)}`);
+  assert.equal(verified.count, 4);
+});
+
 test("a tampered entry breaks verification at its seq", (t) => {
   const root = makeRepo(t);
   const { id } = startSession(root, { actor: "tester", tool: "cli", intent: "do a thing" });
@@ -210,29 +235,93 @@ test("stagedDiff ignores .provenance", (t) => {
   assert.deepEqual(files, ["tracked.txt"]);
 });
 
-// Backs precommit.mjs's amend handling: at pre-commit time for an amend,
-// HEAD is still the commit about to be replaced, so the diff that matters
-// is against HEAD^ (the amended commit's real, eventual parent), not HEAD.
-test("stagedDiffAgainst diffs against an explicit base instead of HEAD", (t) => {
+// Fix round 2: commitDiff accepts an explicit base instead of always
+// deriving the parent from sha itself. verifyCommit uses this once a
+// manifest's own recorded base has been proven, from git history, to be
+// either sha's real parent or a sibling of sha (see the fix-round-2
+// section of the report for why this exists: only pre-commit's own
+// staging affects the tree, so an amend's manifest is written unconditionally
+// against whatever HEAD was, not against a detected "real" parent).
+test("commitDiff diffs against an explicit base instead of sha's real parent", (t) => {
   const root = makeRepo(t);
   writeFile(root, "a.txt", "one\n");
-  commitFile(root, "chore: first");
-  const firstSha = git(root, ["rev-parse", "HEAD"]).trim();
+  const firstSha = commitFile(root, "chore: first");
 
   writeFile(root, "a.txt", "two\n");
-  commitFile(root, "chore: second");
+  const secondSha = commitFile(root, "chore: second");
 
-  writeFile(root, "a.txt", "three\n");
-  git(root, ["add", "a.txt"]);
+  const againstRealParent = commitDiff(root, secondSha);
+  assert.ok(againstRealParent.diff.includes("-one"));
+  assert.ok(againstRealParent.diff.includes("+two"));
 
-  const againstHead = stagedDiff(root);
-  assert.ok(againstHead.diff.includes("-two"));
-  assert.ok(againstHead.diff.includes("+three"));
-
-  const againstFirst = stagedDiffAgainst(root, firstSha);
+  const againstFirst = commitDiff(root, secondSha, firstSha);
   assert.ok(againstFirst.diff.includes("-one"));
-  assert.ok(againstFirst.diff.includes("+three"));
-  assert.deepEqual(againstFirst.files, ["a.txt"]);
+  assert.ok(againstFirst.diff.includes("+two"));
+  // Same result here since firstSha IS secondSha's real parent; the two
+  // calls diverge only when an explicit base differs from the real parent
+  // (the sibling/amend case), covered end to end in cli.test.mjs.
+  assert.equal(againstRealParent.diff, againstFirst.diff);
+});
+
+// The C1-style binding a manifest.base must satisfy: an unrelated commit
+// (no parent/child/sibling relationship to sha at all) must not be
+// accepted as a diff base, however the manifest tries to hash together
+// with it -- otherwise a fabricated base could make an unrelated,
+// possibly much larger real diff read as small and innocuous.
+test("verifyCommit rejects a manifest whose base is unrelated to the commit", (t) => {
+  const root = makeRepo(t);
+  recordAndCommit(root); // establishes an initial commit to branch the orphan off from
+  const mainBranch = git(root, ["branch", "--show-current"]).trim();
+
+  // An entirely separate, unrelated commit, sharing no history with the
+  // session's commits at all.
+  git(root, ["checkout", "-q", "--orphan", "unrelated"]);
+  writeFile(root, "z.txt", "nothing to do with this session\n");
+  const unrelatedSha = commitFile(root, "chore: unrelated orphan commit");
+  git(root, ["checkout", "-q", mainBranch]);
+
+  const { id } = startSession(root, { actor: "tester", tool: "cli", intent: "second file" });
+  appendEntry(root, id, { type: "prompt", text: "add b.txt" });
+  writeFile(root, "b.txt", "hello\n");
+  git(root, ["add", "b.txt"]);
+  const { diff, files } = stagedDiff(root);
+  const diffHash = sha256(diff);
+  appendEntry(root, id, { type: "commit", diffHash, files });
+  const entries = readSession(root, id);
+  const verified = verifySession(entries);
+
+  // Craft a manifest that claims the unrelated orphan commit as its base.
+  const manifest = {
+    sessionId: id,
+    actor: "tester",
+    tool: "cli",
+    intent: "second file",
+    head: verified.head,
+    count: verified.count,
+    diffHash,
+    files,
+    base: unrelatedSha,
+    ts: new Date().toISOString(),
+  };
+  const { path: manifestPath, hash: manifestHash } = writeManifest(root, manifest);
+  git(root, ["add", manifestPath]);
+  const message = [
+    "feat: add b.txt",
+    "",
+    `Provenance-Manifest: sha256:${manifestHash} ${manifestPath}`,
+    `Provenance-Head: sha256:${verified.head}`,
+    `Provenance-Diff: sha256:${diffHash}`,
+    "",
+  ].join("\n");
+  const msgFile = path.join(root, ".git", "COMMIT_EDITMSG_UNRELATED_BASE");
+  fs.writeFileSync(msgFile, message, "utf8");
+  git(root, ["commit", "-q", "-F", msgFile]);
+  fs.rmSync(msgFile, { force: true });
+
+  const sha = git(root, ["rev-parse", "HEAD"]).trim();
+  const report = verifyCommit(root, sha);
+  assert.equal(report.manifestOk, false);
+  assert.ok(report.problems.some((p) => p.includes("base")), `expected a base problem, got: ${report.problems}`);
 });
 
 test("writeManifest hash is stable across key order", (t) => {

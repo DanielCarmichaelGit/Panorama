@@ -132,13 +132,15 @@ function cmdInstall(root) {
   execFileSync("git", ["config", "--local", "core.hooksPath", ".githooks"], { cwd: root });
 
   const hooksDir = path.join(root, ".githooks");
-  for (const name of ["pre-commit", "commit-msg"]) {
+  for (const name of ["pre-commit", "prepare-commit-msg", "commit-msg"]) {
     const file = path.join(hooksDir, name);
     if (fs.existsSync(file)) fs.chmodSync(file, 0o755);
   }
 
   console.log("provenance: set core.hooksPath to .githooks (local to this repository)");
-  console.log("provenance: made .githooks/pre-commit and .githooks/commit-msg executable");
+  console.log(
+    "provenance: made .githooks/pre-commit, .githooks/prepare-commit-msg, and .githooks/commit-msg executable"
+  );
 }
 
 // Table columns fit within 100 characters: 7+8+8+4+5+11+11 plus 6
@@ -188,7 +190,18 @@ function cmdVerify(root, args) {
   const json = args.includes("--json");
   const range = args.find((a) => !a.startsWith("--")) || defaultRange(root);
 
-  const reports = verifyRange(root, range);
+  let reports;
+  try {
+    reports = verifyRange(root, range);
+  } catch (err) {
+    // An invalid range (bad revision, unknown ref, ...) throws from the
+    // underlying git call. Report it as a clean one-line error, not a
+    // Node stack trace, and use a distinct exit code (2) from "range
+    // verified, something failed" (1).
+    const detail = (err.stderr || err.message || String(err)).trim().split("\n")[0];
+    console.error(`provenance: invalid range "${range}": ${detail}`);
+    process.exit(2);
+  }
   // I1: problems is the authoritative list of what is wrong with a commit.
   // The four booleans alone miss failure modes that don't touch them (a
   // transcript mismatch, a bad signature) -- problems catches all of it,

@@ -39,14 +39,15 @@ function SingleHarness(props: {
   );
 }
 
-function MultiHarness(props: { options: PickerOption[]; onSelect?: (ids: string[]) => void }) {
-  const [values, setValues] = useState<string[]>([]);
+function MultiHarness(props: { options: PickerOption[]; onSelect?: (ids: string[]) => void; clearable?: boolean; initial?: string[] }) {
+  const [values, setValues] = useState<string[]>(props.initial ?? []);
   return (
     <Picker
       id="tag-picker"
       label="Tags"
       options={props.options}
       multi
+      clearable={props.clearable}
       values={values}
       onChange={(ids) => {
         setValues(ids);
@@ -170,5 +171,106 @@ describe("Picker", () => {
     expect(screen.getByRole("listbox")).toBeTruthy();
     fireEvent.mouseDown(screen.getByRole("button", { name: "Elsewhere" }));
     expect(screen.queryByRole("listbox")).toBeNull();
+  });
+
+  it("has aria-controls pointing at the listbox id", () => {
+    render(<SingleHarness options={BOARD_OPTIONS} />);
+    expect(screen.getByRole("button", { name: "Board" }).getAttribute("aria-controls")).toBe("board-picker-listbox");
+  });
+
+  it("a chip's remove button is a real, tab-reachable button, and Enter removes it without opening the popover", () => {
+    const onSelect = vi.fn();
+    render(<MultiHarness options={BOARD_OPTIONS} onSelect={onSelect} initial={["b1", "b2"]} />);
+    const removeBtn = screen.getByRole("button", { name: "Remove Growth" });
+    expect(removeBtn.tagName).toBe("BUTTON");
+    expect(removeBtn.tabIndex).toBe(0); // a real button, in the natural tab order
+    removeBtn.focus();
+    fireEvent.keyDown(removeBtn, { key: "Enter" });
+    expect(onSelect).toHaveBeenCalledWith(["b2"]);
+    expect(screen.queryByRole("listbox")).toBeNull();
+  });
+
+  it("clearable empties the selection in multi mode via the Clear row", () => {
+    const onSelect = vi.fn();
+    render(<MultiHarness options={BOARD_OPTIONS} onSelect={onSelect} clearable initial={["b1", "b2"]} />);
+    fireEvent.click(screen.getByRole("button", { name: "Tags" }));
+    fireEvent.click(screen.getByRole("option", { name: "Clear" }));
+    expect(onSelect).toHaveBeenCalledWith([]);
+    expect(screen.queryByRole("listbox")).toBeNull();
+  });
+
+  it("shows an error and keeps the popover open when onCreate rejects, then allows retrying", async () => {
+    const onCreate = vi.fn().mockRejectedValueOnce(new Error("Name already exists")).mockResolvedValue({ id: "b4", label: "Launch" });
+    const onSelect = vi.fn();
+    render(<SingleHarness options={BOARD_OPTIONS} onSelect={onSelect} searchable onCreate={onCreate} />);
+    fireEvent.click(screen.getByRole("button", { name: "Board" }));
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "Launch" } });
+    fireEvent.click(screen.getByRole("option", { name: "Create 'Launch'" }));
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toBe("Name already exists"));
+    expect(screen.getByRole("listbox")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("option", { name: "Create 'Launch'" }));
+    expect(onCreate).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(onSelect).toHaveBeenCalledWith("b4"));
+  });
+
+  it("Tab while open closes the popover and moves focus back to the trigger", () => {
+    render(<SingleHarness options={BOARD_OPTIONS} searchable />);
+    const trigger = screen.getByRole("button", { name: "Board" });
+    fireEvent.click(trigger);
+    const search = screen.getByRole("textbox");
+    fireEvent.keyDown(search, { key: "Tab" });
+    expect(screen.queryByRole("listbox")).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  it("Shift+Tab while open also closes the popover and refocuses the trigger", () => {
+    render(<SingleHarness options={BOARD_OPTIONS} searchable />);
+    const trigger = screen.getByRole("button", { name: "Board" });
+    fireEvent.click(trigger);
+    fireEvent.keyDown(screen.getByRole("textbox"), { key: "Tab", shiftKey: true });
+    expect(screen.queryByRole("listbox")).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  it("sanitises option ids that contain characters unsafe for a DOM id", () => {
+    const options: PickerOption[] = [
+      { id: "weird id/1", label: "Weird" },
+      { id: "b2", label: "Platform" },
+    ];
+    render(<SingleHarness options={options} />);
+    const trigger = screen.getByRole("button", { name: "Board" });
+    trigger.focus();
+    fireEvent.keyDown(trigger, { key: "ArrowDown" });
+    const option = screen.getByRole("option", { name: "Weird" });
+    expect(option.id).toMatch(/^[A-Za-z0-9_-]+$/);
+    expect(trigger.getAttribute("aria-activedescendant")).toBe(option.id);
+  });
+
+  it("resets the highlight when the option list's ids change, even if the count stays the same", () => {
+    function SwapHarness() {
+      const [opts, setOpts] = useState<PickerOption[]>([
+        { id: "x1", label: "Alpha" },
+        { id: "x2", label: "Beta" },
+      ]);
+      const [value, setValue] = useState<string | null>(null);
+      return (
+        <div>
+          <button type="button" onClick={() => setOpts([{ id: "y1", label: "Gamma" }, { id: "y2", label: "Delta" }])}>
+            Replace options
+          </button>
+          <Picker id="swap-picker" label="Swap" options={opts} value={value} onChange={setValue} />
+        </div>
+      );
+    }
+    render(<SwapHarness />);
+    const trigger = screen.getByRole("button", { name: "Swap" });
+    trigger.focus();
+    fireEvent.keyDown(trigger, { key: "ArrowDown" });
+    fireEvent.keyDown(trigger, { key: "ArrowDown" });
+    expect(trigger.getAttribute("aria-activedescendant")).toBe("swap-picker-option-x2");
+
+    fireEvent.click(screen.getByRole("button", { name: "Replace options" }));
+    expect(trigger.getAttribute("aria-activedescendant")).toBe("swap-picker-option-y1");
   });
 });

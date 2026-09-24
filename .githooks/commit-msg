@@ -1,0 +1,5 @@
+#!/bin/sh
+# Installed by `pnpm provenance install` (core.hooksPath=.githooks). Git
+# runs hooks with the working tree root as cwd, so this relative path is
+# stable regardless of where `git commit` was invoked from.
+exec node scripts/provenance/commitmsg.mjs "$1"

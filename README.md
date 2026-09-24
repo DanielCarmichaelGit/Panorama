@@ -128,6 +128,14 @@ pnpm e2e
 
 runs the Playwright end to end suite: two specs, each against its own server on its own port and its own temporary data directory, so they run without sharing state. The first drives a full first run: setup, first project, agent registration and approval, the demo agent's gated move into Ready for Production, a ticket flagged for a human, clearing that flag and seeing the demo agent's comment and evidence in the thread, and a locked reload that rejects the wrong password and accepts the right one. The second drives the gate flow directly in the browser: a lane select refusing a move with the missing evidence named, adding that evidence through the dialog, the move succeeding, the ticket showing up under the right column on the Board, and a markdown heading posted through the composer rendering in the thread.
 
+## Contributing
+
+Read `.claude/skills/contribute/SKILL.md` before changing anything: the
+working contract, vocabulary, and test and commit rules. Every commit
+carries a hash bound record of the session that produced it; see
+`docs/provenance.md` for how that is captured and verified, and
+`AGENTS.md` if you are working from a tool other than Claude Code.
+
 ## Milestone status
 
 Panorama is at milestone 2 of 5: evidence and conversation (evidence types and gated lanes, comments and threads, attachments, the live SSE stream, the Board, the demo agent, end to end coverage of the gate flow) on top of milestone 1's foundation (monorepo, database, setup and unlock, human key, agent registration and approval, signing, hash chain, projects, lanes, tickets, REST, app shell with sidebar, Queue, ticket panel, lock screen). See `docs/superpowers/specs` for the full design and `todo/` for what is planned next.

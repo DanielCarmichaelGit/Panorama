@@ -4,6 +4,19 @@ dist
 test-results
 playwright-report
 .superpowers
-.claude
 .impeccable
 .worktrees
+
+# Provenance: sessions, the current-session pointer, the pre-commit/
+# commit-msg handoff file, and the hook's error log are all local only;
+# manifests are committed.
+.provenance/sessions/
+.provenance/current
+.provenance/pending
+.provenance/hook.log
+
+# Claude Code: settings and skills are committed, everything else (such as
+# launch.json) stays local.
+.claude/*
+!.claude/settings.json
+!.claude/skills/

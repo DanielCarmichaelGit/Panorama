@@ -1,6 +1,7 @@
 import { CheckCircle, Circle } from "@phosphor-icons/react";
 import type { EvidenceType, Lane } from "@panorama/core";
 import type { GateMiss } from "../lib/hooks";
+import { Chip } from "./Chip";
 
 /** The lane with the smallest position greater than the current lane's, or null past the last lane. */
 export function nextLane(lanes: Lane[], current: string): Lane | null {
@@ -56,7 +57,7 @@ export function GateList({ lane, missing, types, actions }: { lane: Lane | null;
   return (
     <>
       <div className="gate-head">
-        <h2>To enter {lane.name}</h2>
+        <h2 className="gate-title">To enter <Chip family={lane.family}>{lane.name}</Chip></h2>
         {actions}
       </div>
       {lane.evidenceRequirements.length === 0 ? (

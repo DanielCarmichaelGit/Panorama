@@ -1,4 +1,4 @@
-import { Info } from "@phosphor-icons/react";
+import { ArrowsClockwise, Eye, EyeSlash, Info } from "@phosphor-icons/react";
 import { useState } from "react";
 import type { Status } from "../App";
 import { LaneScene } from "../lib/iso";
@@ -27,9 +27,14 @@ export function LockScreen({ status, onDone }: { status: Status; onDone: (seed: 
         <div className="mark">Panorama</div>
         <h1>{first ? "Set your password" : "Unlock"}</h1>
         <p className="muted">{first ? "It signs everything you approve and it is never stored. If you lose it, it cannot be recovered in this version." : status.encryption ? "Your database is encrypted. Schedules and agents wait until you unlock." : "Your password signs the actions only you can take."}</p>
-        <div className="field"><label htmlFor="pw">Password</label><input id="pw" className={"input" + (shown ? " mono-input" : "")} type={shown ? "text" : "password"} autoFocus autoComplete={first ? "new-password" : "current-password"} spellCheck={false} value={pw} onChange={(e) => setPw(e.target.value)} /></div>
+        <div className="field"><label htmlFor="pw">Password</label>
+          <div className="input-group">
+            <input id="pw" className={"input" + (shown ? " mono-input" : "")} type={shown ? "text" : "password"} autoFocus autoComplete={first ? "new-password" : "current-password"} spellCheck={false} value={pw} onChange={(e) => setPw(e.target.value)} />
+            {first && <button type="button" className="icon-btn" onClick={suggest} aria-label="Suggest a password" title="Suggest a password"><ArrowsClockwise size={18} aria-hidden="true" /></button>}
+            <button type="button" className="icon-btn" onClick={() => setShown((v) => !v)} aria-label={shown ? "Hide password" : "Show password"} aria-pressed={shown} title={shown ? "Hide password" : "Show password"}>{shown ? <EyeSlash size={18} aria-hidden="true" /> : <Eye size={18} aria-hidden="true" />}</button>
+          </div>
+        </div>
         {first && <div className="field"><label htmlFor="pw2">Repeat password</label><input id="pw2" className={"input" + (shown ? " mono-input" : "")} type={shown ? "text" : "password"} autoComplete="new-password" spellCheck={false} value={pw2} onChange={(e) => setPw2(e.target.value)} /></div>}
-        {first && <div className="row-actions"><button type="button" className="btn ghost" onClick={suggest}>Suggest a password</button><button type="button" className="btn ghost" onClick={() => setShown((v) => !v)} aria-pressed={shown}>{shown ? "Hide" : "Show"}</button></div>}
         {first && <div className="notice">
           <p>Write it down somewhere that is not this computer. Do not save it in a file, a note, a browser, or a password manager on this machine: an agent that can read the file can unlock the database and sign as you.</p>
           <span className="tip"><button type="button" className="tip-btn" aria-label="About suggested passwords" aria-describedby="pw-tip"><Info size={16} weight="regular" aria-hidden="true" /></button><span role="tooltip" id="pw-tip" className="tip-text">A suggested password has about 129 bits of randomness, so knowing how it was made does not help anyone guess it.</span></span>

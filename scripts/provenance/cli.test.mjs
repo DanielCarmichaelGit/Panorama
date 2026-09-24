@@ -1,0 +1,219 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+import { repoRoot, readSession, paths } from "./lib.mjs";
+
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const PROJECT_ROOT = repoRoot(HERE);
+
+function git(root, args, opts = {}) {
+  return execFileSync("git", args, { cwd: root, encoding: "utf8", stdio: "pipe", ...opts });
+}
+
+function cli(root, args, opts = {}) {
+  return execFileSync("node", [path.join(root, "scripts", "provenance", "cli.mjs"), ...args], {
+    cwd: root,
+    encoding: "utf8",
+    stdio: "pipe",
+    ...opts,
+  });
+}
+
+function hook(root, payload, opts = {}) {
+  return execFileSync("node", [path.join(root, "scripts", "provenance", "hook.mjs")], {
+    cwd: root,
+    encoding: "utf8",
+    stdio: "pipe",
+    input: JSON.stringify(payload),
+    ...opts,
+  });
+}
+
+// Fresh repo with a real copy of this project's provenance scripts and git
+// hook shims, so the CLI and hooks behave exactly as they would in a clone.
+function makeRepo(t) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "provenance-cli-test-"));
+  git(dir, ["init", "-q"]);
+  git(dir, ["config", "user.name", "Test User"]);
+  git(dir, ["config", "user.email", "test@example.com"]);
+  git(dir, ["config", "commit.gpgsign", "false"]);
+
+  const scriptsDir = path.join(dir, "scripts", "provenance");
+  fs.mkdirSync(scriptsDir, { recursive: true });
+  for (const file of fs.readdirSync(path.join(PROJECT_ROOT, "scripts", "provenance"))) {
+    if (file.endsWith(".test.mjs")) continue;
+    fs.copyFileSync(path.join(PROJECT_ROOT, "scripts", "provenance", file), path.join(scriptsDir, file));
+  }
+
+  const hooksDir = path.join(dir, ".githooks");
+  fs.mkdirSync(hooksDir, { recursive: true });
+  for (const file of fs.readdirSync(path.join(PROJECT_ROOT, ".githooks"))) {
+    const src = path.join(PROJECT_ROOT, ".githooks", file);
+    const dest = path.join(hooksDir, file);
+    fs.copyFileSync(src, dest);
+    fs.chmodSync(dest, 0o755);
+  }
+
+  fs.writeFileSync(path.join(dir, "README.md"), "test repo\n");
+  git(dir, ["add", "-A"]);
+  git(dir, ["commit", "-q", "-m", "chore: initial commit"]);
+
+  const root = repoRoot(dir);
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  return root;
+}
+
+test("install sets core.hooksPath and is safe to run repeatedly", (t) => {
+  const root = makeRepo(t);
+  cli(root, ["install"]);
+  cli(root, ["install"]);
+  const hooksPath = git(root, ["config", "--local", "core.hooksPath"]).trim();
+  assert.equal(hooksPath, ".githooks");
+});
+
+test("install never touches global git config", (t) => {
+  const root = makeRepo(t);
+  const globalBefore = (() => {
+    try {
+      return git(root, ["config", "--global", "core.hooksPath"]).trim();
+    } catch {
+      return null;
+    }
+  })();
+  cli(root, ["install"]);
+  const globalAfter = (() => {
+    try {
+      return git(root, ["config", "--global", "core.hooksPath"]).trim();
+    } catch {
+      return null;
+    }
+  })();
+  assert.equal(globalAfter, globalBefore);
+});
+
+test("a commit with no open session is refused and names the start command", (t) => {
+  const root = makeRepo(t);
+  cli(root, ["install"]);
+  fs.writeFileSync(path.join(root, "a.txt"), "hello\n");
+  git(root, ["add", "a.txt"]);
+
+  assert.throws(
+    () => git(root, ["commit", "-q", "-m", "feat: add a"]),
+    (err) => {
+      assert.equal(err.status, 1);
+      assert.match(String(err.stderr), /pnpm provenance start/);
+      return true;
+    }
+  );
+});
+
+test("with a session open the commit succeeds and verify reports it recorded and matching", (t) => {
+  const root = makeRepo(t);
+  cli(root, ["install"]);
+  cli(root, ["start", "add", "a", "file"]);
+  cli(root, ["prompt"], { input: "please add a.txt" });
+
+  fs.writeFileSync(path.join(root, "a.txt"), "hello\n");
+  git(root, ["add", "a.txt"]);
+  git(root, ["commit", "-q", "-m", "feat: add a.txt"]);
+
+  const sha = git(root, ["rev-parse", "HEAD"]).trim();
+  const changedFiles = git(root, ["show", "--name-only", "--format=", sha]).trim().split("\n");
+  assert.ok(changedFiles.some((f) => f.startsWith(".provenance/manifests/")));
+
+  const out = cli(root, ["verify", `${sha}~1..${sha}`]);
+  const dataLine = out.split("\n").find((l) => l.startsWith(sha.slice(0, 7)));
+  assert.ok(dataLine, `expected a row for ${sha.slice(0, 7)} in:\n${out}`);
+  assert.match(dataLine, /yes/);
+  assert.match(dataLine, /matches/);
+});
+
+test("PROVENANCE_SKIP=1 commits without trailers and verify reports it unrecorded", (t) => {
+  const root = makeRepo(t);
+  cli(root, ["install"]);
+
+  fs.writeFileSync(path.join(root, "b.txt"), "hi\n");
+  git(root, ["add", "b.txt"]);
+  git(root, ["commit", "-q", "-m", "chore: skip session"], {
+    env: { ...process.env, PROVENANCE_SKIP: "1" },
+  });
+
+  const sha = git(root, ["rev-parse", "HEAD"]).trim();
+  assert.throws(
+    () => cli(root, ["verify", `${sha}~1..${sha}`]),
+    (err) => {
+      assert.equal(err.status, 1);
+      const dataLine = err.stdout.split("\n").find((l) => l.startsWith(sha.slice(0, 7)));
+      assert.ok(dataLine, `expected a row for ${sha.slice(0, 7)} in:\n${err.stdout}`);
+      assert.match(dataLine, / no /);
+      return true;
+    }
+  );
+});
+
+test("hook.mjs starts a session from the first UserPromptSubmit and records the prompt", (t) => {
+  const root = makeRepo(t);
+  const out = hook(root, {
+    hook_event_name: "UserPromptSubmit",
+    prompt: "please refactor the widget loader to be faster and cleaner across the board",
+    session_id: "abc123",
+    cwd: root,
+  });
+  assert.equal(out, "");
+
+  const id = fs.readFileSync(paths(root).current, "utf8").trim();
+  const entries = readSession(root, id);
+  assert.equal(entries[0].type, "start");
+  assert.equal(
+    entries[0].intent,
+    "please refactor the widget loader to be faster and cleaner across the board".slice(0, 120)
+  );
+  assert.equal(entries[1].type, "prompt");
+  assert.equal(entries[1].text, "please refactor the widget loader to be faster and cleaner across the board");
+});
+
+test("hook.mjs PostToolUse Edit appends a tool entry with the file path and no input text", (t) => {
+  const root = makeRepo(t);
+  hook(root, { hook_event_name: "UserPromptSubmit", prompt: "start working", cwd: root });
+
+  const out = hook(root, {
+    hook_event_name: "PostToolUse",
+    tool_name: "Edit",
+    tool_input: { file_path: "a.txt", old_string: "x", new_string: "y" },
+    tool_response: { ok: true },
+    cwd: root,
+  });
+  assert.equal(out, "");
+
+  const id = fs.readFileSync(paths(root).current, "utf8").trim();
+  const entries = readSession(root, id);
+  const toolEntry = entries.find((e) => e.type === "tool");
+  assert.ok(toolEntry, "expected a tool entry");
+  assert.deepEqual(toolEntry.files, ["a.txt"]);
+  assert.equal(toolEntry.input, undefined);
+  assert.equal(toolEntry.text, undefined);
+  assert.ok(toolEntry.inputHash);
+});
+
+test("hook.mjs ignores unrecognised PostToolUse tools and still exits cleanly", (t) => {
+  const root = makeRepo(t);
+  const out = hook(root, {
+    hook_event_name: "PostToolUse",
+    tool_name: "Glob",
+    tool_input: { pattern: "**/*.ts" },
+    tool_response: {},
+    cwd: root,
+  });
+  assert.equal(out, "");
+  // A session was still started (tool event with no prior session), but no
+  // tool entry should have been appended for an ignored tool.
+  const id = fs.readFileSync(paths(root).current, "utf8").trim();
+  const entries = readSession(root, id);
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0].type, "start");
+});

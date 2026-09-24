@@ -94,7 +94,7 @@ Live changes (an agent moves a ticket while you watch): the row or card slides t
 | Ticket row, board card | hover | lift 1px, shadow, border to `--muted` |
 | Ticket row, board card | click or Enter | opens ticket panel |
 | Board card | drag | lifts 2px with shadow, origin slot shows dashed `--line`; illegal drop lanes dim to 50% and show the missing evidence on hover |
-| Chip (state, epic) | click | filters the current view by that value |
+| Chip (state, epic) | | chips on rows and cards are read-only; filtering lives in the Board header's Pickers (chip-click filtering deferred) |
 | Timeline bar | drag ends, drag body | resize or move dates, snaps to day |
 | Timer control | click | toggles, mono time ticks each second |
 | Text selection | | `--accent` background, `--on-accent` text |

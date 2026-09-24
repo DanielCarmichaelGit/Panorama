@@ -132,8 +132,12 @@ export function Board() {
   const selectedBoardId = urlBoardId && boardList.some((b) => b.id === urlBoardId) ? urlBoardId : (boardList[0]?.id ?? "");
   const epicOptions = epics.filter((e) => !e.archived);
   const tagOptions = tags.filter((t) => !t.archived);
-  const epicId = searchParams.get("epic");
-  const tagIds = searchParams.getAll("tag");
+  const urlEpicId = searchParams.get("epic");
+  // A stale or foreign id (an epic deleted since, or from another project) is treated as no
+  // filter, the same way an unknown ?board= falls back to the first board above, so the Epic
+  // Picker's placeholder and the filtered result never disagree about whether a filter is set.
+  const epicId = urlEpicId && epics.some((e) => e.id === urlEpicId) ? urlEpicId : null;
+  const tagIds = searchParams.getAll("tag").filter((id) => tags.some((t) => t.id === id));
   const hasFilters = !!epicId || tagIds.length > 0;
   const allTickets = board.data ?? [];
   const boardTickets = allTickets.filter((t) => t.boardId === selectedBoardId);

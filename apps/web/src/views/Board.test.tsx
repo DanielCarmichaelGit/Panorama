@@ -220,6 +220,42 @@ describe("Board", () => {
     expect(screen.queryByRole("link", { name: /PAN-2/ })).toBeNull();
   });
 
+  it("ignores an unknown ?epic= id, rendering every ticket with no Clear filters button", async () => {
+    const epics = [epic({ id: "e1", name: "Growth" })];
+    renderBoard(
+      [
+        ticket({ id: "t1", laneId: "l1", key: "PAN-1", epicId: "e1" }),
+        ticket({ id: "t2", laneId: "l1", key: "PAN-2", title: "No epic", epicId: null }),
+      ],
+      [board({})],
+      { epics, initialEntries: ["/?epic=does-not-exist"] },
+    );
+
+    await screen.findByRole("heading", { name: "Backlog" });
+    expect(screen.getByRole("link", { name: /PAN-1/ })).toBeTruthy();
+    expect(screen.getByRole("link", { name: /PAN-2/ })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Clear filters" })).toBeNull();
+
+    const epicTrigger = screen.getByRole("button", { name: "Epic" });
+    expect(epicTrigger.textContent).toContain("All epics");
+  });
+
+  it("drops an unknown tag id among otherwise valid ones", async () => {
+    const tags = [tag({ id: "tg1", name: "Bug" })];
+    renderBoard(
+      [
+        ticket({ id: "t1", laneId: "l1", key: "PAN-1", tagIds: ["tg1"] }),
+        ticket({ id: "t2", laneId: "l1", key: "PAN-2", title: "No tags", tagIds: [] }),
+      ],
+      [board({})],
+      { tags, initialEntries: ["/?tag=tg1&tag=does-not-exist"] },
+    );
+
+    await screen.findByRole("heading", { name: "Backlog" });
+    expect(screen.getByRole("link", { name: /PAN-1/ })).toBeTruthy();
+    expect(screen.queryByRole("link", { name: /PAN-2/ })).toBeNull();
+  });
+
   it("shows a Clear filters button only when a filter is set, and clearing it restores every card", async () => {
     const epics = [epic({ id: "e1", name: "Growth" })];
     renderBoard(

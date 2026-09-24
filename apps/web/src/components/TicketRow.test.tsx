@@ -63,5 +63,6 @@ describe("TicketRow", () => {
     expect(screen.queryByText("Frontend")).toBeNull();
     const overflow = screen.getByText("+1");
     expect(overflow.getAttribute("title")).toBe("Frontend");
+    expect(overflow.getAttribute("aria-label")).toBe("Frontend");
   });
 });

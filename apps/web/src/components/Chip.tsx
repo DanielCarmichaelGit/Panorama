@@ -25,7 +25,11 @@ export function TagChips({ tags }: { tags: Tag[] }) {
         <Chip key={tag.id} family={tag.family}>{tag.name}</Chip>
       ))}
       {overflow.length > 0 && (
-        <span className="chip chip-overflow" title={overflow.map((tag) => tag.name).join(", ")}>
+        <span
+          className="chip chip-overflow"
+          title={overflow.map((tag) => tag.name).join(", ")}
+          aria-label={overflow.map((tag) => tag.name).join(", ")}
+        >
           +{overflow.length}
         </span>
       )}

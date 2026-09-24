@@ -1,0 +1,18 @@
+{
+  "sessionId": "s_20260924T222354_a2401b",
+  "actor": "Daniel Carmichael",
+  "tool": "claude-code",
+  "intent": "unstated",
+  "head": "5acd58833a20df85ba0f58225269f4ffc6050d3cd70cb2a2017df606d5a5a011",
+  "count": 850,
+  "diffHash": "b159ef373b143bdb6d525f0e0715b6421a9e00d1ee51f9bbec3cec6557d20f9d",
+  "files": [
+    "BRAND.md",
+    "apps/web/src/components/Chip.tsx",
+    "apps/web/src/components/TicketRow.test.tsx",
+    "apps/web/src/views/Board.test.tsx",
+    "apps/web/src/views/Board.tsx"
+  ],
+  "base": "73285eb8975283c3eb299a1b9f78ffc952d08af2",
+  "ts": "2026-09-24T23:50:02.077Z"
+}

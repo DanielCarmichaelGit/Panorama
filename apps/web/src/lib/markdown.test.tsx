@@ -42,4 +42,18 @@ describe("renderBlocks", () => {
     expect(htmlBlock.html).not.toContain("onerror");
     expect(htmlBlock.html).toContain("<img");
   });
+
+  it("downgrades attachment references with a crafted id to plain text instead of an img or a element", () => {
+    // Only a server-issued id ([A-Za-z0-9-]{1,64}) may ever end up interpolated into an
+    // attachment fetch URL or href. A path-traversal- or query-string-shaped "id" must never
+    // survive as a real element: it should read as ordinary text, exactly as if the markdown
+    // author had just typed the alt text / link text with no attachment reference at all.
+    const [b] = renderBlocks("![shot](attachment:../secret?x=1) and [f](attachment:../secret?x=1)");
+    expect(b.kind).toBe("rich");
+    expect(b.html).not.toContain("<img");
+    expect(b.html).not.toContain("<a ");
+    expect(b.html).not.toContain("<a>");
+    expect(b.html).toContain("shot");
+    expect(b.html).toContain("f");
+  });
 });

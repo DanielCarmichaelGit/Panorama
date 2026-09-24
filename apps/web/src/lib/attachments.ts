@@ -1,8 +1,20 @@
 import { useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { signRequest, type Attachment } from "@panorama/core";
 import { ApiError } from "./api";
 import { session } from "./session";
+
+// Attachment ids are server-generated UUIDs, but any string reaching fetchBlob/useAttachmentUrl
+// ultimately comes from markdown content an author wrote (an `attachment:ID` reference). This is
+// the one shape we ever accept there: restricting it up front means a crafted id (`../..`, a
+// query string, anything path-like) can never reach a fetch URL or an href, in this module or in
+// markdown.tsx, which imports this pattern rather than keeping its own copy.
+export const ATTACHMENT_ID_PATTERN = "[A-Za-z0-9-]{1,64}";
+const ATTACHMENT_ID_RE = new RegExp(`^${ATTACHMENT_ID_PATTERN}$`);
+
+export function isValidAttachmentId(id: string | null | undefined): id is string {
+  return !!id && ATTACHMENT_ID_RE.test(id);
+}
 
 /** Shared 423/bad_signature handling: same rule `api()` applies. */
 function handleAuthFailure(status: number, code: string): void {
@@ -76,28 +88,54 @@ export function uploadFile(ticketId: string, file: File, onProgress?: (fraction:
   });
 }
 
+const ATTACHMENT_URL_KEY = "attachment-url";
+
+// react-query dedupes observers of the same queryKey onto one cached Query: when the same
+// attachment appears twice on screen, both AttachmentImage instances share the one cached object
+// URL. Revoking it from a per-mount effect cleanup (the first version of this hook) is wrong,
+// because unmounting the FIRST instance would revoke the URL the SECOND is still rendering. The
+// right point to free the URL is cache eviction itself, i.e. once react-query has no observers
+// left for that key *and* gcTime has elapsed and it drops the entry entirely: that's exactly what
+// the QueryCache's "removed" event reports. We subscribe once per QueryClient (module-level,
+// keyed by client, so re-rendering components don't add duplicate subscriptions) rather than once
+// per hook instance.
+const subscribedClients = new WeakSet<QueryClient>();
+
+function ensureRevokeOnEviction(queryClient: QueryClient): void {
+  if (subscribedClients.has(queryClient)) return;
+  subscribedClients.add(queryClient);
+  queryClient.getQueryCache().subscribe((event) => {
+    if (event.type !== "removed") return;
+    const [scope, id] = event.query.queryKey as [string, unknown];
+    if (scope !== ATTACHMENT_URL_KEY) return;
+    const url = event.query.state.data as string | undefined;
+    if (url) URL.revokeObjectURL(url);
+  });
+}
+
 /**
  * Loads an attachment's bytes and exposes them as an object URL, cached by react-query under
  * `["attachment-url", id]`. `staleTime: Infinity` means the blob is fetched once per id (an
  * attachment never changes); `gcTime` keeps it around for 10 minutes after the last observer
- * unmounts, in case the same attachment reappears (e.g. scrolling a thread). The object URL
- * itself is revoked from an effect when the URL we handed out changes or this component
- * unmounts, so we don't leak blob URLs past the DOM nodes that reference them.
+ * unmounts, in case the same attachment reappears (e.g. scrolling a thread). See
+ * `ensureRevokeOnEviction` above for why the object URL is freed on cache eviction rather than
+ * on this hook's own unmount. `id` is validated with `isValidAttachmentId` before it is ever
+ * used to build a fetch URL; an invalid id behaves like no id at all (the query stays disabled).
  */
-export function useAttachmentUrl(id: string | null): string | null {
-  const { data } = useQuery({
-    queryKey: ["attachment-url", id],
+export function useAttachmentUrl(id: string | null): { url: string | null; error: boolean } {
+  const queryClient = useQueryClient();
+  useEffect(() => {
+    ensureRevokeOnEviction(queryClient);
+  }, [queryClient]);
+
+  const valid = isValidAttachmentId(id);
+  const { data, isError } = useQuery({
+    queryKey: [ATTACHMENT_URL_KEY, id],
     queryFn: async () => URL.createObjectURL(await fetchBlob(`/api/v1/attachments/${id}`)),
-    enabled: !!id,
+    enabled: valid,
     staleTime: Infinity,
     gcTime: 10 * 60 * 1000,
   });
 
-  useEffect(() => {
-    return () => {
-      if (data) URL.revokeObjectURL(data);
-    };
-  }, [data]);
-
-  return data ?? null;
+  return { url: data ?? null, error: valid && isError };
 }

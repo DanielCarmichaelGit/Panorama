@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import createDOMPurify from "dompurify";
 import { marked, type Token, type Tokens } from "marked";
 import type { Attachment } from "@panorama/core";
-import { fetchBlob, useAttachmentUrl } from "./attachments";
+import { ATTACHMENT_ID_PATTERN, fetchBlob, isValidAttachmentId, useAttachmentUrl } from "./attachments";
 
 export type Block = { kind: "rich"; html: string } | { kind: "html"; html: string };
 
@@ -17,23 +17,50 @@ function purify(): ReturnType<typeof createDOMPurify> {
 
 // Restricts sanitised URLs (href/src) to https:, mailto: and our own attachment: pseudo-scheme,
 // plus relative/unqualified URLs. Modelled on DOMPurify's own default ALLOWED_URI_REGEXP, just
-// with the scheme list narrowed: this is what keeps javascript: and data: links out.
+// with the scheme list narrowed: this is what keeps javascript: and data: links out. This only
+// gates the URL *scheme*; the attachment: id itself is validated separately below, because
+// DOMPurify's job is sanitising markup, not enforcing our id format.
 const ALLOWED_URI_REGEXP = /^(?:(?:https?|mailto|attachment):|[^a-z]|[a-z+.-]+(?:[^a-z+.:-]|$))/i;
+
+function altOf(imgTag: string): string {
+  const m = /\balt="([^"]*)"/.exec(imgTag);
+  return m ? m[1] : "";
+}
+
+const IMG_ATTACHMENT_RE = /<img\b[^>]*\bsrc="attachment:([^"]*)"[^>]*>/g;
+const A_ATTACHMENT_RE = /<a\b[^>]*\bhref="attachment:([^"]*)"[^>]*>([\s\S]*?)<\/a>/g;
+
+/**
+ * Downgrades any `attachment:` image or link whose id fails `isValidAttachmentId` (server ids
+ * are `[A-Za-z0-9-]{1,64}`; anything else, e.g. `../secret?x=1`, is a crafted reference, not a
+ * real attachment) into plain text: an `<img>` becomes its alt text, an `<a>` becomes its inner
+ * text. This runs after DOMPurify, which only cares that the URL scheme is `attachment:`, not
+ * about the shape of what follows it. A bad id must never survive as a real `<img>`/`<a>`
+ * element, because those are exactly what AttachmentImage/AttachmentLink and useAttachmentUrl's
+ * fetch below would otherwise be handed.
+ */
+function neutralizeInvalidAttachmentRefs(html: string): string {
+  return html
+    .replace(IMG_ATTACHMENT_RE, (whole, id: string) => (isValidAttachmentId(id) ? whole : altOf(whole)))
+    .replace(A_ATTACHMENT_RE, (whole, id: string, inner: string) => (isValidAttachmentId(id) ? whole : inner));
+}
 
 /**
  * Sanitises a rendered "rich" markdown block (headings, paragraphs, lists, inline html, etc).
  * Comment bodies are stored verbatim on the server (no server-side sanitisation), so this is
  * the only sanitiser standing between a comment and the DOM: styles, iframes and script-bearing
  * tags are stripped outright, inline style attributes are dropped, and only a safe set of URL
- * schemes survive on links and images.
+ * schemes survive on links and images. `attachment:` ids are additionally restricted to the
+ * server's id shape, so a crafted id can never reach a fetch URL or an href.
  */
 function sanitizeRich(html: string): string {
-  return purify().sanitize(html, {
+  const clean = purify().sanitize(html, {
     USE_PROFILES: { html: true },
     FORBID_TAGS: ["style", "iframe", "object", "embed", "form", "input", "script"],
     FORBID_ATTR: ["style"],
     ALLOWED_URI_REGEXP,
   });
+  return neutralizeInvalidAttachmentRefs(clean);
 }
 
 /**
@@ -132,20 +159,39 @@ export function HtmlFrame({ html }: { html: string }) {
   );
 }
 
-/** Skeleton box, then the loaded image once useAttachmentUrl resolves its object URL. */
+/**
+ * Skeleton box while loading, a small "Could not load" note if the fetch fails, then the image
+ * once useAttachmentUrl resolves its object URL. `id` still passes through isValidAttachmentId
+ * inside useAttachmentUrl itself; there is nothing extra to guard here.
+ */
 export function AttachmentImage({ id, alt }: { id: string; alt: string }) {
-  const url = useAttachmentUrl(id);
+  const { url, error } = useAttachmentUrl(id);
+  if (error) {
+    return (
+      <span className="att-img muted" role="img" aria-label={alt || "Could not load image"}>
+        Could not load
+      </span>
+    );
+  }
   if (!url) return <span className="att-img" role="img" aria-label={alt || "Loading image"} />;
   return <img src={url} alt={alt} />;
 }
 
-/** Downloads the attachment through fetchBlob on click and saves it via a temporary object URL. */
+/**
+ * Downloads the attachment through fetchBlob on click and saves it via a temporary object URL.
+ * Guards `id` with isValidAttachmentId before it ever reaches a fetch URL or the anchor's own
+ * `href`: in normal use it always arrives already-valid (neutralizeInvalidAttachmentRefs strips
+ * invalid ones out of the markdown before this component is ever rendered for one), but the
+ * component is exported and may be used directly, so it checks for itself rather than trusting
+ * its caller.
+ */
 export function AttachmentLink({ id, filename, children }: { id: string; filename?: string; children: React.ReactNode }) {
   const [busy, setBusy] = useState(false);
+  const valid = isValidAttachmentId(id);
 
   const onClick = async (e: React.MouseEvent<HTMLAnchorElement>) => {
     e.preventDefault();
-    if (busy) return;
+    if (busy || !valid) return;
     setBusy(true);
     try {
       const blob = await fetchBlob(`/api/v1/attachments/${id}`);
@@ -154,14 +200,19 @@ export function AttachmentLink({ id, filename, children }: { id: string; filenam
       a.href = url;
       a.download = filename || id;
       a.click();
-      URL.revokeObjectURL(url);
+      // Some browsers (Safari in particular) read the blob URL asynchronously after `.click()`
+      // returns, so revoking it immediately can race the download starting. Free it a second
+      // later instead of right away.
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch {
+      // A failed download just means nothing was saved; `busy` below is the only state to reset.
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <a href={`/api/v1/attachments/${id}`} onClick={onClick} aria-busy={busy}>
+    <a href={valid ? `/api/v1/attachments/${id}` : undefined} onClick={onClick} aria-busy={busy}>
       {children}
     </a>
   );
@@ -172,15 +223,18 @@ type RichSegment =
   | { type: "img"; id: string; alt: string }
   | { type: "link"; id: string; inner: string };
 
-// Matches the two attachment reference shapes sanitizeRich can leave behind:
+// Matches the two attachment reference shapes sanitizeRich can leave behind, now that
+// neutralizeInvalidAttachmentRefs has already downgraded any invalid id to plain text:
 //   <img ... src="attachment:ID" ...>
 //   <a ... href="attachment:ID" ...>inner</a>
-const ATTACHMENT_RE = /<img\b[^>]*\bsrc="attachment:([^"]+)"[^>]*>|<a\b[^>]*\bhref="attachment:([^"]+)"[^>]*>([\s\S]*?)<\/a>/g;
-
-function altOf(imgTag: string): string {
-  const m = /\balt="([^"]*)"/.exec(imgTag);
-  return m ? m[1] : "";
-}
+// The id group is restricted to the same pattern as isValidAttachmentId, so this can never
+// capture and hand a bad id to AttachmentImage/AttachmentLink even if that upstream step were
+// ever skipped.
+const ATTACHMENT_RE = new RegExp(
+  `<img\\b[^>]*\\bsrc="attachment:(${ATTACHMENT_ID_PATTERN})"[^>]*>` +
+    `|<a\\b[^>]*\\bhref="attachment:(${ATTACHMENT_ID_PATTERN})"[^>]*>([\\s\\S]*?)<\\/a>`,
+  "g",
+);
 
 /** Splits sanitised rich html at attachment img/link boundaries so those can render as React components. */
 function splitAttachments(html: string): RichSegment[] {

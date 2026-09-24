@@ -4,6 +4,7 @@ import fastifyMultipart from "@fastify/multipart";
 import fastifyStatic from "@fastify/static";
 import { migrate, openDatabase, readConfig } from "@panorama/db";
 import { installAuth } from "./auth";
+import { EventBus, installStream } from "./bus";
 import type { Ctx } from "./context";
 import { installErrorHandler, notFoundBody } from "./errors";
 import { dbFile, lifecycleRoutes } from "./routes/lifecycle";
@@ -15,7 +16,7 @@ import { threadRoutes } from "./routes/thread";
 import { ticketRoutes } from "./routes/tickets";
 
 export async function buildApp(opts: { dataDir: string; now?: () => Date; webDist?: string; allowFastKdf?: boolean }): Promise<ReturnType<typeof Fastify> & { ctx: Ctx }> {
-  const app = Fastify({ logger: false, bodyLimit: 1_048_576 });
+  const app = Fastify({ logger: false, bodyLimit: 1_048_576, forceCloseConnections: true });
   const now = opts.now ?? (() => new Date());
   const ctx: Ctx = {
     dataDir: opts.dataDir,
@@ -26,6 +27,7 @@ export async function buildApp(opts: { dataDir: string; now?: () => Date; webDis
     startedAt: now().getTime(),
     allowFastKdf: opts.allowFastKdf === true,
     fileKey: null,
+    bus: new EventBus(),
   };
   if (ctx.config && !ctx.config.encryption) {
     ctx.db = openDatabase(dbFile(ctx), null);
@@ -61,6 +63,7 @@ export async function buildApp(opts: { dataDir: string; now?: () => Date; webDis
   threadRoutes(app, ctx);
   chainRoutes(app, ctx);
   attachmentRoutes(app, ctx);
+  installStream(app, ctx);
 
   if (opts.webDist && existsSync(opts.webDist)) {
     await app.register(fastifyStatic, { root: opts.webDist });

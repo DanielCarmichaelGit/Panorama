@@ -4,6 +4,7 @@ import type { FastifyInstance } from "fastify";
 import { ARGON, SetupInput, UnlockInput, verifyRequest } from "@panorama/core";
 import { appendEvent, insertActor, migrate, openDatabase, writeConfig } from "@panorama/db";
 import { getDb, requireCan } from "../auth";
+import { record } from "../bus";
 import type { Ctx } from "../context";
 import { HttpError } from "../errors";
 
@@ -41,7 +42,8 @@ export function lifecycleRoutes(app: FastifyInstance, ctx: Ctx): void {
       const now = ctx.now().toISOString();
       db.transaction(() => {
         insertActor(db, { id: "human", kind: "human", name: "Owner", publicKey: input.publicKey, scopes: null, status: "active", lastSeen: now, createdAt: now });
-        appendEvent(db, { actorId: "human", type: "system.setup", payload: { encryption: input.encryption }, signature: String(req.headers["x-pan-sig"]), now });
+        const ev = appendEvent(db, { actorId: "human", type: "system.setup", payload: { encryption: input.encryption }, signature: String(req.headers["x-pan-sig"]), now });
+        record(req, ev);
       })();
       const config = { kdfSalt: input.kdfSalt, argon: input.argon, humanPublicKey: input.publicKey, encryption: input.encryption };
       writeConfig(ctx.dataDir, config);
@@ -76,7 +78,9 @@ export function lifecycleRoutes(app: FastifyInstance, ctx: Ctx): void {
   app.post("/api/v1/lock", async (req) => {
     requireCan(req, "lock");
     if (!ctx.config?.encryption) throw new HttpError(409, "not_encrypted", "Locking needs encryption to be on");
-    appendEvent(getDb(ctx), { actorId: req.actor.id, type: "system.locked", payload: {}, signature: req.sig, now: ctx.now().toISOString() });
+    const ev = appendEvent(getDb(ctx), { actorId: req.actor.id, type: "system.locked", payload: {}, signature: req.sig, now: ctx.now().toISOString() });
+    record(req, ev);
+    ctx.bus.closeAll();
     ctx.db!.close(); ctx.db = null;
     ctx.fileKey = null;
     return { ok: true };

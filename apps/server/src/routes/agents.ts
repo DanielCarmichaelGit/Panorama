@@ -3,6 +3,7 @@ import type { FastifyInstance } from "fastify";
 import { ApproveAgentInput, RegisterAgentInput } from "@panorama/core";
 import { appendEvent, countPending, getActor, insertActor, listActors, setActorStatus } from "@panorama/db";
 import { getDb, requireCan } from "../auth";
+import { record } from "../bus";
 import type { Ctx } from "../context";
 import { HttpError } from "../errors";
 
@@ -14,7 +15,8 @@ export function agentRoutes(app: FastifyInstance, ctx: Ctx): void {
     const id = randomUUID(); const now = ctx.now().toISOString();
     db.transaction(() => {
       insertActor(db, { id, kind: "agent", name: input.name, publicKey: input.publicKey, scopes: null, status: "pending", lastSeen: null, createdAt: now });
-      appendEvent(db, { actorId: id, type: "agent.registered", payload: { id, name: input.name, publicKey: input.publicKey }, signature: "", now });
+      const ev = appendEvent(db, { actorId: id, type: "agent.registered", payload: { id, name: input.name, publicKey: input.publicKey }, signature: "", now });
+      record(req, ev);
     })();
     return { id, status: "pending" };
   });
@@ -30,7 +32,8 @@ export function agentRoutes(app: FastifyInstance, ctx: Ctx): void {
     const scopes = type === "agent.approved" ? ApproveAgentInput.parse(req.body).scopes : null;
     db.transaction(() => {
       setActorStatus(db, id, type === "agent.approved" ? "active" : "revoked", scopes);
-      appendEvent(db, { actorId: req.actor.id, type, payload: { id, scopes }, signature: req.sig, now: ctx.now().toISOString() });
+      const ev = appendEvent(db, { actorId: req.actor.id, type, payload: { id, scopes }, signature: req.sig, now: ctx.now().toISOString() });
+      record(req, ev);
     })();
     return getActor(db, id);
   };

@@ -4,6 +4,7 @@ import { basename } from "node:path";
 import type { FastifyInstance } from "fastify";
 import { addAttachment, appendEvent, getAttachment, getTicket, type DB } from "@panorama/db";
 import { getDb, requireCan } from "../auth";
+import { record } from "../bus";
 import type { Ctx } from "../context";
 import { HttpError } from "../errors";
 import { filePath, readFile, storeFile } from "../files";
@@ -76,7 +77,8 @@ export function attachmentRoutes(app: FastifyInstance, ctx: Ctx): void {
     try {
       return db.transaction(() => {
         const a = addAttachment(db, { id, ticketId: t.id, actorId: req.actor.id, filename, mime, size: bytes.length, sha256, createdAt: iso() });
-        appendEvent(db, { actorId: req.actor.id, type: "attachment.added", payload: { id: a.id, ticketId: t.id, filename, mime, size: bytes.length }, signature: req.sig, now: iso() });
+        const ev = appendEvent(db, { actorId: req.actor.id, type: "attachment.added", payload: { id: a.id, ticketId: t.id, projectId: t.projectId, filename, mime, size: bytes.length }, signature: req.sig, now: iso() });
+        record(req, ev);
         return a;
       })();
     } catch (e) {

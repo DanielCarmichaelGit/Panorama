@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { CreateProjectInput } from "@panorama/core";
 import { appendEvent, createProject, getProject, listLanes, listProjects } from "@panorama/db";
 import { getDb, inScope, requireCan } from "../auth";
+import { record } from "../bus";
 import type { Ctx } from "../context";
 import { HttpError } from "../errors";
 
@@ -16,7 +17,8 @@ export function projectRoutes(app: FastifyInstance, ctx: Ctx): void {
     if (listProjects(db).some((p) => p.key === input.key)) throw new HttpError(409, "duplicate_key", "That project key is taken");
     return db.transaction(() => {
       const out = createProject(db, input, ctx.now().toISOString());
-      appendEvent(db, { actorId: req.actor.id, type: "project.created", payload: { id: out.project.id, key: input.key, name: input.name }, signature: req.sig, now: ctx.now().toISOString() });
+      const ev = appendEvent(db, { actorId: req.actor.id, type: "project.created", payload: { id: out.project.id, key: input.key, name: input.name }, signature: req.sig, now: ctx.now().toISOString() });
+      record(req, ev);
       return out;
     })();
   });

@@ -18,13 +18,18 @@ import {
   type DB,
 } from "@panorama/db";
 import { getDb, requireCan } from "../auth";
+import { record } from "../bus";
 import type { Ctx } from "../context";
 import { HttpError } from "../errors";
 
 export function threadRoutes(app: FastifyInstance, ctx: Ctx): void {
   const iso = () => ctx.now().toISOString();
   const load = (db: DB, id: string) => { const t = getTicket(db, id); if (!t || t.archived) throw new HttpError(404, "not_found", "No such ticket"); return t; };
-  const log = (db: DB, req: any, type: string, payload: unknown) => appendEvent(db, { actorId: req.actor.id, type, payload, signature: req.sig, now: iso() });
+  const log = (db: DB, req: any, type: string, payload: unknown) => {
+    const ev = appendEvent(db, { actorId: req.actor.id, type, payload, signature: req.sig, now: iso() });
+    record(req, ev);
+    return ev;
+  };
 
   app.get("/api/v1/evidence-types", async (req) => { requireCan(req, "read"); return listEvidenceTypes(getDb(ctx)); });
 
@@ -36,7 +41,7 @@ export function threadRoutes(app: FastifyInstance, ctx: Ctx): void {
     for (const r of requirements) if (!getEvidenceType(db, r.typeId)) throw new HttpError(400, "validation", `No such evidence type: ${r.typeId}`);
     return db.transaction(() => {
       const out = setLaneRequirements(db, lane.id, requirements);
-      log(db, req, "lane.requirements_set", { id: lane.id, requirements });
+      log(db, req, "lane.requirements_set", { id: lane.id, projectId: lane.projectId, requirements });
       return out;
     })();
   });
@@ -71,7 +76,7 @@ export function threadRoutes(app: FastifyInstance, ctx: Ctx): void {
     // sandboxed frame.
     return db.transaction(() => {
       const c = addComment(db, { ticketId: t.id, actorId: req.actor.id, body: input.body, attachmentIds, now: iso() });
-      log(db, req, "comment.added", { id: c.id, ticketId: t.id });
+      log(db, req, "comment.added", { id: c.id, ticketId: t.id, projectId: t.projectId });
       return c;
     })();
   });
@@ -104,7 +109,7 @@ export function threadRoutes(app: FastifyInstance, ctx: Ctx): void {
         result,
         now: iso(),
       });
-      log(db, req, "evidence.added", { id: e.id, ticketId: t.id, typeId: type.id, result });
+      log(db, req, "evidence.added", { id: e.id, ticketId: t.id, projectId: t.projectId, typeId: type.id, result });
       return e;
     })();
   });

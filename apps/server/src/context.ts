@@ -1,4 +1,5 @@
 import type { Config, DB } from "@panorama/db";
+import type { EventBus } from "./bus";
 
 export interface Ctx {
   dataDir: string;
@@ -14,4 +15,6 @@ export interface Ctx {
   /** The database key, ready to encrypt attachment files. Set at setup/unlock when encryption
    *  is on, cleared at lock, and always null when encryption is off. */
   fileKey: Buffer | null;
+  /** Fans out committed events to open server-sent-event streams. */
+  bus: EventBus;
 }

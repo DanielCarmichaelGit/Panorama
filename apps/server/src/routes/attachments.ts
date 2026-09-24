@@ -35,8 +35,24 @@ export function attachmentRoutes(app: FastifyInstance, ctx: Ctx): void {
 
   app.post("/api/v1/attachments", async (req: any) => {
     const db = getDb(ctx);
-    const part = await req.file();
-    if (!part) throw new HttpError(400, "validation", "No file part in the upload");
+    // req.files() rather than the req.file() convenience wrapper, so a second file part can be
+    // detected below: req.file() would silently return only the first part.
+    const filesIter = req.files();
+    const first = await filesIter.next();
+    if (first.done || !first.value) throw new HttpError(400, "validation", "No file part in the upload");
+    const part = first.value;
+
+    // Fields declared before the file part in the multipart body (as our client always does)
+    // are available as soon as the first file part resolves, before its bytes are read: check
+    // the ticket and the actor's permission on it before paying for buffering up to 50 MiB, so
+    // an actor without attachment.add on the project cannot force repeated large buffering.
+    const ticketId = String(part.fields?.ticketId?.value ?? "");
+    if (!ticketId) throw new HttpError(400, "validation", "ticketId is required");
+    const t = loadTicket(db, ticketId);
+    requireCan(req, "attachment.add", t.projectId);
+
+    const mime = String(part.mimetype ?? "").toLowerCase();
+    if (!ALLOWED_MIME.has(mime)) throw new HttpError(415, "unsupported_type", `Attachments of type ${mime || "unknown"} are not accepted`);
 
     let bytes: Buffer;
     try {
@@ -46,13 +62,11 @@ export function attachmentRoutes(app: FastifyInstance, ctx: Ctx): void {
     }
     if (part.file?.truncated) throw new HttpError(413, "too_large", "Attachment exceeds the size limit");
 
-    const ticketId = String(part.fields?.ticketId?.value ?? "");
-    if (!ticketId) throw new HttpError(400, "validation", "ticketId is required");
-    const t = loadTicket(db, ticketId);
-    requireCan(req, "attachment.add", t.projectId);
-
-    const mime = String(part.mimetype ?? "").toLowerCase();
-    if (!ALLOWED_MIME.has(mime)) throw new HttpError(415, "unsupported_type", `Attachments of type ${mime || "unknown"} are not accepted`);
+    // Busboy enforces `files: 1` on the underlying stream: once the first file is drained,
+    // asking the iterator for a second one surfaces its FilesLimitError (statusCode 413),
+    // which the global error handler maps to the same shaped too_large body.
+    const second = await filesIter.next();
+    if (!second.done) throw new HttpError(413, "too_large", "Only one file may be uploaded");
 
     const filename = basename(String(part.filename ?? "file")).slice(0, MAX_FILENAME) || "file";
     const sha256 = createHash("sha256").update(bytes).digest("hex");

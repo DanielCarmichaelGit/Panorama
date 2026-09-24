@@ -24,4 +24,27 @@ describe("attachments", () => {
     const { agent: outsider } = await agentIn(w, other.project.id);
     expect((await outsider("GET", `/api/v1/attachments/${html.json.id}`)).status).toBe(403);
   });
+  it("refuses an upload from an actor without attachment.add on the project", async () => {
+    const w = await world();
+    const other = (await w.human("POST", "/api/v1/projects", { name: "O2", key: "O2" })).json;
+    const { agent: outsider } = await agentIn(w, other.project.id);
+    const up = await outsider("POST", "/api/v1/attachments", undefined, multipart({ ticketId: w.t.id }, { name: "shot.png", mime: "image/png", bytes: png }));
+    expect(up.status).toBe(403);
+  });
+  it("refuses more than one file part with 413 too_large", async () => {
+    const w = await world();
+    const boundary = "panorama-two-files";
+    const body = Buffer.from(
+      `--${boundary}\r\nContent-Disposition: form-data; name="ticketId"\r\n\r\n${w.t.id}\r\n` +
+      `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="a.png"\r\nContent-Type: image/png\r\n\r\n` +
+      png.toString("binary") + `\r\n` +
+      `--${boundary}\r\nContent-Disposition: form-data; name="file2"; filename="b.png"\r\nContent-Type: image/png\r\n\r\n` +
+      png.toString("binary") + `\r\n` +
+      `--${boundary}--\r\n`,
+      "binary",
+    );
+    const up = await w.agent("POST", "/api/v1/attachments", undefined, { body, contentType: `multipart/form-data; boundary=${boundary}` });
+    expect(up.status).toBe(413);
+    expect(up.json.error.code).toBe("too_large");
+  });
 });

@@ -75,6 +75,7 @@ export function NewTicket({
   const dialogRef = useFocusTrap<HTMLDivElement>(() => cancel());
 
   const effectiveLane = laneId || lanes[0]?.id || "";
+  const busy = create.isPending || update.isPending || setFlag.isPending || addComment.isPending || !!busyStep;
 
   // A ticket that does not exist yet carries no evidence, so every requirement a lane has is
   // missing: those lanes are closed to it, and the select says so rather than letting the
@@ -86,7 +87,6 @@ export function NewTicket({
       need: r.count,
       have: 0,
     }));
-  const busy = create.isPending || update.isPending || setFlag.isPending || addComment.isPending || !!busyStep;
 
   const ticketPath = (ticket: Ticket) => (returnTo === "board" ? `/board/t/${ticket.id}` : `/t/${ticket.id}`);
 

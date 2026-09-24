@@ -98,7 +98,7 @@ REST under `/api/v1`, JSON, zod validated, OpenAPI document generated from the s
 
 ## 11. Comment rendering safety
 
-Markdown renders through a strict pipeline. Raw HTML blocks and `.html` attachments are sanitised with DOMPurify on the server and again in the client, then rendered in an `iframe` with `sandbox` (no `allow-scripts`, no `allow-same-origin`) and a restrictive CSP. No remote resources load: images must be attachments.
+Markdown renders through a strict pipeline. Comment bodies are stored verbatim; the web client sanitises at render time with DOMPurify after marked. Raw HTML blocks and `.html` attachments render only inside a sandboxed frame with a restrictive CSP, using an `iframe` with `sandbox` (no `allow-scripts`, no `allow-same-origin`); attachments are never served as `text/html`. No remote resources load: images must be attachments.
 
 ## 12. Error handling
 

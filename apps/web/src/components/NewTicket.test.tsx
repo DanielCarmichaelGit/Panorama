@@ -121,6 +121,14 @@ describe("NewTicket", () => {
     expect((screen.getByRole("option", { name: "Backlog" }) as HTMLOptionElement).disabled).toBe(false);
   });
 
+  it("leaves the Description label pointing at nothing, since the composer labels itself", async () => {
+    renderDialog();
+    await screen.findByRole("dialog", { name: "New ticket" });
+    // The composer is a rich text editor, not a form control a label can be bound to: the label
+    // must not claim it, or a screen reader follows the association to a plain div.
+    expect(screen.getByText("Description").getAttribute("for")).toBeNull();
+  });
+
   it("disables Create while the title is empty", async () => {
     renderDialog();
     await screen.findByRole("dialog", { name: "New ticket" });

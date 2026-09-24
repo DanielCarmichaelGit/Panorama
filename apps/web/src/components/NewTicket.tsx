@@ -194,8 +194,10 @@ export function NewTicket({
                 />
               </div>
               <div className="field">
-                <label htmlFor="nt-description">Description</label>
-                <div id="nt-description" style={{ minHeight: "10rem" }}>
+                {/* No htmlFor: the composer is a rich text editor carrying its own aria-label,
+                    not a form control this label could be bound to. */}
+                <label>Description</label>
+                <div style={{ minHeight: "10rem" }}>
                   <Composer mode="draft" onChange={setDescription} onFilesAdded={addFiles} />
                 </div>
               </div>

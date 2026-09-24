@@ -58,7 +58,8 @@ export function Thread({ ticketId }: { ticketId: string }) {
   const attachmentsById = new Map(attachments.map((a) => [a.id, a]));
   const entries = timeline(comments, evidence);
 
-  if (entries.length === 0) return <p className="muted">No comments yet.</p>;
+  // Wrapped like every other state the thread can be in, so the panel keeps one layout.
+  if (entries.length === 0) return <div className="thread"><p className="muted">No comments yet.</p></div>;
 
   return (
     <div className="thread">

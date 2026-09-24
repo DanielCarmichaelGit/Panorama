@@ -12,6 +12,10 @@ import { HttpError } from "../errors";
  *  agent's view of GET /api/v1/agents includes of another. */
 function scopesShareProject(a: Scopes | null, b: Scopes | null): boolean {
   if (!a || !b) return false;
+  // An empty project list is scope over nothing, so it shares nothing, not even with a
+  // wildcard: "*" means every project there is, not every agent there is.
+  if (Array.isArray(a.projects) && a.projects.length === 0) return false;
+  if (Array.isArray(b.projects) && b.projects.length === 0) return false;
   if (a.projects === "*" || b.projects === "*") return true;
   return a.projects.some((p) => (b.projects as string[]).includes(p));
 }

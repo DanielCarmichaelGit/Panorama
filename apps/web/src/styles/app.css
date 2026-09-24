@@ -107,3 +107,26 @@ a{color:var(--accent)}
 .md blockquote{border-left:3px solid var(--line);margin:.5rem 0;padding:.1rem 0 .1rem .75rem;color:var(--muted)}
 .md img{max-width:100%;border-radius:var(--r-input);vertical-align:middle}
 .att-img{display:inline-block;width:120px;height:80px;border-radius:var(--r-input);background:var(--stone-top);vertical-align:middle}
+.thread{display:grid;gap:.75rem;margin:.75rem 0 1.25rem}
+.comment{padding:.9rem 1rem}
+.comment .who{margin:0 0 .5rem;font-size:.875rem}
+.comment .attachments{display:grid;gap:.3rem;margin-top:.6rem}
+.attachment-row{margin:0}
+.composer{padding:.75rem;margin-bottom:1.5rem;transition:outline var(--dur) var(--ease)}
+.composer:focus-within{outline:2px solid var(--accent);outline-offset:3px}
+.composer .ProseMirror{min-height:6rem;line-height:1.55}
+.composer .ProseMirror:focus{outline:none}
+.composer .ProseMirror p.is-editor-empty:first-child::before{content:attr(data-placeholder);color:var(--muted);float:left;height:0;pointer-events:none}
+.composer .ProseMirror h1{font-size:1.125rem;font-weight:600;letter-spacing:-.01em;margin:.5rem 0}
+.composer .ProseMirror h2{font-size:1rem;font-weight:600;letter-spacing:-.01em;margin:.5rem 0}
+.composer .ProseMirror h3{font-size:.9375rem;font-weight:600;margin:.5rem 0}
+.composer .ProseMirror p{margin:.4rem 0}
+.composer .ProseMirror p:first-child{margin-top:0}
+.composer .ProseMirror code{font-family:var(--mono);font-size:.8125rem;background:var(--stone-top);color:var(--stone-ink);padding:.1rem .3rem;border-radius:4px}
+.composer .ProseMirror pre{font-family:var(--mono);font-size:.8125rem;background:var(--stone-top);color:var(--stone-ink);border-radius:var(--r-input);padding:.7rem;overflow-x:auto}
+.composer .ProseMirror pre code{background:none;padding:0}
+.composer .ProseMirror blockquote{border-left:3px solid var(--line);margin:.5rem 0;padding:.1rem 0 .1rem .75rem;color:var(--muted)}
+.composer .ProseMirror img{max-width:100%;border-radius:var(--r-input);vertical-align:middle}
+.composer .ProseMirror ul,.composer .ProseMirror ol{margin:.4rem 0;padding-left:1.25rem}
+.upload-row{margin:.4rem 0 0}
+.composer-actions{display:flex;justify-content:flex-end;margin-top:.6rem}

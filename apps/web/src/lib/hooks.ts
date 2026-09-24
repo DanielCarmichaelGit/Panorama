@@ -1,9 +1,16 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { Actor, Lane, Project, Scopes, Ticket } from "@panorama/core";
+import type { Actor, Attachment, Comment, Evidence, EvidenceType, Lane, Project, Scopes, Ticket } from "@panorama/core";
 import { api } from "./api";
 import { session } from "./session";
 import { connectStream, invalidationsFor } from "./stream";
+
+export interface ThreadData {
+  comments: Comment[];
+  attachments: Attachment[];
+  evidence: Evidence[];
+  actors: Pick<Actor, "id" | "name" | "kind">[];
+}
 
 export const useProjects = () => useQuery({ queryKey: ["projects"], queryFn: () => api<Project[]>("GET", "/api/v1/projects") });
 
@@ -25,6 +32,23 @@ export const useTicket = (id: string | undefined) =>
 
 export const useTickets = (projectId: string | undefined) =>
   useQuery({ queryKey: ["tickets", projectId], queryFn: () => api<Ticket[]>("GET", `/api/v1/tickets?projectId=${projectId}`), enabled: !!projectId });
+
+export const useEvidenceTypes = () =>
+  useQuery({ queryKey: ["evidence-types"], queryFn: () => api<EvidenceType[]>("GET", "/api/v1/evidence-types"), staleTime: Infinity });
+
+export const useThread = (ticketId: string | undefined) =>
+  useQuery({ queryKey: ["thread", ticketId], queryFn: () => api<ThreadData>("GET", `/api/v1/tickets/${ticketId}/thread`), enabled: !!ticketId });
+
+export const useAddComment = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { ticketId: string; body: string; attachmentIds?: string[] }) => api<Comment>("POST", "/api/v1/comments", v),
+    onSuccess: (_, v) => {
+      qc.invalidateQueries({ queryKey: ["thread", v.ticketId] });
+      qc.invalidateQueries({ queryKey: ["queue"] });
+    },
+  });
+};
 
 export const useCreateProject = () => {
   const qc = useQueryClient();

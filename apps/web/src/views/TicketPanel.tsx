@@ -2,6 +2,8 @@ import { Fragment, useEffect, useRef, useState } from "react";
 import { X } from "@phosphor-icons/react";
 import { useAgents, useLanes, useMoveTicket, useSetFlag, useTicket, useUpdateTicket } from "../lib/hooks";
 import { Chip } from "../components/Chip";
+import { Composer } from "../components/Composer";
+import { Thread } from "../components/Thread";
 
 function when(iso: string): string {
   return new Date(iso).toLocaleString();
@@ -42,7 +44,12 @@ export function TicketPanel({ id, onClose }: { id: string; onClose: () => void }
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") { e.preventDefault(); onClose(); }
+      if (e.key !== "Escape") return;
+      // TipTap owns Escape inside the editor (e.g. closing its own suggestion popups); the panel
+      // must not also close underneath it while the comment composer has focus.
+      if (document.activeElement?.closest(".ProseMirror")) return;
+      e.preventDefault();
+      onClose();
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
@@ -166,6 +173,9 @@ export function TicketPanel({ id, onClose }: { id: string; onClose: () => void }
           </dl>
         </>
       )}
+      <h2>Thread</h2>
+      <Thread ticketId={t.id} />
+      <Composer key={t.id} ticketId={t.id} onPosted={() => {}} />
     </aside>
   );
 }

@@ -118,7 +118,8 @@ Validation errors 400, signature failures 401, scope failures 403, gate failures
 Each milestone is its own implementation plan and ends in something usable.
 
 1. **Foundation**: monorepo, database, setup and unlock, human key, agent registration and approval, signing, hash chain, projects, lanes, tickets, REST, app shell with sidebar, Queue, ticket panel, lock screen.
-2. **Evidence and conversation**: comments and composer, attachments, evidence types, lane gates, flags, Board with gated drag, SSE.
+2. **Evidence and conversation**: comments and composer, attachments, evidence types, lane gates, flags, Board with gated drag, SSE, presence-first home, boards.
+2b. **Ticket model and creation** (added by the owner on 2026-09-24): epics and dependencies pulled forward from milestone 4, tags, success criteria, per-project custom fields, a Settings view (fields, tags, epics, lanes and requirements, evidence types), a full-screen create dialog, and a shared Picker replacing every native select.
 3. **Automation**: rule engine, rule builder, triggers, missed-run catch-up, outbox, webhooks, run logs, MCP server.
 4. **Planning and accounting**: epics, Timeline, dependencies, timers, cost entries and rollups, Agents view totals.
 5. **Hardening and release**: encryption toggle, recovery code and motion-noise canvas, chain export, Docker, docs, README, contribution guide, seed demo project.

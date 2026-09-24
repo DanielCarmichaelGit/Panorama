@@ -1,7 +1,12 @@
 import { Fragment, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { X } from "@phosphor-icons/react";
-import { useAgents, useLanes, useMoveTicket, useSetFlag, useTicket, useUpdateTicket } from "../lib/hooks";
+import { useAgents, useEvidenceTypes, useGates, useLanes, useMoveTicket, useSetFlag, useTicket, useUpdateTicket } from "../lib/hooks";
+import { AddEvidence } from "../components/AddEvidence";
 import { Chip } from "../components/Chip";
+import { Composer } from "../components/Composer";
+import { GateList, laneOptionLabel, nextLane } from "../components/GateList";
+import { Thread } from "../components/Thread";
 
 function when(iso: string): string {
   return new Date(iso).toLocaleString();
@@ -13,10 +18,19 @@ function metaValue(v: unknown): string {
   return String(v);
 }
 
+/** What a `?notice=` on the ticket route means, in the panel's own words. */
+const NOTICES: Record<string, string> = {
+  partial: "Ticket created; some details did not save",
+};
+
 export function TicketPanel({ id, onClose }: { id: string; onClose: () => void }) {
+  const [searchParams] = useSearchParams();
+  const notice = NOTICES[searchParams.get("notice") ?? ""];
   const ticket = useTicket(id);
   const lanes = useLanes(ticket.data?.projectId);
   const agents = useAgents().data ?? [];
+  const gates = useGates(id);
+  const evidenceTypes = useEvidenceTypes().data ?? [];
   const move = useMoveTicket();
   const setFlag = useSetFlag();
   const update = useUpdateTicket();
@@ -24,6 +38,7 @@ export function TicketPanel({ id, onClose }: { id: string; onClose: () => void }
   const [title, setTitle] = useState("");
   const [titleError, setTitleError] = useState("");
   const [laneChoice, setLaneChoice] = useState<string | null>(null);
+  const [addingEvidence, setAddingEvidence] = useState(false);
   const titleRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -42,7 +57,12 @@ export function TicketPanel({ id, onClose }: { id: string; onClose: () => void }
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") { e.preventDefault(); onClose(); }
+      if (e.key !== "Escape") return;
+      // TipTap owns Escape inside the editor (e.g. closing its own suggestion popups); the panel
+      // must not also close underneath it while the comment composer has focus.
+      if (document.activeElement?.closest(".ProseMirror")) return;
+      e.preventDefault();
+      onClose();
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
@@ -98,6 +118,7 @@ export function TicketPanel({ id, onClose }: { id: string; onClose: () => void }
   const laneList = [...(lanes.data ?? [])].sort((a, b) => a.position - b.position);
   const assignee = agents.find((a) => a.id === t.assigneeId);
   const metaEntries = Object.entries(t.metadata);
+  const next = nextLane(laneList, t.laneId);
 
   return (
     <aside className="panel" role="dialog" aria-label={t.key}>
@@ -107,6 +128,7 @@ export function TicketPanel({ id, onClose }: { id: string; onClose: () => void }
           <X size={16} weight="regular" aria-hidden="true" />
         </button>
       </div>
+      {notice && <p className="error" role="alert">{notice}</p>}
       <input
         className="title-input"
         aria-label="Title"
@@ -130,7 +152,17 @@ export function TicketPanel({ id, onClose }: { id: string; onClose: () => void }
             move.mutate({ id, laneId }, { onError: () => setLaneChoice(null) });
           }}
         >
-          {laneList.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+          {laneList.map((l) => {
+            const missing = gates.data?.[l.id] ?? [];
+            // Until the gates come back, nothing is known about what any other lane needs.
+            // Offering them anyway invites a move the server will refuse, so they stay shut.
+            const disabled = l.id !== t.laneId && (gates.isPending || missing.length > 0);
+            return (
+              <option key={l.id} value={l.id} disabled={disabled}>
+                {laneOptionLabel(l, missing, evidenceTypes)}
+              </option>
+            );
+          })}
         </select>
       </div>
       {move.isError && <p className="error" role="alert">{move.error instanceof Error ? move.error.message : "Could not move the ticket."}</p>}
@@ -166,6 +198,16 @@ export function TicketPanel({ id, onClose }: { id: string; onClose: () => void }
           </dl>
         </>
       )}
+      <GateList
+        lane={next}
+        missing={gates.data?.[next?.id ?? ""] ?? []}
+        types={evidenceTypes}
+        actions={<button type="button" className="btn ghost" onClick={() => setAddingEvidence(true)}>Add evidence</button>}
+      />
+      <h2>Thread</h2>
+      <Thread ticketId={t.id} />
+      <Composer key={t.id} ticketId={t.id} onPosted={() => {}} />
+      {addingEvidence && <AddEvidence ticketId={t.id} types={evidenceTypes} onClose={() => setAddingEvidence(false)} />}
     </aside>
   );
 }

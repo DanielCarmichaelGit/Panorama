@@ -65,13 +65,63 @@ describe("checkpoints", () => {
   });
 });
 
+describe("M5 migration backfill", () => {
+  it("gives every pre-existing project a default board and points its tickets at it", () => {
+    const dir = mkdtempSync(join(tmpdir(), "pan-"));
+    const db = d.openDatabase(join(dir, "p.db"), null);
+    d.migrateTo(db, 4); // stop right after M4: no boards table, no tickets.board_id column yet
+
+    db.prepare("insert into projects(id, key, name, next_number, created_at) values(?,?,?,?,?)").run("proj1", "PAN", "Panorama", 2, NOW);
+    db.prepare("insert into lanes(id, project_id, name, position, family) values(?,?,?,?,?)").run("lane1", "proj1", "Backlog", 0, "stone");
+    db.prepare("insert into tickets(id, project_id, number, title, lane_id, position, created_at, updated_at) values(?,?,?,?,?,?,?,?)")
+      .run("t1", "proj1", 1, "Pre-existing ticket", "lane1", 1, NOW, NOW);
+
+    const before = Date.now();
+    d.migrate(db); // completes the upgrade to M5, running the backfill
+    const after = Date.now();
+
+    const boards = d.listBoards(db, "proj1");
+    expect(boards).toEqual([{ id: boards[0].id, projectId: "proj1", name: "Panorama", description: null, family: "stone", position: 0, createdAt: boards[0].createdAt }]);
+    // The backfill stamps the real time the migration runs, not a fixed literal: assert it
+    // parses as an ISO timestamp landing within this test's own run window.
+    const createdMs = new Date(boards[0].createdAt).getTime();
+    expect(Number.isNaN(createdMs)).toBe(false);
+    expect(createdMs).toBeGreaterThanOrEqual(before);
+    expect(createdMs).toBeLessThanOrEqual(after);
+    expect(d.getTicket(db, "t1")!.boardId).toBe(boards[0].id);
+    db.close();
+  });
+});
+
 describe("projects and tickets", () => {
   it("creates a project with the six default lanes", () => {
     const { db } = fresh();
     const { project, lanes } = d.createProject(db, { name: "Panorama", key: "PAN" }, NOW);
     expect(lanes.map((l) => l.name)).toEqual(["Backlog", "Ready", "In Progress", "Eval", "Ready for Production", "Done"]);
     expect(lanes[4].setsNeedsHuman).toBe(true);
+    expect(lanes[4].evidenceRequirements).toEqual([{ typeId: "et_eval_score", count: 1 }]);
     expect(d.listLanes(db, project.id)).toHaveLength(6);
+  });
+  it("creates a default board named after the project, family stone, and lands new tickets on it", () => {
+    const { db } = fresh();
+    const { project, boards } = d.createProject(db, { name: "Panorama", key: "PAN" }, NOW);
+    expect(boards).toEqual([{ id: boards[0].id, projectId: project.id, name: "Panorama", description: null, family: "stone", position: 0, createdAt: NOW }]);
+    expect(d.listBoards(db, project.id)).toEqual(boards);
+    const t = d.createTicket(db, { projectId: project.id, title: "One" }, NOW);
+    expect(t.boardId).toBe(boards[0].id);
+  });
+  it("creates a second board and can put a ticket on it explicitly; listTickets filters by board", () => {
+    const { db } = fresh();
+    const { project, boards } = d.createProject(db, { name: "Panorama", key: "PAN" }, NOW);
+    const second = d.createBoard(db, { projectId: project.id, name: "Growth", family: "sky" }, NOW);
+    expect(second.position).toBe(1);
+    expect(d.getBoard(db, second.id)).toEqual(second);
+    const onDefault = d.createTicket(db, { projectId: project.id, title: "default board" }, NOW);
+    const onSecond = d.createTicket(db, { projectId: project.id, title: "second board", boardId: second.id }, NOW);
+    expect(onDefault.boardId).toBe(boards[0].id);
+    expect(onSecond.boardId).toBe(second.id);
+    expect(d.listTickets(db, { boardId: second.id }).map((t) => t.id)).toEqual([onSecond.id]);
+    expect(d.listTickets(db, { projectId: project.id }).map((t) => t.id).sort()).toEqual([onDefault.id, onSecond.id].sort());
   });
   it("numbers tickets per project, defaults to the first lane, and flags on entry to a needs-human lane", () => {
     const { db } = fresh();
@@ -85,9 +135,22 @@ describe("projects and tickets", () => {
     expect(moved.ticket.flags).toContain("needs_human");
     expect(d.listTickets(db, { flag: "needs_human" }).map((t) => t.id)).toEqual([t1.id]);
   });
+  it("applies a lane's entry rules to a ticket created straight into it, the same as a move does", () => {
+    const { db } = fresh();
+    const { project, lanes } = d.createProject(db, { name: "Panorama", key: "PAN" }, NOW);
+    const plain = d.createTicket(db, { projectId: project.id, title: "in backlog" }, NOW);
+    expect(d.enterLane(db, plain.id, plain.laneId, NOW).flagged).toBe(false);
+
+    const straight = d.createTicket(db, { projectId: project.id, title: "straight in", laneId: lanes[4].id }, NOW);
+    const entered = d.enterLane(db, straight.id, straight.laneId, NOW);
+    expect(entered.flagged).toBe(true);
+    expect(entered.ticket.flags).toContain("needs_human");
+    // Entering the same lane again is not a second flagging: the flag is already there.
+    expect(d.enterLane(db, straight.id, straight.laneId, NOW).flagged).toBe(false);
+  });
   it("builds the queue: needs-human first, then assigned work outside done lanes", () => {
     const { db } = fresh();
-    d.insertActor(db, { id: "ag1", kind: "agent", name: "a", publicKey: "22".repeat(32), scopes: null, status: "active", lastSeen: null, createdAt: NOW });
+    d.insertActor(db, { id: "ag1", kind: "agent", name: "a", publicKey: "22".repeat(32), scopes: null, status: "active", lastSeen: null, currentTicketId: null, createdAt: NOW });
     const { project, lanes } = d.createProject(db, { name: "P", key: "P" + "A" }, NOW);
     const a = d.createTicket(db, { projectId: project.id, title: "flagged" }, NOW);
     const b = d.createTicket(db, { projectId: project.id, title: "working", assigneeId: "ag1" }, NOW);

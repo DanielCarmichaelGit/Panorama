@@ -26,10 +26,30 @@ describe("agents", () => {
     expect((await agent("POST", `/api/v1/agents/${id}/approve`, { scopes: { projects: "*", actions: ["read"] } })).status).toBe(403);
     expect((await human("POST", `/api/v1/agents/${id}/approve`, { scopes: { projects: "*", actions: ["read"] } })).status).toBe(200);
     expect((await agent("GET", "/api/v1/me")).json).toMatchObject({ id, status: "active" });
-    expect((await agent("GET", "/api/v1/agents")).status).toBe(403);
+    // Any active actor with read may list agents, but an agent only ever sees the public shape.
+    const seenByAgent = await agent("GET", "/api/v1/agents");
+    expect(seenByAgent.status).toBe(200);
+    expect(seenByAgent.json).toEqual([{ id, name: "claude-worker-1", kind: "agent", status: "active", lastSeen: expect.any(String), currentTicketId: null }]);
     expect((await human("GET", "/api/v1/agents")).json).toHaveLength(1);
     expect((await human("POST", `/api/v1/agents/${id}/revoke`)).status).toBe(200);
     expect((await agent("GET", "/api/v1/me")).json.error.code).toBe("revoked");
+  });
+  it("hides every agent from one scoped to no projects at all, in both directions", async () => {
+    const { app, human } = await setupApp();
+    const wideKeys = await deriveKeys("agent-secret-wide", "11".repeat(16), ARGON_FAST);
+    const noneKeys = await deriveKeys("agent-secret-none", "22".repeat(16), ARGON_FAST);
+    const wideId = (await app.inject({ method: "POST", url: "/api/v1/agents/register", payload: { name: "wide", publicKey: wideKeys.publicKeyHex } })).json().id;
+    const noneId = (await app.inject({ method: "POST", url: "/api/v1/agents/register", payload: { name: "none", publicKey: noneKeys.publicKeyHex } })).json().id;
+    await human("POST", `/api/v1/agents/${wideId}/approve`, { scopes: { projects: "*", actions: ["read"] } });
+    await human("POST", `/api/v1/agents/${noneId}/approve`, { scopes: { projects: [], actions: ["read"] } });
+
+    const wide = client(app, wideKeys.seed, wideId);
+    const none = client(app, noneKeys.seed, noneId);
+    // An empty project list shares nothing, not even with a wildcard scope.
+    expect((await wide("GET", "/api/v1/agents")).json.map((a: any) => a.id)).toEqual([wideId]);
+    expect((await none("GET", "/api/v1/agents")).json).toEqual([]);
+    // The human still sees both.
+    expect((await human("GET", "/api/v1/agents")).json).toHaveLength(2);
   });
   it("refuses a duplicate public key", async () => {
     const { app } = await setupApp(); const ak = await agentKeys();

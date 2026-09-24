@@ -24,6 +24,22 @@ export function inScope(actor: Actor, projectId: string): boolean {
 const NONCE_TTL_MS = 120_000;
 const SWEEP_EVERY_MS = 30_000;
 const FUTURE_TOLERANCE_MS = 5_000;
+const PRESENCE_THROTTLE_MS = 30_000;
+
+/**
+ * Presence is not a chain event: it carries no signature and is never appended to the
+ * event log, so it is published straight to the bus instead of going through `record`.
+ * Throttled to once per agent per 30s so a busy agent doesn't put a frame on the human's
+ * stream for every request; `visibleTo` in bus.ts already keeps it off other agents'
+ * streams since its payload carries no `projectId` and its type is not `agent.approved`.
+ */
+function publishPresence(ctx: Ctx, actor: Actor, nowMs: number, lastSeen: string): void {
+  if (actor.kind !== "agent") return;
+  const last = ctx.agentSeenAt.get(actor.id) ?? 0;
+  if (nowMs - last < PRESENCE_THROTTLE_MS) return;
+  ctx.agentSeenAt.set(actor.id, nowMs);
+  ctx.bus.publish({ seq: nowMs, type: "agent.seen", payload: { id: actor.id, lastSeen, currentTicketId: actor.currentTicketId }, at: lastSeen });
+}
 
 export function installAuth(app: FastifyInstance, ctx: Ctx, openPaths: Set<string>): void {
   let lastSweep = 0;
@@ -34,7 +50,12 @@ export function installAuth(app: FastifyInstance, ctx: Ctx, openPaths: Set<strin
     const actor = getActor(db, String(req.headers["x-pan-actor"] ?? ""));
     if (!actor) throw new HttpError(401, "unknown_actor", "Unknown actor");
     const nowMs = ctx.now().getTime();
-    const ok = await verifyRequest(actor.publicKey, req.headers as any, req.method, req.url, (req as any).rawBody ?? "", nowMs);
+    // signRequest hashes a UTF-8 string, so a binary multipart body cannot be signed byte for
+    // byte. Those uploads sign the empty string instead: the actor, path, timestamp and nonce
+    // are still bound, just not the file bytes themselves.
+    const contentType = String(req.headers["content-type"] ?? "");
+    const signedBody = contentType.startsWith("multipart/") ? "" : (req as any).rawBody ?? "";
+    const ok = await verifyRequest(actor.publicKey, req.headers as any, req.method, req.url, signedBody, nowMs);
     if (!ok) throw new HttpError(401, "bad_signature", "Signature check failed");
 
     // The nonce cache is memory only, so a request captured before this process started
@@ -54,7 +75,9 @@ export function installAuth(app: FastifyInstance, ctx: Ctx, openPaths: Set<strin
     if (ctx.nonces.has(nonce)) throw new HttpError(401, "replay", "Nonce already used");
     ctx.nonces.set(nonce, nowMs + NONCE_TTL_MS);
 
-    touchActor(db, actor.id, ctx.now().toISOString());
+    const nowIso = ctx.now().toISOString();
+    touchActor(db, actor.id, nowIso);
+    publishPresence(ctx, actor, nowMs, nowIso);
     req.actor = actor; req.sig = String(req.headers["x-pan-sig"]);
   });
 }

@@ -17,12 +17,12 @@ TypeScript monorepo. React with Vite for the web app, Fastify backend, SQLite th
 
 ## Views
 
-1. **Queue (home).** Tickets flagged Needs Human, newest first, then a collapsed section of what agents are doing now. Header reads as a mono count and the words "need you". Each row: state mark, ID, title, epic chip, agent, timer, tokens, state chip.
+1. **Queue (home).** The state of the system first: a presence strip of connected agents (who is on what, who is idle, who is waiting for approval) under a header that reads as a mono count and the words "need you". Then tickets flagged Needs Human, newest first, then a collapsed section of what agents are doing now. With no agents connected the home says so and offers to connect one; creating a ticket is secondary. Each row: state mark, ID, title, epic chip, agent, timer, tokens, state chip. (Amended by the owner on 2026-09-24: agents, not tickets, are the fundamental thing on first login.)
 2. **Board.** Kanban by lane. Drag to move. A lane with unmet evidence requirements refuses the drop and says what is missing. Lanes that set Needs Human on entry show it in their header.
 3. **Timeline.** Gantt. Bars by ticket, grouped by epic, dependencies drawn as links, drag to move and resize, today line.
 4. **Epics.** Epic list with progress, total time, total tokens and cost, and an isometric cover.
 5. **Automations.** Rule list and the builder. A rule reads as a sentence: When [event], if [conditions], then [actions]. Built from dropdown tokens in a sentence, not a node canvas. Includes schedules (triggers) and their missed-run policy, and a run log per rule.
-6. **Agents.** Registered agent keys, pending approvals, scopes, last seen, totals. Approve and revoke are human-signed.
+6. **Agents.** Pending approvals first, then one card per agent: an isometric mark in its own colour family, status (on a ticket, idle, waiting), last seen, scopes, and later totals. Approve and revoke are human-signed.
 7. **Settings.** Encryption toggle, password change, recovery code, webhook destinations, evidence types, lanes, chain verification and export.
 8. **Ticket panel.** Title, lane, flags, epic, dates, dependencies, timers, cost metadata, evidence checklist for the next lane, and the comment thread.
 9. **Lock screen and first run.** Password creation, recovery code shown on the motion-noise canvas, unlock.

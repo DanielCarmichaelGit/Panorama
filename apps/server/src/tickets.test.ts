@@ -8,7 +8,7 @@ async function world() {
   const { project, lanes } = (await s.human("POST", "/api/v1/projects", { name: "Panorama", key: "PAN" })).json;
   const ak = await deriveKeys("agent-secret-xyz", "11".repeat(16), ARGON_FAST);
   const id = (await s.app.inject({ method: "POST", url: "/api/v1/agents/register", payload: { name: "worker", publicKey: ak.publicKeyHex } })).json().id;
-  await s.human("POST", `/api/v1/agents/${id}/approve`, { scopes: { projects: [project.id], actions: ["read", "ticket.create", "ticket.update", "ticket.move", "flag.set"] } });
+  await s.human("POST", `/api/v1/agents/${id}/approve`, { scopes: { projects: [project.id], actions: ["read", "ticket.create", "ticket.update", "ticket.move", "flag.set", "evidence.add"] } });
   return { ...s, project, lanes, agent: client(s.app, ak.seed, id), agentId: id };
 }
 
@@ -18,13 +18,14 @@ describe("tickets", () => {
     const t = (await w.agent("POST", "/api/v1/tickets", { projectId: w.project.id, title: "Ship the thing" })).json;
     expect(t).toMatchObject({ key: "PAN-1", assigneeId: w.agentId });
     const rfp = w.lanes.find((l: any) => l.name === "Ready for Production");
+    expect((await w.agent("POST", "/api/v1/evidence", { ticketId: t.id, typeId: "et_eval_score", payload: { score: 0.95 } })).json.result).toBe("pass");
     const moved = (await w.agent("POST", `/api/v1/tickets/${t.id}/move`, { laneId: rfp.id })).json;
     expect(moved.flags).toEqual(["needs_human"]);
     expect((await w.human("GET", `/api/v1/queue?projectId=${w.project.id}`)).json.needsHuman.map((x: any) => x.id)).toEqual([t.id]);
     expect((await w.agent("POST", `/api/v1/tickets/${t.id}/flags`, { flag: "needs_human", on: false })).status).toBe(403);
     expect((await w.human("POST", `/api/v1/tickets/${t.id}/flags`, { flag: "needs_human", on: false })).json.flags).toEqual([]);
     const types = listEvents(w.app.ctx.db!).map((e) => e.type);
-    expect(types).toEqual(["system.setup", "project.created", "agent.registered", "agent.approved", "ticket.created", "ticket.moved", "ticket.flag_set", "ticket.flag_cleared"]);
+    expect(types).toEqual(["system.setup", "project.created", "agent.registered", "agent.approved", "ticket.created", "evidence.added", "ticket.moved", "ticket.flag_set", "ticket.flag_cleared"]);
     expect(verifyChain(listEvents(w.app.ctx.db!)).ok).toBe(true);
   });
   it("keeps agents inside their scopes", async () => {
@@ -75,6 +76,87 @@ describe("tickets", () => {
     const moved = (await w.agent("POST", `/api/v1/tickets/${t.id}/move`, { laneId: inProgress.id })).json;
     expect(moved.assigneeId).toBe(w.agentId);
   });
+  it("puts a new ticket on the project's default board, reports boardId in ticket.created, and rejects a board from another project", async () => {
+    const w = await world();
+    const boards = (await w.human("GET", `/api/v1/projects/${w.project.id}/boards`)).json;
+    expect(boards).toHaveLength(1);
+    expect(boards[0].name).toBe("Panorama");
+    expect(boards[0].family).toBe("stone");
+
+    const t = (await w.human("POST", "/api/v1/tickets", { projectId: w.project.id, title: "on default board" })).json;
+    expect(t.boardId).toBe(boards[0].id);
+
+    const other = (await w.human("POST", "/api/v1/projects", { name: "Other", key: "OTH" })).json;
+    const otherBoards = (await w.human("GET", `/api/v1/projects/${other.project.id}/boards`)).json;
+    const wrongBoard = await w.human("POST", "/api/v1/tickets", { projectId: w.project.id, title: "x", boardId: otherBoards[0].id });
+    expect(wrongBoard.status).toBe(400);
+    expect(wrongBoard.json.error.code).toBe("wrong_project");
+
+    const types = listEvents(w.app.ctx.db!).map((e) => e.type);
+    const created = w.app.ctx.db!.prepare("select payload from events where type = 'ticket.created' and json_extract(payload, '$.title') = 'on default board'").get() as { payload: string };
+    expect(JSON.parse(created.payload)).toMatchObject({ boardId: boards[0].id, projectId: w.project.id });
+    expect(types).toContain("ticket.created");
+  });
+
+  it("creates a second board and lets a ticket land there; GET /tickets filters by boardId", async () => {
+    const w = await world();
+    const boards = (await w.human("GET", `/api/v1/projects/${w.project.id}/boards`)).json;
+    const second = (await w.human("POST", "/api/v1/boards", { projectId: w.project.id, name: "Growth", family: "sky" })).json;
+    expect(second).toMatchObject({ projectId: w.project.id, name: "Growth", family: "sky", position: 1 });
+
+    const onSecond = (await w.human("POST", "/api/v1/tickets", { projectId: w.project.id, title: "on growth", boardId: second.id })).json;
+    expect(onSecond.boardId).toBe(second.id);
+
+    const filtered = (await w.human("GET", `/api/v1/tickets?projectId=${w.project.id}&boardId=${second.id}`)).json;
+    expect(filtered.map((t: any) => t.id)).toEqual([onSecond.id]);
+
+    const defaultBoardTickets = (await w.human("GET", `/api/v1/tickets?projectId=${w.project.id}&boardId=${boards[0].id}`)).json;
+    expect(defaultBoardTickets.map((t: any) => t.id)).not.toContain(onSecond.id);
+  });
+
+  it("keeps board creation human only", async () => {
+    const w = await world();
+    const asAgent = await w.agent("POST", "/api/v1/boards", { projectId: w.project.id, name: "Nope" });
+    expect(asAgent.status).toBe(403);
+    const asHuman = await w.human("POST", "/api/v1/boards", { projectId: w.project.id, name: "Yes" });
+    expect(asHuman.status).toBe(200);
+    expect(asHuman.json.name).toBe("Yes");
+  });
+
+  it("refuses a ticket created straight into a gated lane, for an agent and for the human", async () => {
+    const w = await world();
+    const done = w.lanes.find((l: any) => l.name === "Done");
+
+    const asAgent = await w.agent("POST", "/api/v1/tickets", { projectId: w.project.id, title: "straight to done", laneId: done.id });
+    expect(asAgent.status).toBe(422);
+    expect(asAgent.json.error.code).toBe("gate");
+    expect(asAgent.json.error.details).toEqual({ laneId: done.id, missing: [{ typeId: "et_human_signoff", name: "Human sign-off", need: 1, have: 0 }] });
+
+    const asHuman = await w.human("POST", "/api/v1/tickets", { projectId: w.project.id, title: "straight to done", laneId: done.id });
+    expect(asHuman.status).toBe(422);
+    expect(asHuman.json.error.code).toBe("gate");
+
+    expect((await w.human("GET", `/api/v1/tickets?projectId=${w.project.id}`)).json).toEqual([]);
+    expect(listEvents(w.app.ctx.db!).map((e) => e.type)).not.toContain("ticket.created");
+  });
+
+  it("flags a ticket created straight into a needs-human lane, with the lane as the cause", async () => {
+    const w = await world();
+    const rfp = w.lanes.find((l: any) => l.name === "Ready for Production");
+    // Clear the lane's own evidence requirements so the gate is not what is under test here.
+    await w.human("PUT", `/api/v1/lanes/${rfp.id}/requirements`, { requirements: [] });
+
+    const t = (await w.agent("POST", "/api/v1/tickets", { projectId: w.project.id, title: "born flagged", laneId: rfp.id })).json;
+    expect(t.flags).toEqual(["needs_human"]);
+    expect((await w.human("GET", `/api/v1/queue?projectId=${w.project.id}`)).json.needsHuman.map((x: any) => x.id)).toEqual([t.id]);
+
+    const events = listEvents(w.app.ctx.db!);
+    const types = events.map((e) => e.type);
+    expect(types.slice(-2)).toEqual(["ticket.created", "ticket.flag_set"]);
+    expect(events[events.length - 1].payload).toMatchObject({ id: t.id, flag: "needs_human", cause: "lane" });
+    expect(verifyChain(events).ok).toBe(true);
+  });
+
   it("restricts who a PATCH can set as the assignee", async () => {
     const w = await world();
     const t = (await w.agent("POST", "/api/v1/tickets", { projectId: w.project.id, title: "assignable" })).json;

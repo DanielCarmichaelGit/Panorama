@@ -1,8 +1,11 @@
 import { useState } from "react";
-import { AGENT_ACTIONS, type Actor, type AgentAction, type Scopes } from "@panorama/core";
+import { useOutletContext } from "react-router-dom";
+import { CaretDown, CaretRight } from "@phosphor-icons/react";
+import { AGENT_ACTIONS, type Actor, type AgentAction, type Lane, type Project, type Scopes } from "@panorama/core";
 import { LaneScene } from "../lib/iso";
-import { useAgents, useApproveAgent, useProjects, useRevokeAgent } from "../lib/hooks";
+import { useAgents, useApproveAgent, useProjects, useRevokeAgent, useTickets } from "../lib/hooks";
 import { useFocusTrap } from "../lib/useFocusTrap";
+import { AgentCard } from "../components/AgentCard";
 
 export const shortKey = (hex: string) => `${hex.slice(0, 8)}…${hex.slice(-4)}`;
 
@@ -17,17 +20,10 @@ const ACTION_LABELS: Record<AgentAction, string> = {
   "ticket.update": "Edit tickets",
   "ticket.move": "Move tickets",
   "flag.set": "Set flags",
+  "comment.add": "Comment",
+  "evidence.add": "Attach evidence",
+  "attachment.add": "Upload files",
 };
-
-function when(iso: string | null): string {
-  return iso ? new Date(iso).toLocaleString() : "Never";
-}
-
-function scopeSummary(scopes: Scopes | null): string {
-  if (!scopes) return "No access";
-  const projects = scopes.projects === "*" ? "all projects" : `${scopes.projects.length} project${scopes.projects.length === 1 ? "" : "s"}`;
-  return `${projects}, ${scopes.actions.map((a) => ACTION_LABELS[a]).join(", ")}`;
-}
 
 function ApproveDialog({ agent, onClose }: { agent: Actor; onClose: () => void }) {
   const projects = useProjects();
@@ -92,26 +88,45 @@ function ApproveDialog({ agent, onClose }: { agent: Actor; onClose: () => void }
   );
 }
 
-function AgentRow({ agent, showLastSeen, error, children }: { agent: Actor; showLastSeen?: boolean; error?: string; children?: React.ReactNode }) {
+function when(iso: string | null): string {
+  return iso ? new Date(iso).toLocaleString() : "Never";
+}
+
+function PendingCard({ agent, error, onApprove, onReject, working }: {
+  agent: Actor; error?: string; onApprove: () => void; onReject: () => void; working: boolean;
+}) {
   return (
-    <div className="card agent-row">
+    <div className="card agent-row pending-card">
       <strong>{agent.name}</strong>
-      <span className="mono muted">{shortKey(agent.publicKey)}</span>
-      <span className="mono muted">{showLastSeen ? when(agent.lastSeen) : `registered ${when(agent.createdAt)}`}</span>
-      {agent.scopes && <span className="muted">{scopeSummary(agent.scopes)}</span>}
+      <span className="mono">{shortKey(agent.publicKey)}</span>
+      <span className="mono">registered {when(agent.createdAt)}</span>
       <div className="spacer" />
-      {children}
+      <button type="button" className="btn" onClick={onApprove}>Approve</button>
+      <button type="button" className="btn ghost" onClick={onReject} disabled={working}>Reject</button>
       {error && <p className="error" role="alert">{error}</p>}
     </div>
   );
 }
 
+function RevokedRow({ agent }: { agent: Actor }) {
+  return (
+    <div className="card agent-row">
+      <strong>{agent.name}</strong>
+      <span className="mono muted">{shortKey(agent.publicKey)}</span>
+      <span className="mono muted">{when(agent.lastSeen)}</span>
+    </div>
+  );
+}
+
 export function Agents() {
-  const agents = useAgents({ refetchInterval: 3000 });
+  const agents = useAgents();
   const revoke = useRevokeAgent();
+  const outlet = useOutletContext<{ project: Project; lanes: Lane[] } | undefined>();
+  const tickets = useTickets(outlet?.project.id).data ?? [];
   const [approving, setApproving] = useState<Actor | null>(null);
   const [working, setWorking] = useState<string | null>(null);
   const [rowError, setRowError] = useState<{ id: string; message: string } | null>(null);
+  const [showRevoked, setShowRevoked] = useState(false);
 
   const list = agents.data ?? [];
   const pending = list.filter((a) => a.status === "pending");
@@ -154,6 +169,7 @@ export function Agents() {
           <LaneScene />
           <h1>No agents yet</h1>
           <p className="muted">Register an agent key to see it here.</p>
+          <p className="muted">An agent registers itself with its own key. You approve it here before it can touch anything.</p>
           <pre className="codeblock mono">{'POST /api/v1/agents/register {"name":"my-agent","publicKey":"<ed25519 public key hex>"}'}</pre>
         </div>
       </div>
@@ -170,27 +186,41 @@ export function Agents() {
         <>
           <h2 className="section-title">Pending</h2>
           {pending.map((a) => (
-            <AgentRow key={a.id} agent={a} error={errorFor(a.id)}>
-              <button type="button" className="btn" onClick={() => setApproving(a)}>Approve</button>
-              <button type="button" className="btn ghost" onClick={() => withdraw(a.id)} disabled={working === a.id}>Reject</button>
-            </AgentRow>
+            <PendingCard
+              key={a.id}
+              agent={a}
+              error={errorFor(a.id)}
+              working={working === a.id}
+              onApprove={() => setApproving(a)}
+              onReject={() => withdraw(a.id)}
+            />
           ))}
         </>
       )}
       {active.length > 0 && (
         <>
           <h2 className="section-title">Active</h2>
-          {active.map((a) => (
-            <AgentRow key={a.id} agent={a} showLastSeen error={errorFor(a.id)}>
-              <button type="button" className="btn ghost" onClick={() => withdraw(a.id)} disabled={working === a.id}>Revoke</button>
-            </AgentRow>
-          ))}
+          <div className="agent-grid">
+            {active.map((a) => (
+              <AgentCard
+                key={a.id}
+                agent={a}
+                ticket={tickets.find((t) => t.id === a.currentTicketId)}
+                revoking={working === a.id}
+                error={errorFor(a.id)}
+                onRevoke={() => withdraw(a.id)}
+              />
+            ))}
+          </div>
         </>
       )}
       {revoked.length > 0 && (
         <>
-          <h2 className="section-title">Revoked</h2>
-          {revoked.map((a) => <AgentRow key={a.id} agent={a} showLastSeen />)}
+          <button type="button" className="section-toggle" aria-expanded={showRevoked} onClick={() => setShowRevoked((v) => !v)}>
+            {showRevoked ? <CaretDown size={16} weight="regular" aria-hidden="true" /> : <CaretRight size={16} weight="regular" aria-hidden="true" />}
+            Revoked <span className="mono">{revoked.length}</span>
+          </button>
+          {showRevoked && revoked.map((a) => <RevokedRow key={a.id} agent={a} />)}
         </>
       )}
       {approving && <ApproveDialog agent={approving} onClose={() => setApproving(null)} />}

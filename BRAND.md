@@ -117,3 +117,4 @@ Phosphor, regular weight, 18px in the sidebar and 16px inline, imported per glyp
 
 - Light theme only in v1. A dark theme is on the traction list.
 - The motion-noise recovery display cannot honour reduced motion, because motion is how it works. It offers an explicit "show as plain text" button instead.
+- The sidebar width snaps when it collapses or expands; only its contents animate. Animating the shell's `grid-template-columns` relaid out the whole page on every frame, which is the layout thrash BRAND rules out, so the track changes in one step and the nav items and labels carry the motion.

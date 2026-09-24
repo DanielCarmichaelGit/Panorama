@@ -1,21 +1,19 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useOutletContext } from "react-router-dom";
 import { CaretDown, CaretRight } from "@phosphor-icons/react";
-import type { Lane, Project, Ticket } from "@panorama/core";
+import type { Lane, Project } from "@panorama/core";
 import { LaneScene } from "../lib/iso";
-import { useAgents, useQueue, useTickets } from "../lib/hooks";
+import { useAgents, useBoards, useQueue, useTickets } from "../lib/hooks";
+import { isTypingTarget } from "../lib/keys";
 import { TicketRow } from "../components/TicketRow";
 import { NewTicket } from "../components/NewTicket";
-
-function isTypingTarget(): boolean {
-  const el = document.activeElement as HTMLElement | null;
-  return !!el && (["INPUT", "TEXTAREA", "SELECT"].includes(el.tagName) || el.isContentEditable);
-}
+import { PresenceStrip, presenceLine } from "../components/PresenceStrip";
 
 export function Queue() {
   const { project, lanes } = useOutletContext<{ project: Project; lanes: Lane[] }>();
   const queue = useQueue(project.id);
   const allTickets = useTickets(project.id);
+  const boards = useBoards(project.id).data ?? [];
   const agents = useAgents().data ?? [];
   const [showNew, setShowNew] = useState(false);
   const [showAllOpen, setShowAllOpen] = useState(false);
@@ -25,14 +23,16 @@ export function Queue() {
   const needsHuman = queue.data?.needsHuman ?? [];
   const active = queue.data?.active ?? [];
   const hasQueue = !queue.isPending && !queue.isError;
+  const tickets = allTickets.data ?? [];
+  const hasActiveAgents = agents.some((a) => a.status === "active");
+  const firstBoardId = [...boards].sort((a, b) => a.position - b.position)[0]?.id ?? "";
 
   const doneLaneIds = new Set(lanes.filter((l) => l.isDone).map((l) => l.id));
   const shownIds = new Set([...needsHuman, ...active].map((t) => t.id));
   const openTickets = (allTickets.data ?? []).filter((t) => !shownIds.has(t.id) && !doneLaneIds.has(t.laneId));
 
-  function closeNew(created?: Ticket) {
+  function closeNew() {
     setShowNew(false);
-    if (created) navigate(`/t/${created.id}`);
   }
 
   useEffect(() => {
@@ -93,10 +93,24 @@ export function Queue() {
       <div className="view">
         <div className="empty">
           <LaneScene />
-          <h1>Nothing needs you</h1>
-          <p className="muted">Agents are working. Flagged tickets land here.</p>
-          <button className="btn" onClick={() => setShowNew(true)}>New ticket</button>
+          {hasActiveAgents ? (
+            <>
+              <h1>Nothing needs you</h1>
+              <p className="muted">{presenceLine(agents, new Date())}</p>
+              <button className="btn ghost" onClick={() => setShowNew(true)}>New ticket</button>
+            </>
+          ) : (
+            <>
+              <h1>No agents connected yet</h1>
+              <p className="muted">Connect an agent and it will start reporting here.</p>
+              <div className="empty-actions">
+                <button className="btn" onClick={() => navigate("/agents")}>Connect an agent</button>
+                <button className="btn ghost" onClick={() => setShowNew(true)}>New ticket</button>
+              </div>
+            </>
+          )}
         </div>
+        <PresenceStrip agents={agents} tickets={tickets} onOpen={(id) => navigate(`/t/${id}`)} />
         <div className="rows">
           {active.length > 0 && (
             <>
@@ -108,7 +122,7 @@ export function Queue() {
           )}
           {allOpenSection}
         </div>
-        {showNew && <NewTicket projectId={project.id} onClose={closeNew} />}
+        {showNew && <NewTicket projectId={project.id} boardId={firstBoardId} returnTo="queue" onClose={closeNew} />}
       </div>
     );
   }
@@ -121,6 +135,7 @@ export function Queue() {
         <div className="spacer" />
         <button className="btn" onClick={() => setShowNew(true)}>New ticket</button>
       </div>
+      <PresenceStrip agents={agents} tickets={tickets} onOpen={(id) => navigate(`/t/${id}`)} />
       <div ref={rowsRef}>
         {needsHuman.map((t, i) => (
           <TicketRow key={t.id} ticket={t} lanes={lanes} agents={agents} index={i} />
@@ -135,7 +150,7 @@ export function Queue() {
         </>
       )}
       {allOpenSection}
-      {showNew && <NewTicket projectId={project.id} onClose={closeNew} />}
+      {showNew && <NewTicket projectId={project.id} boardId={firstBoardId} returnTo="queue" onClose={closeNew} />}
     </div>
   );
 }

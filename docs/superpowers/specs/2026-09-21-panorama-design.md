@@ -24,12 +24,13 @@ Run: `pnpm start` or `docker compose up`. Default bind `127.0.0.1:4400`. Data di
 
 ## 3. Vocabulary and data model
 
-Project, Epic, Ticket, Lane, Flag, Evidence, Rule, Trigger, Agent.
+Project, Board, Epic, Ticket, Lane, Flag, Evidence, Rule, Trigger, Agent.
 
 - `projects`: id, key (ticket prefix), name.
+- `boards`: id, project, name, description, colour family, position. A board groups tickets inside a project the way an epic categorises them, and a ticket belongs to exactly one board; every project gets a default board named after the project. Lanes stay per project, so every board shares the same lanes. Rules are project-scoped and may match on board, so an automation can move a ticket between boards or react to work on any board. (Added by the owner on 2026-09-24; its wider role arrives with the rule engine.)
 - `epics`: id, project, name, colour family, description.
 - `lanes`: id, project, name, position, colour family, `sets_needs_human` (bool), `evidence_requirements` (list of `{type, params, count}`), `is_done` (bool).
-- `tickets`: id, project, number, title, epic, lane, position, flags (set: `needs_human`, `blocked`, plus user defined), assignee actor, start date, due date, `metadata` (free JSON for agents), created and updated.
+- `tickets`: id, project, board, number, title, epic, lane, position, flags (set: `needs_human`, `blocked`, plus user defined), assignee actor, start date, due date, `metadata` (free JSON for agents), created and updated.
 - `ticket_links`: from, to, kind (`blocks`, `relates`). Drives Timeline dependencies.
 - `comments`: id, ticket, actor, body markdown, created. Append-only.
 - `attachments`: id, ticket, comment (optional), filename, mime, size, sha256, path.
@@ -98,7 +99,7 @@ REST under `/api/v1`, JSON, zod validated, OpenAPI document generated from the s
 
 ## 11. Comment rendering safety
 
-Markdown renders through a strict pipeline. Raw HTML blocks and `.html` attachments are sanitised with DOMPurify on the server and again in the client, then rendered in an `iframe` with `sandbox` (no `allow-scripts`, no `allow-same-origin`) and a restrictive CSP. No remote resources load: images must be attachments.
+Markdown renders through a strict pipeline. Comment bodies are stored verbatim; the web client sanitises at render time with DOMPurify after marked. Raw HTML blocks and `.html` attachments render only inside a sandboxed frame with a restrictive CSP, using an `iframe` with `sandbox` (no `allow-scripts`, no `allow-same-origin`); attachments are never served as `text/html`. No remote resources load: images must be attachments.
 
 ## 12. Error handling
 
@@ -117,7 +118,8 @@ Validation errors 400, signature failures 401, scope failures 403, gate failures
 Each milestone is its own implementation plan and ends in something usable.
 
 1. **Foundation**: monorepo, database, setup and unlock, human key, agent registration and approval, signing, hash chain, projects, lanes, tickets, REST, app shell with sidebar, Queue, ticket panel, lock screen.
-2. **Evidence and conversation**: comments and composer, attachments, evidence types, lane gates, flags, Board with gated drag, SSE.
+2. **Evidence and conversation**: comments and composer, attachments, evidence types, lane gates, flags, Board with gated drag, SSE, presence-first home, boards.
+2b. **Ticket model and creation** (added by the owner on 2026-09-24): epics and dependencies pulled forward from milestone 4, tags, success criteria, per-project custom fields, a Settings view (fields, tags, epics, lanes and requirements, evidence types), a full-screen create dialog, and a shared Picker replacing every native select.
 3. **Automation**: rule engine, rule builder, triggers, missed-run catch-up, outbox, webhooks, run logs, MCP server.
 4. **Planning and accounting**: epics, Timeline, dependencies, timers, cost entries and rollups, Agents view totals.
 5. **Hardening and release**: encryption toggle, recovery code and motion-noise canvas, chain export, Docker, docs, README, contribution guide, seed demo project.

@@ -9,7 +9,9 @@ test("first run, agent approval, clearing the queue", async ({ page }) => {
 
   await page.getByLabel("Project name").fill("Panorama");
   await page.getByRole("button", { name: "Create project" }).click();
-  await expect(page.getByText("Nothing needs you")).toBeVisible();
+  // No agent has connected yet, so the Queue's empty state leads with connecting one rather
+  // than the connected-but-idle "Nothing needs you" (Task 12's presence-first home).
+  await expect(page.getByText("No agents connected yet")).toBeVisible();
 
   const agent = spawn("pnpm", ["demo:agent"], {
     env: { ...process.env, PANORAMA_URL: "http://127.0.0.1:4410", AGENT_NAME: "e2e-agent" },
@@ -31,6 +33,12 @@ test("first run, agent approval, clearing the queue", async ({ page }) => {
   await row.click();
   await page.getByRole("button", { name: "Clear needs human" }).click();
   await expect(page.getByText("Nothing needs you")).toBeVisible();
+
+  if (!(await page.getByRole("dialog").isVisible().catch(() => false))) {
+    await row.click();
+  }
+  await expect(page.getByRole("heading", { name: "Test run" })).toBeVisible();
+  await expect(page.locator(".chip", { hasText: /^PASS/ })).toHaveCount(2);
 
   await page.reload();
   await expect(page.getByRole("heading", { name: "Unlock" })).toBeVisible();

@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, NavLink, Outlet, useMatch, useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
-import { CaretLeft, CaretRight, List, Lock, Robot, Tray } from "@phosphor-icons/react";
+import { CaretLineLeft, CaretLineRight, Kanban, List, Lock, Robot, Tray } from "@phosphor-icons/react";
 import type { Project } from "@panorama/core";
 import type { Status } from "../App";
 import { api } from "../lib/api";
 import { session } from "../lib/session";
-import { useLanes, useProjects } from "../lib/hooks";
+import { useLanes, useProjects, useStream } from "../lib/hooks";
+import { isTypingTarget } from "../lib/keys";
 import { useFocusTrap } from "../lib/useFocusTrap";
 import { FirstProject } from "./FirstProject";
 import { TicketPanel } from "./TicketPanel";
@@ -27,11 +28,6 @@ function writeCollapsed(v: boolean): void {
   } catch {
     // storage unavailable; the preference just won't persist
   }
-}
-
-function isTypingTarget(): boolean {
-  const el = document.activeElement as HTMLElement | null;
-  return !!el && (["INPUT", "TEXTAREA", "SELECT"].includes(el.tagName) || el.isContentEditable);
 }
 
 function SkeletonRows() {
@@ -72,6 +68,7 @@ function MenuSheet({ onClose, children }: { onClose: () => void; children: React
 
 export function Shell({ status, chainOk }: { status: Status; chainOk: boolean }) {
   const projects = useProjects();
+  const streamStatus = useStream();
   const [collapsed, setCollapsed] = useState(readCollapsed);
   const [projectOverride, setProjectOverride] = useState<string | null>(null);
   const [lockError, setLockError] = useState("");
@@ -84,12 +81,15 @@ export function Shell({ status, chainOk }: { status: Status; chainOk: boolean })
   const current = list.find((p) => p.id === projectOverride) ?? list[0] ?? null;
   const lanes = useLanes(current?.id);
   const ticketMatch = useMatch("/t/:id");
-  const ticketId = ticketMatch?.params.id;
+  const boardTicketMatch = useMatch("/board/t/:id");
+  const ticketId = ticketMatch?.params.id ?? boardTicketMatch?.params.id;
   const rootMatch = useMatch("/");
-  const queueCurrent = !!rootMatch || !!ticketId;
+  const queueCurrent = !!rootMatch || !!ticketMatch;
+  const boardMatch = useMatch("/board");
+  const boardCurrent = !!boardMatch || !!boardTicketMatch;
 
   function closeTicketPanel() {
-    navigate("/");
+    navigate(boardTicketMatch ? "/board" : "/");
     if (ticketId) {
       window.setTimeout(() => {
         document.querySelector<HTMLElement>(`[data-ticket="${ticketId}"]`)?.focus();
@@ -106,6 +106,7 @@ export function Shell({ status, chainOk }: { status: Status; chainOk: boolean })
       if (pendingG) {
         reset();
         if (e.key === "q") { e.preventDefault(); navigate("/"); }
+        else if (e.key === "b") { e.preventDefault(); navigate("/board"); }
         else if (e.key === "a") { e.preventDefault(); navigate("/agents"); }
         return;
       }
@@ -146,33 +147,39 @@ export function Shell({ status, chainOk }: { status: Status; chainOk: boolean })
       <nav className="side" aria-label="Main">
         <div className="switcher" title={current?.name}>
           {!current ? null : collapsed ? (
-            <strong className="mono">{current.key}</strong>
+            <strong className="mono key-mark" aria-label={current.name}>{current.key.slice(0, 2)}</strong>
           ) : (
             <ProjectSwitcher list={list} current={current} onChange={setProjectOverride} />
           )}
         </div>
         <Link to="/" className="nav-item" aria-label="Queue" title="Queue" aria-current={queueCurrent ? "page" : undefined}>
-          <Tray size={18} weight="regular" aria-hidden="true" />
+          <Tray size={22} weight="regular" aria-hidden="true" />
           <span className="label">Queue</span>
         </Link>
+        <Link to="/board" className="nav-item" aria-label="Board" title="Board" aria-current={boardCurrent ? "page" : undefined}>
+          <Kanban size={22} weight="regular" aria-hidden="true" />
+          <span className="label">Board</span>
+        </Link>
         <NavLink to="/agents" className="nav-item" aria-label="Agents" title="Agents">
-          <Robot size={18} weight="regular" aria-hidden="true" />
+          <Robot size={22} weight="regular" aria-hidden="true" />
           <span className="label">Agents</span>
         </NavLink>
         <button type="button" className="nav-item menu-item" onClick={() => setMenuOpen(true)} aria-haspopup="dialog" aria-expanded={menuOpen}>
-          <List size={18} weight="regular" aria-hidden="true" />
+          <List size={22} weight="regular" aria-hidden="true" />
           <span className="label">Menu</span>
         </button>
         <div className="foot">
-          <span className="mono muted">{chainOk ? "chain verified" : "chain broken"}</span>
+          {!collapsed && <span className="mono muted">{chainOk ? "chain verified" : "chain broken"}</span>}
+          {!collapsed && <span className="mono muted">{streamStatus === "open" ? "live" : "reconnecting"}</span>}
           {status.encryption && (
-            <button type="button" className="btn ghost" onClick={handleLock}>
-              <Lock size={16} weight="regular" aria-hidden="true" /> Lock
+            <button type="button" className="nav-item" onClick={handleLock} aria-label="Lock" title={collapsed ? `Lock (${chainOk ? "chain verified" : "chain broken"}, ${streamStatus === "open" ? "live" : "reconnecting"})` : "Lock"}>
+              <Lock size={22} weight="regular" aria-hidden="true" />
+              <span className="label">Lock</span>
             </button>
           )}
           {lockError && <p className="error" role="alert">{lockError}</p>}
-          <button type="button" className="btn ghost" onClick={toggleCollapsed} aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}>
-            {collapsed ? <CaretRight size={16} weight="regular" aria-hidden="true" /> : <CaretLeft size={16} weight="regular" aria-hidden="true" />}
+          <button type="button" className="collapse-btn" onClick={toggleCollapsed} aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"} title={collapsed ? "Expand sidebar" : "Collapse sidebar"}>
+            {collapsed ? <CaretLineRight size={16} weight="regular" aria-hidden="true" /> : <CaretLineLeft size={16} weight="regular" aria-hidden="true" />}
           </button>
         </div>
       </nav>
@@ -193,6 +200,7 @@ export function Shell({ status, chainOk }: { status: Status; chainOk: boolean })
         <MenuSheet onClose={closeMenu}>
           {current && <ProjectSwitcher list={list} current={current} onChange={(id) => { setProjectOverride(id); closeMenu(); }} />}
           <span className="mono muted">{chainOk ? "chain verified" : "chain broken"}</span>
+          <span className="mono muted">{streamStatus === "open" ? "live" : "reconnecting"}</span>
           {status.encryption && (
             <button type="button" className="btn ghost" onClick={handleLock}>
               <Lock size={16} weight="regular" aria-hidden="true" /> Lock

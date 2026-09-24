@@ -1,16 +1,17 @@
 import { z } from "zod";
 import { Scopes, ScopesSchema } from "./permissions";
+import type { LaneRequirement } from "./evidence";
 
 export const FAMILIES = ["coral", "sky", "lilac", "mint", "stone"] as const;
 export type Family = (typeof FAMILIES)[number];
 
-export const DEFAULT_LANES: { name: string; family: Family; setsNeedsHuman: boolean; isDone: boolean }[] = [
-  { name: "Backlog", family: "stone", setsNeedsHuman: false, isDone: false },
-  { name: "Ready", family: "stone", setsNeedsHuman: false, isDone: false },
-  { name: "In Progress", family: "sky", setsNeedsHuman: false, isDone: false },
-  { name: "Eval", family: "lilac", setsNeedsHuman: false, isDone: false },
-  { name: "Ready for Production", family: "mint", setsNeedsHuman: true, isDone: false },
-  { name: "Done", family: "mint", setsNeedsHuman: false, isDone: true },
+export const DEFAULT_LANES: { name: string; family: Family; setsNeedsHuman: boolean; isDone: boolean; evidenceRequirements: LaneRequirement[] }[] = [
+  { name: "Backlog", family: "stone", setsNeedsHuman: false, isDone: false, evidenceRequirements: [] },
+  { name: "Ready", family: "stone", setsNeedsHuman: false, isDone: false, evidenceRequirements: [] },
+  { name: "In Progress", family: "sky", setsNeedsHuman: false, isDone: false, evidenceRequirements: [] },
+  { name: "Eval", family: "lilac", setsNeedsHuman: false, isDone: false, evidenceRequirements: [] },
+  { name: "Ready for Production", family: "mint", setsNeedsHuman: true, isDone: false, evidenceRequirements: [{ typeId: "et_eval_score", count: 1 }] },
+  { name: "Done", family: "mint", setsNeedsHuman: false, isDone: true, evidenceRequirements: [{ typeId: "et_human_signoff", count: 1 }] },
 ];
 
 export interface Actor {
@@ -21,16 +22,20 @@ export interface Actor {
   scopes: Scopes | null;
   status: "pending" | "active" | "revoked";
   lastSeen: string | null;
+  currentTicketId: string | null;
   createdAt: string;
 }
 
 export interface Project { id: string; key: string; name: string; createdAt: string }
 
-export interface Lane { id: string; projectId: string; name: string; position: number; family: Family; setsNeedsHuman: boolean; isDone: boolean }
+export interface Lane { id: string; projectId: string; name: string; position: number; family: Family; setsNeedsHuman: boolean; isDone: boolean; evidenceRequirements: LaneRequirement[] }
+
+export interface Board { id: string; projectId: string; name: string; description: string | null; family: Family; position: number; createdAt: string }
 
 export interface Ticket {
   id: string;
   projectId: string;
+  boardId: string;
   number: number;
   key: string;
   title: string;
@@ -44,6 +49,20 @@ export interface Ticket {
   archived: boolean;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface Comment { id: string; ticketId: string; actorId: string; body: string; attachmentIds: string[]; createdAt: string }
+
+export interface Attachment {
+  id: string;
+  ticketId: string;
+  commentId: string | null;
+  actorId: string;
+  filename: string;
+  mime: string;
+  size: number;
+  sha256: string;
+  createdAt: string;
 }
 
 const hex = (n: number) => z.string().regex(new RegExp(`^[0-9a-f]{${n}}$`));
@@ -81,17 +100,28 @@ export type ApproveAgentInput = z.infer<typeof ApproveAgentInput>;
 
 export const CreateProjectInput = z.object({
   name: z.string().min(1).max(80),
-  key: z.string().regex(/^[A-Z][A-Z0-9]{1,7}$/),
+  key: z.string().regex(/^[A-Z][A-Z0-9_]{0,31}$/),
 });
 export type CreateProjectInput = z.infer<typeof CreateProjectInput>;
 
 export const CreateTicketInput = z.object({
   projectId: z.string().min(1),
   title: z.string().min(1).max(200),
+  boardId: z.string().min(1).optional(),
   laneId: z.string().min(1).optional(),
   metadata: z.record(z.unknown()).optional(),
 });
 export type CreateTicketInput = z.infer<typeof CreateTicketInput>;
+
+export const CreateBoardInput = z
+  .object({
+    projectId: z.string().min(1),
+    name: z.string().min(1).max(80),
+    description: z.string().max(500).optional(),
+    family: z.enum(FAMILIES).optional(),
+  })
+  .strict();
+export type CreateBoardInput = z.infer<typeof CreateBoardInput>;
 
 export const UpdateTicketInput = z
   .object({
@@ -118,3 +148,30 @@ export type FlagInput = z.infer<typeof FlagInput>;
 // different point in the chain. The server checks seq against the current last seq.
 export const CheckpointInput = z.object({ seq: z.number().int().positive(), headHash: hex64, signature: hex128 });
 export type CheckpointInput = z.infer<typeof CheckpointInput>;
+
+export const AddCommentInput = z
+  .object({
+    ticketId: z.string().min(1),
+    body: z.string().min(1).max(20000),
+    attachmentIds: z.array(z.string().min(1)).max(20).optional(),
+  })
+  .strict();
+export type AddCommentInput = z.infer<typeof AddCommentInput>;
+
+export const AddEvidenceInput = z
+  .object({
+    ticketId: z.string().min(1),
+    typeId: z.string().min(1),
+    payload: z.record(z.unknown()),
+    attachmentId: z.string().min(1).nullable().optional(),
+    commentId: z.string().min(1).nullable().optional(),
+  })
+  .strict();
+export type AddEvidenceInput = z.infer<typeof AddEvidenceInput>;
+
+export const LaneRequirementsInput = z
+  .object({
+    requirements: z.array(z.object({ typeId: z.string().min(1), count: z.number().int().min(1).max(20) }).strict()).max(20),
+  })
+  .strict();
+export type LaneRequirementsInput = z.infer<typeof LaneRequirementsInput>;

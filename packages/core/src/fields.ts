@@ -47,7 +47,7 @@ export type FieldDefinitionInput = z.infer<typeof FieldDefinitionInput>;
 export const UpdateFieldInput = z
   .object({
     name: z.string().min(1).max(60).optional(),
-    options: z.array(FieldOption).optional(),
+    options: z.array(FieldOption).min(1).optional(),
     required: z.boolean().optional(),
     position: z.number().int().min(0).optional(),
     archived: z.boolean().optional(),

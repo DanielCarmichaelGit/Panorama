@@ -2,12 +2,12 @@ import { createHash, randomUUID } from "node:crypto";
 import { rmSync } from "node:fs";
 import { basename } from "node:path";
 import type { FastifyInstance } from "fastify";
-import { addAttachment, appendEvent, getAttachment, getTicket, type DB } from "@boomerang/db";
+import { addAttachment, getAttachment, getTicket, type DB } from "@boomerang/db";
 import { getDb, requireCan } from "../auth";
-import { record } from "../bus";
 import type { Ctx } from "../context";
 import { HttpError } from "../errors";
 import { filePath, readFile, storeFile } from "../files";
+import { loadTicket, makeLog } from "./common";
 
 // Anything not on this list is refused outright: attachments accept common document,
 // text and image formats plus a generic binary fallback, and nothing else.
@@ -32,11 +32,7 @@ const MAX_FILENAME = 200;
 
 export function attachmentRoutes(app: FastifyInstance, ctx: Ctx): void {
   const iso = () => ctx.now().toISOString();
-  const loadTicket = (db: DB, id: string) => {
-    const t = getTicket(db, id);
-    if (!t || t.archived) throw new HttpError(404, "not_found", "No such ticket");
-    return t;
-  };
+  const log = makeLog(ctx);
 
   app.post("/api/v1/attachments", async (req: any) => {
     const db = getDb(ctx);
@@ -81,8 +77,7 @@ export function attachmentRoutes(app: FastifyInstance, ctx: Ctx): void {
     try {
       return db.transaction(() => {
         const a = addAttachment(db, { id, ticketId: t.id, actorId: req.actor.id, filename, mime, size: bytes.length, sha256, createdAt: iso() });
-        const ev = appendEvent(db, { actorId: req.actor.id, type: "attachment.added", payload: { id: a.id, ticketId: t.id, projectId: t.projectId, filename, mime, size: bytes.length }, signature: req.sig, now: iso() });
-        record(req, ev);
+        log(db, req, "attachment.added", { id: a.id, ticketId: t.id, projectId: t.projectId, filename, mime, size: bytes.length });
         return a;
       })();
     } catch (e) {

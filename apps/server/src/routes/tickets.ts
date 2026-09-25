@@ -1,16 +1,16 @@
 import type { FastifyInstance } from "fastify";
 import { checkGate, CreateTicketInput, type FieldDefinition, type FieldValue, FlagInput, isFileValue, type Lane, MoveTicketInput, UpdateTicketInput, validateFieldValues } from "@boomerang/core";
-import { appendEvent, archiveTicket, createTicket, enterLane, getActor, getAttachment, getBoard, getEpic, getEvidenceType, getLane, getProject, getTag, getTicket, listEvidence, listFields, listLanes, listTickets, moveTicket, queue, setCurrentTicket, setFlag, updateTicket, type DB } from "@boomerang/db";
+import { archiveTicket, createTicket, enterLane, getActor, getAttachment, getBoard, getEpic, getEvidenceType, getLane, getProject, getTag, listEvidence, listFields, listLanes, listTickets, moveTicket, queue, setCurrentTicket, setFlag, updateTicket, type DB } from "@boomerang/db";
 import { getDb, inScope, requireCan } from "../auth";
-import { record } from "../bus";
 import { changedKeys, sameMergedRecord, sameSet } from "../changed";
 import type { Ctx } from "../context";
 import { blockedByReasons } from "../gate";
 import { HttpError } from "../errors";
+import { loadTicket, makeLog } from "./common";
 
 export function ticketRoutes(app: FastifyInstance, ctx: Ctx): void {
   const iso = () => ctx.now().toISOString();
-  const load = (db: DB, id: string) => { const t = getTicket(db, id); if (!t || t.archived) throw new HttpError(404, "not_found", "No such ticket"); return t; };
+  const load = loadTicket;
   /**
    * Refuses a lane a ticket cannot enter yet, in the one 422 shape both create and move use.
    * Entering a lane with `isDone` also runs the dependency check, reporting an unmet `blocks`
@@ -24,10 +24,12 @@ export function ticketRoutes(app: FastifyInstance, ctx: Ctx): void {
     if (all.length === 0) return;
     throw new HttpError(422, "gate", `${lane.name} needs evidence first`, { laneId: lane.id, missing: all });
   };
-  const log = (db: DB, req: any, type: string, payload: unknown) => {
-    const ev = appendEvent(db, { actorId: req.actor.id, type, payload, signature: req.sig, now: iso() });
-    record(req, ev);
-    return ev;
+  const log = makeLog(ctx);
+  /** An epic a ticket may join: it must be this project's and still open. */
+  const requireEpic = (db: DB, epicId: string, projectId: string) => {
+    const epic = getEpic(db, epicId);
+    if (!epic || epic.projectId !== projectId) throw new HttpError(400, "wrong_project", "That epic belongs to another project");
+    if (epic.archived) throw new HttpError(400, "validation", "That epic is archived", { epicId });
   };
   /**
    * A file field may only name one of the ticket's own attachments. Core has checked the
@@ -64,10 +66,7 @@ export function ticketRoutes(app: FastifyInstance, ctx: Ctx): void {
     requireCan(req, "ticket.create", input.projectId);
     if (input.laneId && getLane(db, input.laneId)?.projectId !== input.projectId) throw new HttpError(400, "wrong_project", "That lane belongs to another project");
     if (input.boardId && getBoard(db, input.boardId)?.projectId !== input.projectId) throw new HttpError(400, "wrong_project", "That board belongs to another project");
-    if (input.epicId !== undefined) {
-      const epic = getEpic(db, input.epicId);
-      if (!epic || epic.projectId !== input.projectId) throw new HttpError(400, "wrong_project", "That epic belongs to another project");
-    }
+    if (input.epicId !== undefined) requireEpic(db, input.epicId, input.projectId);
     if (input.tagIds) {
       for (const tagId of input.tagIds) {
         const tag = getTag(db, tagId);
@@ -107,10 +106,7 @@ export function ticketRoutes(app: FastifyInstance, ctx: Ctx): void {
       if (req.actor.kind === "agent" && patch.assigneeId !== req.actor.id) throw new HttpError(403, "forbidden", "Agents may only assign themselves");
       if (!getActor(db, patch.assigneeId)) throw new HttpError(400, "validation", "No such actor");
     }
-    if (patch.epicId !== undefined && patch.epicId !== null) {
-      const epic = getEpic(db, patch.epicId);
-      if (!epic || epic.projectId !== t.projectId) throw new HttpError(400, "wrong_project", "That epic belongs to another project");
-    }
+    if (patch.epicId !== undefined && patch.epicId !== null) requireEpic(db, patch.epicId, t.projectId);
     if (patch.tagIds) {
       for (const tagId of patch.tagIds) {
         const tag = getTag(db, tagId);
@@ -119,8 +115,11 @@ export function ticketRoutes(app: FastifyInstance, ctx: Ctx): void {
     }
     if (patch.successCriteria !== undefined) requireCan(req, "criteria.edit", t.projectId);
     if (patch.fields !== undefined) {
+      // The patch merges into the ticket's values, so it is the merged result that must hold:
+      // a fields patch may not leave a required field empty, whoever sends it. (Only create
+      // exempts file kinds, and only because their attachment cannot exist yet.)
       const defs = listFields(db, t.projectId, { includeArchived: true });
-      const fieldCheck = validateFieldValues(defs, patch.fields, { requireAll: false });
+      const fieldCheck = validateFieldValues(defs, { ...t.fields, ...patch.fields }, { requireAll: true });
       if (!fieldCheck.ok) throw new HttpError(400, "validation", "Bad field values", { issues: fieldCheck.issues });
       requireOwnAttachments(db, defs, patch.fields, t.id);
     }
@@ -155,7 +154,8 @@ export function ticketRoutes(app: FastifyInstance, ctx: Ctx): void {
   });
 
   app.post("/api/v1/tickets/:id/archive", async (req: any) => {
-    const db = getDb(ctx); const t = load(db, req.params.id); requireCan(req, "ticket.archive", t.projectId);
+    requireCan(req, "ticket.archive");
+    const db = getDb(ctx); const t = load(db, req.params.id);
     return db.transaction(() => { const out = archiveTicket(db, t.id, iso()); log(db, req, "ticket.archived", { id: t.id, projectId: t.projectId }); return out; })();
   });
 }

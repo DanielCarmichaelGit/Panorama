@@ -31,6 +31,12 @@ export function createTicket(
   return getTicket(db, id)!;
 }
 
+/** The little the dependency gate needs of every ticket in a project (archived included, since
+ *  a link to an archived ticket still counts): no tags, fields, or metadata are loaded. */
+export const listTicketRefs = (db: DB, projectId: string): { id: string; key: string; laneId: string }[] =>
+  (db.prepare("select t.id, t.number, t.lane_id, p.key as project_key from tickets t join projects p on p.id = t.project_id where t.project_id = ? order by t.number").all(projectId) as any[])
+    .map((r) => ({ id: r.id, key: `${r.project_key}-${r.number}`, laneId: r.lane_id }));
+
 export function listTickets(db: DB, f: { projectId?: string; boardId?: string; laneId?: string; flag?: string; epicId?: string; tagId?: string }): Ticket[] {
   const where = ["t.archived = 0"]; const args: unknown[] = [];
   if (f.projectId) { where.push("t.project_id = ?"); args.push(f.projectId); }

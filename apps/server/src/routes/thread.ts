@@ -3,7 +3,6 @@ import { AddCommentInput, AddEvidenceInput, checkGate, CreateEvidenceTypeInput, 
 import {
   addComment,
   addEvidence,
-  appendEvent,
   createEvidenceType,
   deleteEvidenceType,
   getActor,
@@ -20,19 +19,15 @@ import {
   type DB,
 } from "@boomerang/db";
 import { getDb, requireCan } from "../auth";
-import { record } from "../bus";
 import type { Ctx } from "../context";
 import { blockedByReasons } from "../gate";
 import { HttpError } from "../errors";
+import { loadTicket, makeLog } from "./common";
 
 export function threadRoutes(app: FastifyInstance, ctx: Ctx): void {
   const iso = () => ctx.now().toISOString();
-  const load = (db: DB, id: string) => { const t = getTicket(db, id); if (!t || t.archived) throw new HttpError(404, "not_found", "No such ticket"); return t; };
-  const log = (db: DB, req: any, type: string, payload: unknown) => {
-    const ev = appendEvent(db, { actorId: req.actor.id, type, payload, signature: req.sig, now: iso() });
-    record(req, ev);
-    return ev;
-  };
+  const load = loadTicket;
+  const log = makeLog(ctx);
 
   app.get("/api/v1/evidence-types", async (req) => { requireCan(req, "read"); return listEvidenceTypes(getDb(ctx)); });
 
@@ -56,9 +51,9 @@ export function threadRoutes(app: FastifyInstance, ctx: Ctx): void {
   });
 
   app.delete("/api/v1/evidence-types/:id", async (req: any) => {
+    requireCan(req, "evidence.edit");
     const db = getDb(ctx); const type = getEvidenceType(db, req.params.id);
     if (!type) throw new HttpError(404, "not_found", "No such evidence type");
-    requireCan(req, "evidence.edit");
     return db.transaction(() => {
       const { deleted, lanes, evidenceCount } = deleteEvidenceType(db, type.id);
       if (!deleted) {
@@ -73,9 +68,9 @@ export function threadRoutes(app: FastifyInstance, ctx: Ctx): void {
   });
 
   app.put("/api/v1/lanes/:id/requirements", async (req: any) => {
+    requireCan(req, "lane.edit");
     const db = getDb(ctx); const lane = getLane(db, req.params.id);
     if (!lane) throw new HttpError(404, "not_found", "No such lane");
-    requireCan(req, "lane.edit", lane.projectId);
     const { requirements } = LaneRequirementsInput.parse(req.body);
     // One count per type, or the gate would have two answers for the same requirement.
     const seen = new Set<string>();

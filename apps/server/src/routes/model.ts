@@ -2,7 +2,6 @@ import type { FastifyInstance } from "fastify";
 import { CreateEpicInput, CreateTagInput, FieldDefinitionInput, LinkInput, UpdateEpicInput, UpdateFieldInput, UpdateTagInput } from "@boomerang/core";
 import {
   addLink,
-  appendEvent,
   archiveTag,
   createEpic,
   createField,
@@ -23,25 +22,18 @@ import {
   type DB,
 } from "@boomerang/db";
 import { getDb, requireCan } from "../auth";
-import { record } from "../bus";
 import { changedKeys } from "../changed";
 import type { Ctx } from "../context";
 import { HttpError } from "../errors";
+import { loadTicket, makeLog } from "./common";
 
+// Human-only routes check the action before touching the store, so an agent is told 403
+// whether or not the id it named exists; a human still gets 404 on a missing id.
 export function modelRoutes(app: FastifyInstance, ctx: Ctx): void {
   const iso = () => ctx.now().toISOString();
-  const loadTicket = (db: DB, id: string) => {
-    const t = getTicket(db, id);
-    if (!t || t.archived) throw new HttpError(404, "not_found", "No such ticket");
-    return t;
-  };
+  const log = makeLog(ctx);
   const loadProject = (db: DB, projectId: string) => {
     if (!getProject(db, projectId)) throw new HttpError(404, "not_found", "No such project");
-  };
-  const log = (db: DB, req: any, type: string, payload: unknown) => {
-    const ev = appendEvent(db, { actorId: req.actor.id, type, payload, signature: req.sig, now: iso() });
-    record(req, ev);
-    return ev;
   };
 
   // Epics
@@ -55,8 +47,8 @@ export function modelRoutes(app: FastifyInstance, ctx: Ctx): void {
 
   app.post("/api/v1/epics", async (req) => {
     const db = getDb(ctx); const input = CreateEpicInput.parse(req.body);
-    loadProject(db, input.projectId);
     requireCan(req, "epic.edit", input.projectId);
+    loadProject(db, input.projectId);
     return db.transaction(() => {
       const epic = createEpic(db, input, iso());
       log(db, req, "epic.created", { id: epic.id, projectId: epic.projectId, name: epic.name, family: epic.family, color: epic.color });
@@ -65,9 +57,9 @@ export function modelRoutes(app: FastifyInstance, ctx: Ctx): void {
   });
 
   app.patch("/api/v1/epics/:id", async (req: any) => {
+    requireCan(req, "epic.edit");
     const db = getDb(ctx); const epic = getEpic(db, req.params.id);
     if (!epic) throw new HttpError(404, "not_found", "No such epic");
-    requireCan(req, "epic.edit", epic.projectId);
     const patch = UpdateEpicInput.parse(req.body);
     return db.transaction(() => {
       const out = updateEpic(db, epic.id, patch, iso());
@@ -87,8 +79,8 @@ export function modelRoutes(app: FastifyInstance, ctx: Ctx): void {
 
   app.post("/api/v1/tags", async (req) => {
     const db = getDb(ctx); const input = CreateTagInput.parse(req.body);
-    loadProject(db, input.projectId);
     requireCan(req, "tag.edit", input.projectId);
+    loadProject(db, input.projectId);
     return db.transaction(() => {
       let tag;
       try {
@@ -103,9 +95,9 @@ export function modelRoutes(app: FastifyInstance, ctx: Ctx): void {
   });
 
   app.patch("/api/v1/tags/:id", async (req: any) => {
+    requireCan(req, "tag.edit");
     const db = getDb(ctx); const tag = getTag(db, req.params.id);
     if (!tag) throw new HttpError(404, "not_found", "No such tag");
-    requireCan(req, "tag.edit", tag.projectId);
     const patch = UpdateTagInput.parse(req.body);
     return db.transaction(() => {
       let out;
@@ -121,9 +113,9 @@ export function modelRoutes(app: FastifyInstance, ctx: Ctx): void {
   });
 
   app.post("/api/v1/tags/:id/archive", async (req: any) => {
+    requireCan(req, "tag.edit");
     const db = getDb(ctx); const tag = getTag(db, req.params.id);
     if (!tag) throw new HttpError(404, "not_found", "No such tag");
-    requireCan(req, "tag.edit", tag.projectId);
     return db.transaction(() => {
       const out = archiveTag(db, tag.id);
       log(db, req, "tag.archived", { id: tag.id, projectId: tag.projectId });
@@ -171,6 +163,9 @@ export function modelRoutes(app: FastifyInstance, ctx: Ctx): void {
     const db = getDb(ctx); const t = loadTicket(db, req.params.id); requireCan(req, "ticket.update", t.projectId);
     const link = listLinks(db, t.id).find((l) => l.id === req.params.linkId);
     if (!link) throw new HttpError(404, "not_found", "No such link");
+    // A blocks link is a gate: an agent may add one but only the owner may take one away,
+    // or an agent could unblock its own ticket by deleting the link that holds it.
+    if (link.kind === "blocks") requireCan(req, "link.remove");
     return db.transaction(() => {
       removeLink(db, link.id);
       log(db, req, "ticket.unlinked", { projectId: t.projectId, id: link.id, fromId: link.fromId, toId: link.toId, kind: link.kind });
@@ -189,8 +184,8 @@ export function modelRoutes(app: FastifyInstance, ctx: Ctx): void {
 
   app.post("/api/v1/fields", async (req) => {
     const db = getDb(ctx); const input = FieldDefinitionInput.parse(req.body);
-    loadProject(db, input.projectId);
     requireCan(req, "field.edit", input.projectId);
+    loadProject(db, input.projectId);
     return db.transaction(() => {
       let field;
       try {
@@ -205,9 +200,9 @@ export function modelRoutes(app: FastifyInstance, ctx: Ctx): void {
   });
 
   app.patch("/api/v1/fields/:id", async (req: any) => {
+    requireCan(req, "field.edit");
     const db = getDb(ctx); const field = getField(db, req.params.id);
     if (!field) throw new HttpError(404, "not_found", "No such field");
-    requireCan(req, "field.edit", field.projectId);
     const patch = UpdateFieldInput.parse(req.body);
     if (patch.options !== undefined && field.kind !== "select") {
       throw new HttpError(400, "validation", "Only a select field may have options");
@@ -220,9 +215,9 @@ export function modelRoutes(app: FastifyInstance, ctx: Ctx): void {
   });
 
   app.post("/api/v1/fields/:id/archive", async (req: any) => {
+    requireCan(req, "field.edit");
     const db = getDb(ctx); const field = getField(db, req.params.id);
     if (!field) throw new HttpError(404, "not_found", "No such field");
-    requireCan(req, "field.edit", field.projectId);
     return db.transaction(() => {
       const out = updateField(db, field.id, { archived: true });
       log(db, req, "field.archived", { id: field.id, projectId: field.projectId });

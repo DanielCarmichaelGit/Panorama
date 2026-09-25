@@ -149,6 +149,20 @@ describe("colour on epics and tags", () => {
   });
 });
 
+describe("trimmed names and a strict create", () => {
+  it("trims tag and lane names, refusing a whitespace-only one", () => {
+    expect(CreateTagInput.parse({ projectId: "p1", name: "  backend  " }).name).toBe("backend");
+    expect(UpdateTagInput.parse({ name: " server " }).name).toBe("server");
+    expect(CreateTagInput.safeParse({ projectId: "p1", name: "   " }).success).toBe(false);
+    expect(CreateLaneInput.parse({ name: "  Review  " }).name).toBe("Review");
+    expect(CreateLaneInput.safeParse({ name: "   " }).success).toBe(false);
+  });
+  it("refuses an unknown key on CreateTicketInput", () => {
+    expect(CreateTicketInput.safeParse({ projectId: "p1", title: "x", bogus: 1 }).success).toBe(false);
+    expect(CreateTicketInput.safeParse({ projectId: "p1", title: "x" }).success).toBe(true);
+  });
+});
+
 describe("CreateLaneInput", () => {
   it("requires a name of 1 to 40 characters and defaults the flags", () => {
     expect(CreateLaneInput.parse({ name: "Review" })).toEqual({ name: "Review", family: "stone", setsNeedsHuman: false, isDone: false });

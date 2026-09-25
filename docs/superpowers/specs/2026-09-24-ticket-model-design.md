@@ -17,11 +17,11 @@ Epic, Tag, Dependency, Success criteria, Field.
 - `ticket_links`: from, to, kind (`blocks`, `relates`), created. `A blocks B` means B cannot enter a lane with `is_done` while A is not in a done lane; the gate reports it the same way it reports missing evidence, with reason `blocked_by`. `relates` is informational.
 - `tickets.success_criteria`: markdown, human-editable, empty by default. Rendered at the top of the ticket panel through the same markdown pipeline; task-list items (`- [ ]`) in it render as checkboxes only the human can tick, and ticking writes the updated markdown back (human-signed `ticket.updated`).
 - `field_definitions`: id, project, name, key (slug, unique per project), kind (`text`, `number`, `date`, `select`, `checkbox`), options (for select, list of `{value, label}`), required, position, created. `ticket_field_values`: ticket, field, value (JSON). Required fields are enforced at create for the human's dialog and at `PATCH` for everyone; agents may set values.
-- Events: `epic.created`, `epic.updated`, `tag.created`, `ticket.linked`, `ticket.unlinked`, `ticket.tagged`, `ticket.untagged`, `field.created`, `field.updated`, `field.archived`, and `ticket.updated` payloads now list which of `epicId`, `successCriteria`, `fields` changed.
+- Events: `epic.created`, `epic.updated`, `tag.created`, `ticket.linked`, `ticket.unlinked` (tag changes are not their own events: they travel in `ticket.updated` with `changed` including `tagIds`), `field.created`, `field.updated`, `field.archived`, and `ticket.updated` payloads now list which of `epicId`, `successCriteria`, `fields` changed.
 
 ## Permissions
 
-Agents: `read`, `ticket.create`, `ticket.update` (including tags, epic, links, field values, but not `successCriteria`), `ticket.move`, `flag.set`, `comment.add`, `evidence.add`, `attachment.add`. Human-only additions: `epic.edit`, `tag.edit`, `field.edit`, `criteria.edit`.
+Agents: `read`, `ticket.create`, `ticket.update` (including tags, epic, field values, but not `successCriteria`; agents may add links, and remove a `relates` link, but only the owner removes a `blocks` link, since that link is a gate), `ticket.move`, `flag.set`, `comment.add`, `evidence.add`, `attachment.add`. Human-only additions: `epic.edit`, `tag.edit`, `field.edit`, `criteria.edit`, `link.remove`.
 
 ## Views
 

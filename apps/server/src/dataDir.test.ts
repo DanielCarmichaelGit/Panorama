@@ -19,12 +19,31 @@ describe("resolveDataDir", () => {
     expect(lines).toEqual([`Moved ${join(h, ".panorama")} to ${join(h, ".boomerang")}`]);
   });
 
-  it("leaves both directories alone when ~/.boomerang already exists", () => {
+  it("leaves both directories alone when ~/.boomerang already holds a config.json", () => {
     const h = home(); const { lines, log } = collect();
     mkdirSync(join(h, ".panorama")); mkdirSync(join(h, ".boomerang"));
     writeFileSync(join(h, ".panorama", "config.json"), "old");
+    writeFileSync(join(h, ".boomerang", "config.json"), "new");
     expect(resolveDataDir({ env: {}, home: h, log })).toBe(join(h, ".boomerang"));
     expect(readFileSync(join(h, ".panorama", "config.json"), "utf8")).toBe("old");
+    expect(readFileSync(join(h, ".boomerang", "config.json"), "utf8")).toBe("new");
+    expect(lines).toEqual([]);
+  });
+
+  it("refuses to start when ~/.boomerang exists without a config.json beside a ~/.panorama, naming both", () => {
+    const h = home(); const { log } = collect();
+    mkdirSync(join(h, ".panorama")); mkdirSync(join(h, ".boomerang"));
+    writeFileSync(join(h, ".panorama", "config.json"), "old");
+    expect(() => resolveDataDir({ env: {}, home: h, log })).toThrow(new RegExp(`${join(h, ".panorama")}.*${join(h, ".boomerang")}`));
+    expect(readFileSync(join(h, ".panorama", "config.json"), "utf8")).toBe("old");
+  });
+
+  it("refuses with the same message when the move crosses filesystems, telling the user to move it by hand", () => {
+    const h = home(); const { lines, log } = collect();
+    mkdirSync(join(h, ".panorama"));
+    const exdev = () => { throw Object.assign(new Error("cross-device link not permitted"), { code: "EXDEV" }); };
+    expect(() => resolveDataDir({ env: {}, home: h, log, rename: exdev })).toThrow(/by hand/);
+    expect(existsSync(join(h, ".panorama"))).toBe(true);
     expect(lines).toEqual([]);
   });
 

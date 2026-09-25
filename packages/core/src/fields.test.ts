@@ -58,6 +58,10 @@ describe("UpdateFieldInput", () => {
   it("rejects an empty patch", () => {
     expect(UpdateFieldInput.safeParse({}).success).toBe(false);
   });
+  it("refuses an empty options list on a patch", () => {
+    expect(UpdateFieldInput.safeParse({ options: [] }).success).toBe(false);
+    expect(UpdateFieldInput.safeParse({ options: [{ value: "a", label: "A" }] }).success).toBe(true);
+  });
   it("accepts a single-field patch", () => {
     expect(UpdateFieldInput.safeParse({ archived: true }).success).toBe(true);
     expect(UpdateFieldInput.safeParse({ position: 3 }).success).toBe(true);

@@ -135,6 +135,39 @@ describe("M7 migration", () => {
   });
 });
 
+describe("ticket refs", () => {
+  it("lists id, key, and laneId for every ticket of a project, archived included, and nothing from another project", () => {
+    const { db } = fresh();
+    const { project, lanes } = d.createProject(db, { name: "Panorama", key: "PAN" }, NOW);
+    const { project: other } = d.createProject(db, { name: "Other", key: "OTH" }, NOW);
+    const a = d.createTicket(db, { projectId: project.id, title: "a" }, NOW);
+    const b = d.createTicket(db, { projectId: project.id, title: "b" }, NOW);
+    d.createTicket(db, { projectId: other.id, title: "c" }, NOW);
+    d.archiveTicket(db, b.id, NOW);
+    expect(d.listTicketRefs(db, project.id)).toEqual([{ id: a.id, key: "PAN-1", laneId: lanes[0].id }, { id: b.id, key: "PAN-2", laneId: lanes[0].id }]);
+  });
+});
+
+describe("keyed database migration", () => {
+  it("upgrades an encrypted database from version 7 with every foreign key intact", () => {
+    const dir = mkdtempSync(join(tmpdir(), "pan-"));
+    const key = "ab".repeat(32);
+    const db = d.openDatabase(join(dir, "p.db"), key);
+    d.migrateTo(db, 7);
+    const { project } = d.createProject(db, { name: "Panorama", key: "PAN" }, NOW);
+    const t = d.createTicket(db, { projectId: project.id, title: "x" }, NOW);
+    const field = d.createField(db, { projectId: project.id, name: "Points", key: "points", kind: "number", required: false }, NOW);
+    d.setTicketFields(db, t.id, { points: 3 });
+    d.migrate(db);
+    expect(db.pragma("user_version", { simple: true })).toBe(8);
+    expect(db.pragma("foreign_key_check")).toEqual([]);
+    expect(d.getTicketFields(db, t.id)).toEqual({ points: 3 });
+    expect(d.getField(db, field.id)!.key).toBe("points");
+    db.close();
+    expect(() => d.openDatabase(join(dir, "p.db"), null).prepare("select 1 from projects").get()).toThrow();
+  });
+});
+
 describe("M8 migration", () => {
   it("rebuilds field_definitions so kind may be file, keeping rows, values, and the foreign key", () => {
     const dir = mkdtempSync(join(tmpdir(), "pan-"));

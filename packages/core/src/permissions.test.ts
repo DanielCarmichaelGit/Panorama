@@ -43,6 +43,11 @@ describe("can", () => {
     const forged = agent({ scopes: { projects: "*", actions: ["evidence.edit"] as never } });
     expect(can(forged, "evidence.edit")).toBe(false);
   });
+  it("never lets an agent remove a blocks link: link.remove is a human action", () => {
+    expect(can(human, "link.remove")).toBe(true);
+    const forged = agent({ scopes: { projects: "*", actions: ["link.remove"] as never } });
+    expect(can(forged, "link.remove")).toBe(false);
+  });
   it("lets a scoped agent update a ticket's epic, tags, links, and field values through ticket.update", () => {
     expect(can(agent({ scopes: { projects: ["p1"], actions: ["ticket.update"] } }), "ticket.update", "p1")).toBe(true);
   });

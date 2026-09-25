@@ -1,22 +1,20 @@
 import type { FastifyInstance } from "fastify";
 import { CreateBoardInput, CreateLaneInput, CreateProjectInput, LaneOrderInput, UpdateLaneInput } from "@boomerang/core";
-import { appendEvent, createBoard, createLane, createProject, deleteLane, getLane, getProject, listBoards, listLanes, listProjects, reorderLanes, updateLane, type DB } from "@boomerang/db";
+import { createBoard, createLane, createProject, deleteLane, getLane, getProject, listBoards, listLanes, listProjects, reorderLanes, updateLane, type DB } from "@boomerang/db";
 import { getDb, inScope, requireCan } from "../auth";
-import { record } from "../bus";
 import { changedKeys } from "../changed";
 import type { Ctx } from "../context";
 import { HttpError } from "../errors";
+import { makeLog } from "./common";
 
 // Case-insensitive on ASCII letters only, the same rule SQLite's lower() applies to the tag
 // index, so "Review" and "review" clash but two names differing in a non-ASCII letter do not.
 const asciiLower = (s: string) => s.replace(/[A-Z]/g, (c) => c.toLowerCase());
 
+// Human-only routes check the action before touching the store (403 for any agent, 404 for a
+// human on a missing id).
 export function projectRoutes(app: FastifyInstance, ctx: Ctx): void {
-  const log = (db: DB, req: any, type: string, payload: unknown) => {
-    const ev = appendEvent(db, { actorId: req.actor.id, type, payload, signature: req.sig, now: ctx.now().toISOString() });
-    record(req, ev);
-    return ev;
-  };
+  const log = makeLog(ctx);
   const loadProject = (db: DB, id: string) => {
     if (!getProject(db, id)) throw new HttpError(404, "not_found", "No such project");
   };
@@ -38,8 +36,7 @@ export function projectRoutes(app: FastifyInstance, ctx: Ctx): void {
     if (listProjects(db).some((p) => p.key === input.key)) throw new HttpError(409, "duplicate_key", "That project key is taken");
     return db.transaction(() => {
       const out = createProject(db, input, ctx.now().toISOString());
-      const ev = appendEvent(db, { actorId: req.actor.id, type: "project.created", payload: { id: out.project.id, key: input.key, name: input.name }, signature: req.sig, now: ctx.now().toISOString() });
-      record(req, ev);
+      log(db, req, "project.created", { id: out.project.id, key: input.key, name: input.name });
       return out;
     })();
   });
@@ -54,8 +51,8 @@ export function projectRoutes(app: FastifyInstance, ctx: Ctx): void {
 
   app.post("/api/v1/projects/:id/lanes", async (req: any) => {
     const db = getDb(ctx); const projectId = String(req.params.id);
-    loadProject(db, projectId);
     requireCan(req, "lane.edit", projectId);
+    loadProject(db, projectId);
     const input = CreateLaneInput.parse(req.body);
     return db.transaction(() => {
       if (listLanes(db, projectId).some((l) => asciiLower(l.name) === asciiLower(input.name))) {
@@ -68,8 +65,8 @@ export function projectRoutes(app: FastifyInstance, ctx: Ctx): void {
   });
 
   app.patch("/api/v1/lanes/:id", async (req: any) => {
+    requireCan(req, "lane.edit");
     const db = getDb(ctx); const lane = loadLane(db, req.params.id);
-    requireCan(req, "lane.edit", lane.projectId);
     const patch = UpdateLaneInput.parse(req.body);
     return db.transaction(() => {
       // A project always keeps one done lane: the gate on Done and the queue both lean on it.
@@ -84,8 +81,8 @@ export function projectRoutes(app: FastifyInstance, ctx: Ctx): void {
 
   app.put("/api/v1/projects/:id/lanes/order", async (req: any) => {
     const db = getDb(ctx); const projectId = String(req.params.id);
-    loadProject(db, projectId);
     requireCan(req, "lane.edit", projectId);
+    loadProject(db, projectId);
     const { ids } = LaneOrderInput.parse(req.body);
     return db.transaction(() => {
       let lanes;
@@ -101,8 +98,8 @@ export function projectRoutes(app: FastifyInstance, ctx: Ctx): void {
   });
 
   app.delete("/api/v1/lanes/:id", async (req: any) => {
+    requireCan(req, "lane.edit");
     const db = getDb(ctx); const lane = loadLane(db, req.params.id);
-    requireCan(req, "lane.edit", lane.projectId);
     return db.transaction(() => {
       if (listLanes(db, lane.projectId).length === 1) throw new HttpError(409, "last_lane", "A project keeps at least one lane");
       if (lane.isDone && isOnlyDoneLane(db, lane)) throw new HttpError(409, "last_done_lane", "Add another done lane first");
@@ -121,12 +118,11 @@ export function projectRoutes(app: FastifyInstance, ctx: Ctx): void {
   });
   app.post("/api/v1/boards", async (req) => {
     const db = getDb(ctx); const input = CreateBoardInput.parse(req.body);
-    if (!getProject(db, input.projectId)) throw new HttpError(404, "not_found", "No such project");
     requireCan(req, "board.create", input.projectId);
+    if (!getProject(db, input.projectId)) throw new HttpError(404, "not_found", "No such project");
     return db.transaction(() => {
       const board = createBoard(db, input, ctx.now().toISOString());
-      const ev = appendEvent(db, { actorId: req.actor.id, type: "board.created", payload: { id: board.id, projectId: board.projectId, name: board.name }, signature: req.sig, now: ctx.now().toISOString() });
-      record(req, ev);
+      log(db, req, "board.created", { id: board.id, projectId: board.projectId, name: board.name });
       return board;
     })();
   });

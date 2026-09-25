@@ -146,7 +146,7 @@ export const CreateTicketInput = z.object({
   tagIds: z.array(z.string().min(1)).max(20).optional(),
   successCriteria: z.string().max(20000).optional(),
   fields: z.record(FieldValueSchema).optional(),
-});
+}).strict();
 export type CreateTicketInput = z.infer<typeof CreateTicketInput>;
 
 export const CreateBoardInput = z
@@ -183,7 +183,7 @@ export const UpdateEpicInput = z
   .refine((o) => Object.keys(o).length > 0, "empty patch");
 export type UpdateEpicInput = z.infer<typeof UpdateEpicInput>;
 
-const tagName = z.string().min(1).max(40).regex(/^[\p{L}\p{N}][\p{L}\p{N} _-]*$/u);
+const tagName = z.string().trim().min(1).max(40).regex(/^[\p{L}\p{N}][\p{L}\p{N} _-]*$/u);
 
 export const CreateTagInput = z
   .object({
@@ -209,7 +209,7 @@ export type UpdateTagInput = z.infer<typeof UpdateTagInput>;
 // event history records, so UpdateLaneInput carries no name (milestone 2c, spec section 3).
 export const CreateLaneInput = z
   .object({
-    name: z.string().min(1).max(40),
+    name: z.string().trim().min(1).max(40),
     family: z.enum(FAMILIES).default("stone"),
     setsNeedsHuman: z.boolean().default(false),
     isDone: z.boolean().default(false),

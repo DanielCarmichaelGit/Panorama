@@ -353,7 +353,7 @@ describe("ticket create and patch with the extended model", () => {
     expect(asAgent.status).toBe(200);
   });
 
-  it("rejects a bad select value on PATCH, requireAll false regardless of actor", async () => {
+  it("rejects a bad select value on PATCH regardless of actor", async () => {
     const w = await world();
     const field = (await w.human("POST", "/api/v1/fields", {
       projectId: w.project.id, name: "Size", key: "size", kind: "select",
@@ -440,6 +440,67 @@ describe("file fields", () => {
     const ot = (await w.human("POST", "/api/v1/tickets", { projectId: other.project.id, title: "elsewhere" })).json;
     const oa = (await upload(w, ot.id)).json;
     expect((await w.agent("GET", `/api/v1/attachments/${oa.id}/meta`)).status).toBe(403);
+  });
+});
+
+describe("final review wave", () => {
+  it("lets an agent add and remove a relates link but only the human remove a blocks link", async () => {
+    const w = await world();
+    const a = (await w.agent("POST", "/api/v1/tickets", { projectId: w.project.id, title: "A" })).json;
+    const b = (await w.agent("POST", "/api/v1/tickets", { projectId: w.project.id, title: "B" })).json;
+    const blocks = (await w.agent("POST", `/api/v1/tickets/${a.id}/links`, { toId: b.id, kind: "blocks" })).json;
+    const relates = (await w.agent("POST", `/api/v1/tickets/${a.id}/links`, { toId: b.id, kind: "relates" })).json;
+    const refused = await w.agent("DELETE", `/api/v1/tickets/${a.id}/links/${blocks.id}`);
+    expect(refused.status).toBe(403);
+    expect((await w.agent("DELETE", `/api/v1/tickets/${a.id}/links/${relates.id}`)).status).toBe(200);
+    expect((await w.human("DELETE", `/api/v1/tickets/${a.id}/links/${blocks.id}`)).status).toBe(200);
+    expect((await w.human("GET", `/api/v1/tickets/${a.id}/links`)).json.links).toEqual([]);
+  });
+
+  it("refuses an archived epic on create and on patch", async () => {
+    const w = await world();
+    const epic = (await w.human("POST", "/api/v1/epics", { projectId: w.project.id, name: "Old" })).json;
+    const t = (await w.human("POST", "/api/v1/tickets", { projectId: w.project.id, title: "x" })).json;
+    await w.human("PATCH", `/api/v1/epics/${epic.id}`, { archived: true });
+    const created = await w.human("POST", "/api/v1/tickets", { projectId: w.project.id, title: "y", epicId: epic.id });
+    expect(created.status).toBe(400);
+    expect(created.json.error.code).toBe("validation");
+    expect(created.json.error.message).toBe("That epic is archived");
+    const patched = await w.human("PATCH", `/api/v1/tickets/${t.id}`, { epicId: epic.id });
+    expect(patched.status).toBe(400);
+    expect(patched.json.error.message).toBe("That epic is archived");
+  });
+
+  it("checks the merged field values on a fields patch so a required field cannot be left empty, and leaves other patches alone", async () => {
+    const w = await world();
+    await w.human("POST", "/api/v1/fields", { projectId: w.project.id, name: "Points", key: "points", kind: "number", required: true });
+    await w.human("POST", "/api/v1/fields", { projectId: w.project.id, name: "Note", key: "note", kind: "text" });
+    const t = (await w.agent("POST", "/api/v1/tickets", { projectId: w.project.id, title: "no points yet" })).json;
+    expect((await w.agent("PATCH", `/api/v1/tickets/${t.id}`, { title: "renamed" })).status).toBe(200);
+    const partial = await w.agent("PATCH", `/api/v1/tickets/${t.id}`, { fields: { note: "hi" } });
+    expect(partial.status).toBe(400);
+    expect(partial.json.error.details.issues).toEqual([{ key: "points", message: "is required" }]);
+    expect((await w.agent("PATCH", `/api/v1/tickets/${t.id}`, { fields: { note: "hi", points: 3 } })).status).toBe(200);
+    expect((await w.agent("PATCH", `/api/v1/tickets/${t.id}`, { fields: { note: "changed" } })).status).toBe(200);
+    const cleared = await w.agent("PATCH", `/api/v1/tickets/${t.id}`, { fields: { points: null } });
+    expect(cleared.status).toBe(400);
+    expect(cleared.json.error.details.issues).toEqual([{ key: "points", message: "is required" }]);
+  });
+
+  it("answers 403 rather than 404 to an agent on a human-only route even when the id is unknown", async () => {
+    const w = await world();
+    expect((await w.agent("PATCH", "/api/v1/lanes/missing", { isDone: true })).status).toBe(403);
+    expect((await w.agent("DELETE", "/api/v1/lanes/missing")).status).toBe(403);
+    expect((await w.agent("POST", "/api/v1/projects/missing/lanes", { name: "x" })).status).toBe(403);
+    expect((await w.agent("PATCH", "/api/v1/epics/missing", { name: "x" })).status).toBe(403);
+    expect((await w.agent("PATCH", "/api/v1/tags/missing", { name: "x" })).status).toBe(403);
+    expect((await w.agent("PATCH", "/api/v1/fields/missing", { name: "x" })).status).toBe(403);
+    expect((await w.agent("DELETE", "/api/v1/evidence-types/missing")).status).toBe(403);
+    expect((await w.agent("PUT", "/api/v1/lanes/missing/requirements", { requirements: [] })).status).toBe(403);
+    expect((await w.agent("POST", "/api/v1/tickets/missing/archive")).status).toBe(403);
+    expect((await w.agent("POST", "/api/v1/epics", { projectId: "missing", name: "x" })).status).toBe(403);
+    expect((await w.human("PATCH", "/api/v1/lanes/missing", { isDone: true })).status).toBe(404);
+    expect((await w.human("POST", "/api/v1/epics", { projectId: "missing", name: "x" })).status).toBe(404);
   });
 });
 

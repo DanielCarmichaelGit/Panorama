@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { verifyChain } from "@boomerang/core";
-import { listEvents } from "@boomerang/db";
+import { dueOutbox, listEvents, listTriggers } from "@boomerang/db";
+import { runRules } from "./engine/runRules";
 import { agentIn, setupApp } from "./test/helpers";
+import { Scheduler } from "./workers/scheduler";
 
 // The rule engine and the rules routes (milestone 3, task 4). Rules are created through the
 // canvas so the tests exercise the same serialiser the Automations view will: one event node,
@@ -168,7 +170,8 @@ describe("rule engine", () => {
     // a fired (Eval to In Progress), b fired (back to Eval), then a was refused a second fire
     // on the same ticket in the same chain, so the ticket rests in Eval flagged for a human.
     expect(await w.ticket(t.id)).toMatchObject({ laneId: evalLane.id, flags: ["needs_human"] });
-    expect((await w.runs(a.id)).map((x: any) => [x.outcome, x.detail.reason])).toEqual([["skipped", "chain"], ["applied", undefined]]);
+    // Both of a's runs share one timestamp (one request), so their order is not defined.
+    expect((await w.runs(a.id)).map((x: any) => [x.outcome, x.detail.reason]).sort()).toEqual([["applied", undefined], ["skipped", "chain"]]);
     expect((await w.runs(b.id)).map((x: any) => x.outcome)).toEqual(["applied"]);
     const moves = w.events().filter((e) => e.type === "ticket.moved");
     expect(moves.map((e) => e.actorId)).toEqual(["human", "engine", "engine"]);
@@ -257,5 +260,79 @@ describe("rule engine", () => {
     const t = (await w.human("POST", "/api/v1/tickets", { projectId: w.project.id, title: "Quiet" })).json;
     expect((await w.ticket(t.id)).flags).toEqual([]);
     expect(w.events().filter((e) => e.type === "rule.fired")).toHaveLength(0);
+  });
+});
+
+describe("rule engine with the workers", () => {
+  const FAR = "9999-01-01T00:00:00.000Z";
+
+  it("picks a schedule rule up at save, runs it when the scheduler fires its trigger, and drops the trigger with the rule", async () => {
+    const w = await world();
+    const doc = {
+      nodes: [
+        { id: "s", kind: "schedule", position: at, data: { cron: "* * * * *", timezone: "UTC" } },
+        { id: "a0", kind: "action", position: at, data: { type: "create_ticket", title: "Nightly check", laneId: w.lane("Ready").id } },
+      ],
+      edges: [{ id: "s-a0", source: "s", target: "a0" }],
+    };
+    const res = await w.human("POST", "/api/v1/rules", { projectId: w.project.id, name: "Nightly", enabled: true, canvas: doc });
+    expect(res.status).toBe(200);
+    const r = res.json;
+    expect(r.event).toEqual({ type: "schedule", cron: "* * * * *", timezone: "UTC" });
+    const triggers = listTriggers(w.app.ctx.db!, { ruleId: r.id });
+    expect(triggers).toHaveLength(1);
+    expect(triggers[0]).toMatchObject({ cron: "* * * * *", timezone: "UTC", nextRunAt: expect.any(String) });
+
+    const clock = { now: new Date(Date.parse(triggers[0].nextRunAt!) + 1000) };
+    const sched = new Scheduler(w.app.ctx, { now: () => clock.now, log: () => {}, onEvents: (_db, evs) => void runRules(w.app.ctx, evs) });
+    sched.tick();
+    const fired = w.events().find((e) => e.type === "trigger.fired")!;
+    expect(fired.payload).toMatchObject({ ruleId: r.id, projectId: w.project.id });
+    const runs = await w.runs(r.id);
+    expect(runs).toHaveLength(1);
+    expect(runs[0]).toMatchObject({ outcome: "applied", ticketId: null, eventSeq: fired.seq });
+    const tickets = (await w.human("GET", `/api/v1/tickets?projectId=${w.project.id}`)).json;
+    expect(tickets.map((t: any) => t.title)).toEqual(["Nightly check"]);
+    const created = w.events().find((e) => e.type === "ticket.created")!;
+    expect(created.actorId).toBe("engine");
+    expect((created.payload as any).causedBy).toEqual({ ruleId: r.id, runId: runs[0].id, eventSeq: fired.seq });
+    expect(verifyChain(w.events()).ok).toBe(true);
+
+    await w.human("DELETE", `/api/v1/rules/${r.id}`);
+    expect(listTriggers(w.app.ctx.db!, { ruleId: r.id })).toEqual([]);
+  });
+
+  it("refuses a schedule croner rejects, naming the schedule node", async () => {
+    const w = await world();
+    const doc = {
+      nodes: [
+        { id: "s", kind: "schedule", position: at, data: { cron: "99 * * * *", timezone: "UTC" } },
+        { id: "a0", kind: "action", position: at, data: { type: "set_flag", flag: "blocked" } },
+      ],
+      edges: [{ id: "s-a0", source: "s", target: "a0" }],
+    };
+    const res = await w.human("POST", "/api/v1/rules", { projectId: w.project.id, name: "Never", enabled: true, canvas: doc });
+    expect(res.status).toBe(400);
+    expect(res.json.error.code).toBe("canvas_invalid");
+    expect(res.json.error.details.errors).toEqual([{ name: "invalid:s", code: "invalid", nodeId: "s" }]);
+    expect((await w.human("GET", `/api/v1/rules?projectId=${w.project.id}`)).json).toEqual([]);
+  });
+
+  it("enqueues a notification for the outbox when a rule emits a webhook, and refuses an archived destination", async () => {
+    const w = await world();
+    const dest = (await w.human("POST", "/api/v1/destinations", { projectId: w.project.id, name: "Ops", url: "https://example.test/hook" })).json;
+    const r = await w.rule("Tell ops", { type: "ticket.created" }, [], [{ type: "emit_webhook", destinationId: dest.id }]);
+    const t = (await w.human("POST", "/api/v1/tickets", { projectId: w.project.id, title: "Notify me" })).json;
+    const created = w.events().find((e) => e.type === "ticket.created")!;
+    const rows = dueOutbox(w.app.ctx.db!, FAR);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ destinationId: dest.id, eventSeq: created.seq, deliveredAt: null, attempts: 0 });
+    expect(rows[0].payload).toMatchObject({ ruleId: r.id, event: { seq: created.seq, type: "ticket.created" }, ticket: { id: t.id } });
+    expect((await w.runs(r.id)).map((x: any) => x.outcome)).toEqual(["applied"]);
+
+    expect((await w.human("PATCH", `/api/v1/destinations/${dest.id}`, { archived: true })).status).toBe(200);
+    await w.human("POST", "/api/v1/tickets", { projectId: w.project.id, title: "Again" });
+    expect(dueOutbox(w.app.ctx.db!, FAR)).toHaveLength(1);
+    expect((await w.runs(r.id)).map((x: any) => [x.outcome, x.detail.code])).toEqual([["error", "validation"], ["applied", undefined]]);
   });
 });

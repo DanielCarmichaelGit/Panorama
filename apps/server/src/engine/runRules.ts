@@ -1,10 +1,11 @@
 import { randomUUID } from "node:crypto";
 import type { Action, CausedBy, ChainEvent, EngineEvent, Rule, RuleContext, Ticket } from "@boomerang/core";
 import { evaluateRule, LoopGuard, matchesEvent } from "@boomerang/core";
-import { addRuleRun, appendEvent, enqueueOutbox, getActor, getDestination, getLane, getTicket, listEvidence, listRules, startTimer, stopTimer, type DB, type RuleRunOutcome } from "@boomerang/db";
+import { addRuleRun, appendEvent, getActor, getDestination, getLane, getTicket, listEvidence, listRules, startTimer, stopTimer, type DB, type RuleRunOutcome } from "@boomerang/db";
 import type { Ctx } from "../context";
 import { HttpError } from "../errors";
 import { addCommentAs, createTicketAs, moveTicketAs, setFlagAs, updateTicketAs, type Acting, type MissingEntry } from "../services/tickets";
+import { enqueueNotification } from "../workers/outbox";
 import { ENGINE_ACTOR_ID, ensureEngineActor } from "./actor";
 
 /**
@@ -222,8 +223,9 @@ function applyAction(a: Acting, rule: Rule, action: Action, ticket: Ticket | und
       const dest = getDestination(db, action.destinationId);
       if (!dest || dest.projectId !== rule.projectId) throw new HttpError(400, "wrong_project", "That destination belongs to another project");
       if (dest.archived) throw new HttpError(400, "validation", "That destination is archived", { destinationId: dest.id });
-      // Written in the same transaction as the fire; the outbox worker (task 5) delivers it.
-      enqueueOutbox(db, { destinationId: dest.id, eventSeq: event.seq, payload: { event: { seq: event.seq, type: event.type, payload: event.payload, createdAt: event.createdAt }, ticket: ticket ?? null, ruleId: rule.id } }, a.now());
+      // Written in the same transaction as the fire, through the outbox's own door (task 5);
+      // its worker signs and delivers it.
+      enqueueNotification(db, dest.id, event.seq, { event: { seq: event.seq, type: event.type, payload: event.payload, createdAt: event.createdAt }, ticket: ticket ?? null, ruleId: rule.id }, a.now());
       return;
     }
     case "create_ticket":

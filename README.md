@@ -82,6 +82,30 @@ nonce
 pnpm demo:agent
 ```
 
+## Connect Claude Code over MCP
+
+`apps/mcp` is an MCP server (stdio, on the official SDK) that gives an agent such as Claude Code the same footing as the demo agent: its own Ed25519 key, registration, and signed calls, behind a set of tools. Build it once, then register it with Claude Code from this repository:
+
+```
+pnpm --filter @boomerang/mcp build
+claude mcp add boomerang -- node "$(pwd)/apps/mcp/dist/main.js"
+```
+
+`pnpm --filter @boomerang/mcp start` runs the same server from source through tsx, and `claude mcp add boomerang -- pnpm --dir "$(pwd)" --filter @boomerang/mcp start` registers it that way instead. Either form works from any project once Claude Code can find the path. Claude Code records that absolute path, so the repository and its `node_modules` must stay where they are, and after pulling changes run the build again so `dist/main.js` matches the server.
+
+On its first start the server generates a key for the agent, stores it in `~/.boomerang-mcp/<name>.json` with owner-only permissions (the file holds only that seed and the id the server assigns, never your password), and registers the agent as `pending`. Then the approval step: open the Agents view, approve the new agent and set its scopes. Until you do, every tool answers "Waiting for the owner to approve agent <name> on the Agents page"; `boomerang_status` shows the scopes the agent asked for. While Boomerang is locked the tools answer "Boomerang is locked. Ask the owner to unlock it."
+
+The environment sets where it connects and who it is:
+
+- `BOOMERANG_URL`: the server, default `http://127.0.0.1:4400`.
+- `BOOMERANG_AGENT_NAME`: the name shown on the Agents page, default the hostname plus `claude`.
+- `BOOMERANG_MCP_KEY_FILE`: the key file, default `~/.boomerang-mcp/<name>.json`.
+- `BOOMERANG_PROJECTS`: a comma separated list of project ids to ask scope for; default every project.
+
+Pass them with `-e`, as in `claude mcp add boomerang -e BOOMERANG_AGENT_NAME=reviewer -- node "$(pwd)/apps/mcp/dist/main.js"`.
+
+The tools are `boomerang_status`, `boomerang_projects`, `boomerang_lanes`, `boomerang_evidence_types`, `boomerang_next_ticket`, `boomerang_ticket`, `boomerang_search_tickets`, `boomerang_create_ticket`, `boomerang_update_ticket`, `boomerang_comment`, `boomerang_add_evidence`, `boomerang_move`, `boomerang_link`, and `boomerang_heartbeat`. Lanes, arcs, tags and evidence types may be named by id or by name, and a ticket by id or key. A gated move that the server refuses comes back as a tool error that lists each missing requirement with its description and any ticket that blocks this one, so the agent knows what to provide next. The resource `boomerang://howto` explains the loop (status, next ticket, do the work, comment, evidence, move, heartbeat) and the gate rules; point the agent at it first. Timer and cost tools follow with the rest of milestone 3.
+
 ## Comments and threads
 
 Every ticket has a thread: comments, evidence, and attachments, ordered by when they happened. A comment is written as markdown in the ticket panel's composer, which supports the usual shorthand (`#`/`##`/`###` headings, `-` and `1.` lists, `>` quotes, `---` rules, backtick code, and `**bold**`) as you type, plus dropping or pasting an image or file straight into the editor, which uploads it and inserts an `attachment:id` reference at the cursor. Ctrl/Cmd+Enter posts the comment.
@@ -188,7 +212,7 @@ Once unlocked, the browser holds one signed `GET /api/v1/stream` connection open
 pnpm test
 ```
 
-runs the unit and integration test suite with Vitest.
+runs the unit and integration test suite with Vitest, including the MCP contract test, which starts a real server on a free port with a temporary data directory, registers and approves an agent, and drives every tool through an MCP client.
 
 ```
 pnpm e2e

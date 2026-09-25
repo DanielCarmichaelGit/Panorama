@@ -1,4 +1,4 @@
-import type { Actor, Ticket } from "@panorama/core";
+import type { Actor, Ticket } from "@boomerang/core";
 import { AgentMark } from "../lib/iso";
 import { agentFamily, agentStatusLine, isWorking } from "./AgentCard";
 

@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, within } from "@testing-library/rea
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { Board as BoardType, Epic, Lane, Project, Tag, Ticket } from "@panorama/core";
+import type { Board as BoardType, Epic, Lane, Project, Tag, Ticket } from "@boomerang/core";
 import { api } from "../lib/api";
 import { Board, filterTickets, groupByLane } from "./Board";
 
@@ -20,7 +20,7 @@ vi.mock("react-router-dom", async (importOriginal) => {
 
 afterEach(cleanup);
 
-const project: Project = { id: "p1", key: "PAN", name: "Panorama", createdAt: "" };
+const project: Project = { id: "p1", key: "PAN", name: "Boomerang", createdAt: "" };
 
 const lane = (over: Partial<Lane>): Lane => ({
   id: "l1", projectId: "p1", name: "Backlog", position: 1, family: "stone",
@@ -43,7 +43,7 @@ const ticket = (over: Partial<Ticket>): Ticket => ({
 });
 
 const board = (over: Partial<BoardType>): BoardType => ({
-  id: "b1", projectId: "p1", name: "Panorama", description: null, family: "stone", position: 0, createdAt: "", ...over,
+  id: "b1", projectId: "p1", name: "Boomerang", description: null, family: "stone", position: 0, createdAt: "", ...over,
 });
 
 const epic = (over: Partial<Epic>): Epic => ({
@@ -153,14 +153,14 @@ describe("Board", () => {
     await screen.findByRole("heading", { name: "Backlog" });
 
     const trigger = screen.getByRole("button", { name: "Board" });
-    expect(trigger.textContent).toContain("Panorama");
+    expect(trigger.textContent).toContain("Boomerang");
     fireEvent.click(trigger);
     const options = screen.getAllByRole("option").map((o) => o.textContent);
-    expect(options).toEqual(["Panorama", "New board"]);
+    expect(options).toEqual(["Boomerang", "New board"]);
   });
 
   it("with two boards, filters cards and counts to the selected one", async () => {
-    const boards = [board({ id: "b1", name: "Panorama", position: 0 }), board({ id: "b2", name: "Growth", position: 1 })];
+    const boards = [board({ id: "b1", name: "Boomerang", position: 0 }), board({ id: "b2", name: "Growth", position: 1 })];
     renderBoard(
       [
         ticket({ id: "t1", laneId: "l1", key: "PAN-1", boardId: "b1" }),

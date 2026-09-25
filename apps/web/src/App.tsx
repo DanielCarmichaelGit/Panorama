@@ -34,7 +34,7 @@ export function App() {
   if (status.isError) {
     return (
       <main style={{ padding: "var(--gutter)" }}>
-        <p className="error">Cannot reach the Panorama server. Is it running?</p>
+        <p className="error">Cannot reach the Boomerang server. Is it running?</p>
         <button className="btn" onClick={() => status.refetch()}>Try again</button>
       </main>
     );

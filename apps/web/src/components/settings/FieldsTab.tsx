@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Archive, ArrowDown, ArrowUp, PencilSimple, X } from "@phosphor-icons/react";
-import { FIELD_KINDS, type FieldDefinition, type FieldKind } from "@panorama/core";
+import { FIELD_KINDS, type FieldDefinition, type FieldKind } from "@boomerang/core";
 import { ApiError } from "../../lib/api";
 import { useArchiveField, useCreateField, useFields, useUpdateField } from "../../lib/hooks";
 import { swapNeighbour } from "../../lib/reorder";

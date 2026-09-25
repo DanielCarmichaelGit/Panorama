@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
-import { signRequest, type Attachment } from "@panorama/core";
+import { signRequest, type Attachment } from "@boomerang/core";
 import { ApiError, api } from "./api";
 import { session } from "./session";
 
@@ -81,7 +81,7 @@ export function uploadFile(ticketId: string, file: File, onProgress?: (fraction:
         if (xhr.status >= 200 && xhr.status < 300) resolve(body as Attachment);
         else reject(errorFromBody(xhr.status, body));
       };
-      xhr.onerror = () => reject(new ApiError(0, "network", "Could not reach Panorama"));
+      xhr.onerror = () => reject(new ApiError(0, "network", "Could not reach Boomerang"));
 
       xhr.send(form);
     })();

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { useState } from "react";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import type { Family } from "@panorama/core";
+import type { Family } from "@boomerang/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ColorField } from "./ColorField";
 import type { ColorValue } from "./ColorField";

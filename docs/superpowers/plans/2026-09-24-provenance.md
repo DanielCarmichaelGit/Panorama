@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Every commit to Panorama carries a hash-bound record of the session that produced it, captured automatically in Claude Code and by CLI elsewhere, enforced by git hooks, verifiable offline, with a repository skill that states the working contract.
+**Goal:** Every commit to Boomerang carries a hash-bound record of the session that produced it, captured automatically in Claude Code and by CLI elsewhere, enforced by git hooks, verifiable offline, with a repository skill that states the working contract.
 
 **Architecture:** Plain Node 22 ES modules under `scripts/provenance/` with no dependencies beyond `node:` built-ins and git. A library module does hashing, session files, manifests, and verification; a CLI, a Claude Code hook adapter, and two git hooks call it. Tests use `node:test`.
 
@@ -86,7 +86,7 @@ package.json                      scripts: "provenance": "node scripts/provenanc
 
 **Files:** Create `.claude/skills/contribute/SKILL.md`, `AGENTS.md`, `docs/provenance.md`; modify `README.md` (one "Contributing" section pointing at both).
 
-- `SKILL.md` frontmatter: `name: contribute`, `description: Use before changing anything in the Panorama repository: the working contract, vocabulary, test and commit rules, and how provenance is recorded and verified.` Body under 600 words: what Panorama is (one paragraph from the spec), the documents to read and in what order, the vocabulary, the rules (tests first, tokens only, no dashes, conventional commits with the trailer), the provenance workflow (sessions start automatically in Claude Code; otherwise `pnpm provenance start`; `status` before committing; never paste secrets into prompts; how `verify` is read; how to attach a transcript to a PR: export `.provenance/sessions/<id>.jsonl`, optionally redacted, and state the head hash), and what to do when the pre-commit hook refuses.
+- `SKILL.md` frontmatter: `name: contribute`, `description: Use before changing anything in the Boomerang repository: the working contract, vocabulary, test and commit rules, and how provenance is recorded and verified.` Body under 600 words: what Boomerang is (one paragraph from the spec), the documents to read and in what order, the vocabulary, the rules (tests first, tokens only, no dashes, conventional commits with the trailer), the provenance workflow (sessions start automatically in Claude Code; otherwise `pnpm provenance start`; `status` before committing; never paste secrets into prompts; how `verify` is read; how to attach a transcript to a PR: export `.provenance/sessions/<id>.jsonl`, optionally redacted, and state the head hash), and what to do when the pre-commit hook refuses.
 - `AGENTS.md`: ten lines pointing non-Claude agents at the skill file and the CLI.
 - `docs/provenance.md`: the spec's Purpose and Vocabulary sections in plain words, the trailer format, the verify table columns, the honest limits paragraph, and the skip escape hatch.
 

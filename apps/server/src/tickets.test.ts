@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { ARGON_FAST, deriveKeys, verifyChain } from "@panorama/core";
-import { listEvents } from "@panorama/db";
+import { ARGON_FAST, deriveKeys, verifyChain } from "@boomerang/core";
+import { listEvents } from "@boomerang/db";
 import { client, setupApp } from "./test/helpers";
 
 async function world() {
   const s = await setupApp();
-  const { project, lanes } = (await s.human("POST", "/api/v1/projects", { name: "Panorama", key: "PAN" })).json;
+  const { project, lanes } = (await s.human("POST", "/api/v1/projects", { name: "Boomerang", key: "PAN" })).json;
   const ak = await deriveKeys("agent-secret-xyz", "11".repeat(16), ARGON_FAST);
   const id = (await s.app.inject({ method: "POST", url: "/api/v1/agents/register", payload: { name: "worker", publicKey: ak.publicKeyHex } })).json().id;
   await s.human("POST", `/api/v1/agents/${id}/approve`, { scopes: { projects: [project.id], actions: ["read", "ticket.create", "ticket.update", "ticket.move", "flag.set", "evidence.add"] } });
@@ -80,7 +80,7 @@ describe("tickets", () => {
     const w = await world();
     const boards = (await w.human("GET", `/api/v1/projects/${w.project.id}/boards`)).json;
     expect(boards).toHaveLength(1);
-    expect(boards[0].name).toBe("Panorama");
+    expect(boards[0].name).toBe("Boomerang");
     expect(boards[0].family).toBe("stone");
 
     const t = (await w.human("POST", "/api/v1/tickets", { projectId: w.project.id, title: "on default board" })).json;

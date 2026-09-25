@@ -2,7 +2,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { FieldDefinition } from "@panorama/core";
+import type { FieldDefinition } from "@boomerang/core";
 import { api } from "../lib/api";
 import { uploadFile } from "../lib/attachments";
 import { FieldControl, isFieldEmpty } from "./FieldControl";

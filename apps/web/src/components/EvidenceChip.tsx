@@ -1,4 +1,4 @@
-import type { Evidence, EvidenceType, Family } from "@panorama/core";
+import type { Evidence, EvidenceType, Family } from "@boomerang/core";
 import { Chip } from "./Chip";
 
 const FAMILY_BY_RESULT: Record<Evidence["result"], Family> = { pass: "mint", fail: "coral", info: "stone" };

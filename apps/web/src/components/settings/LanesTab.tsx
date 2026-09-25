@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { ArrowDown, ArrowUp, PencilSimple, Trash } from "@phosphor-icons/react";
-import type { EvidenceType, Lane, UpdateLaneInput } from "@panorama/core";
+import type { EvidenceType, Lane, UpdateLaneInput } from "@boomerang/core";
 import { useCreateLane, useDeleteLane, useEvidenceTypes, useLanes, useReorderLanes, useSetLaneRequirements, useTickets, useUpdateLane } from "../../lib/hooks";
 import { Chip } from "../Chip";
 import { ColorField, type ColorValue } from "../ColorField";

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ARGON_FAST, deriveKeys } from "@panorama/core";
+import { ARGON_FAST, deriveKeys } from "@boomerang/core";
 import { connectStream, invalidationsFor } from "./stream";
 import { session } from "./session";
 

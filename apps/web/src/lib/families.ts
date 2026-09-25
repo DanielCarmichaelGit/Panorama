@@ -1,4 +1,4 @@
-import type { Family } from "@panorama/core";
+import type { Family } from "@boomerang/core";
 
 export const FAMILY: Record<Family, { top: string; left: string; right: string; ink: string }> = {
   coral: { top: "#FFD3C9", left: "#F7A999", right: "#E98672", ink: "#8A2A17" },

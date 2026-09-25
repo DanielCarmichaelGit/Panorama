@@ -1,14 +1,16 @@
 import { chmodSync, existsSync, mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import type { FastifyInstance } from "fastify";
-import { ARGON, SetupInput, UnlockInput, verifyRequest } from "@panorama/core";
-import { appendEvent, insertActor, migrate, openDatabase, writeConfig } from "@panorama/db";
+import { ARGON, SetupInput, UnlockInput, verifyRequest } from "@boomerang/core";
+import { appendEvent, insertActor, migrate, openDatabase, writeConfig } from "@boomerang/db";
 import { getDb, requireCan } from "../auth";
 import { record } from "../bus";
 import type { Ctx } from "../context";
 import { HttpError } from "../errors";
 
-export const dbFile = (ctx: Ctx) => join(ctx.dataDir, "panorama.db");
+/** The database file keeps its pre-rename name: the data directory moves, its contents do not. */
+export const DB_FILE = "panorama.db";
+export const dbFile = (ctx: Ctx) => join(ctx.dataDir, DB_FILE);
 
 const weakKdf = (argon: { iterations: number; memorySize: number; parallelism: number }) =>
   argon.iterations < ARGON.iterations || argon.memorySize < ARGON.memorySize || argon.parallelism < ARGON.parallelism;
@@ -23,7 +25,7 @@ export function lifecycleRoutes(app: FastifyInstance, ctx: Ctx): void {
   });
 
   app.post("/api/v1/setup", async (req) => {
-    if (ctx.config) throw new HttpError(409, "already_setup", "Panorama is already set up");
+    if (ctx.config) throw new HttpError(409, "already_setup", "Boomerang is already set up");
     const file = dbFile(ctx);
     // A database without a config.json is still somebody's data: never open it with a new key.
     if (existsSync(file)) throw new HttpError(409, "already_setup", "A database is already in this data directory");
@@ -33,7 +35,7 @@ export function lifecycleRoutes(app: FastifyInstance, ctx: Ctx): void {
     const ok = await verifyRequest(input.publicKey, req.headers as any, "POST", req.url, req.rawBody ?? "", ctx.now().getTime());
     if (!ok) throw new HttpError(401, "bad_signature", "Setup must be signed by the key it registers");
 
-    // First run on a fresh machine: PANORAMA_DATA_DIR need not exist yet.
+    // First run on a fresh machine: BOOMERANG_DATA_DIR need not exist yet.
     mkdirSync(ctx.dataDir, { recursive: true });
     const db = openDatabase(file, input.dbKey);
     try {
@@ -60,7 +62,7 @@ export function lifecycleRoutes(app: FastifyInstance, ctx: Ctx): void {
   });
 
   app.post("/api/v1/unlock", async (req) => {
-    if (!ctx.config) throw new HttpError(409, "not_setup", "Panorama is not set up");
+    if (!ctx.config) throw new HttpError(409, "not_setup", "Boomerang is not set up");
     if (ctx.db) return { ok: true };
     const encryption = ctx.config.encryption;
     const { dbKey } = UnlockInput.parse(req.body);

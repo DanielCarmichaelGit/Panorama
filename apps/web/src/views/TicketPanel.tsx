@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { X } from "@phosphor-icons/react";
-import type { FieldDefinition, FieldValue, LinkKind, Ticket } from "@panorama/core";
+import type { FieldDefinition, FieldValue, LinkKind, Ticket } from "@boomerang/core";
 import {
   useAddLink,
   useAgents,

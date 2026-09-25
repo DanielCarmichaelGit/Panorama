@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ARGON_FAST, deriveKeys, verifyRequest } from "@panorama/core";
+import { ARGON_FAST, deriveKeys, verifyRequest } from "@boomerang/core";
 import { api, ApiError } from "./api";
 import { session } from "./session";
 
@@ -17,7 +17,7 @@ describe("api", () => {
   });
   it("throws ApiError with the server code and drops the session when locked", async () => {
     const k = await deriveKeys("test-password-123", "00".repeat(16), ARGON_FAST); session.setSeed(k.seed);
-    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ error: { code: "locked", message: "Panorama is locked" } }), { status: 423 })));
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ error: { code: "locked", message: "Boomerang is locked" } }), { status: 423 })));
     await expect(api("GET", "/api/v1/projects")).rejects.toMatchObject({ status: 423, code: "locked" });
     expect(session.getSeed()).toBeNull();
     expect(new ApiError(400, "x", "y")).toBeInstanceOf(Error);

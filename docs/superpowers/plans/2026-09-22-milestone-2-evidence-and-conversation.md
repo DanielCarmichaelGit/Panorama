@@ -1,4 +1,4 @@
-# Panorama Milestone 2: Evidence and Conversation Implementation Plan
+# Boomerang Milestone 2: Evidence and Conversation Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -285,7 +285,7 @@ create trigger evidence_no_update before update on evidence begin select raise(a
 create trigger evidence_no_delete before delete on evidence begin select raise(abort, 'evidence is append-only'); end;
 ` + DEFAULT_EVIDENCE_TYPES.map((e) => `insert into evidence_types(id, name, kind, params, human_only, needs_attachment, created_at) values(${[e.id, e.name, e.kind, JSON.stringify(e.params)].map((v) => `'${v}'`).join(",")}, ${e.humanOnly ? 1 : 0}, ${e.needsAttachment ? 1 : 0}, '2026-09-22T00:00:00.000Z');`).join("\n");
 ```
-(Import `DEFAULT_EVIDENCE_TYPES` from `@panorama/core`. The seeded values contain no quotes, so string interpolation into the migration is safe; add a comment saying so.)
+(Import `DEFAULT_EVIDENCE_TYPES` from `@boomerang/core`. The seeded values contain no quotes, so string interpolation into the migration is safe; add a comment saying so.)
 
 `projects.ts`: `toLane` adds `evidenceRequirements: JSON.parse(r.evidence_requirements)`; `createProject` inserts `JSON.stringify(l.evidenceRequirements)` into `evidence_requirements`; add:
 ```ts
@@ -297,7 +297,7 @@ export function setLaneRequirements(db: DB, laneId: string, requirements: LaneRe
 `thread.ts`:
 ```ts
 import { randomUUID } from "node:crypto";
-import type { Attachment, Comment, Evidence, EvidenceType } from "@panorama/core";
+import type { Attachment, Comment, Evidence, EvidenceType } from "@boomerang/core";
 import type { DB } from "./open";
 const toType = (r: any): EvidenceType => ({ id: r.id, name: r.name, kind: r.kind, params: JSON.parse(r.params), humanOnly: !!r.human_only, needsAttachment: !!r.needs_attachment, createdAt: r.created_at });
 const toAtt = (r: any): Attachment => ({ id: r.id, ticketId: r.ticket_id, commentId: r.comment_id, actorId: r.actor_id, filename: r.filename, mime: r.mime, size: r.size, sha256: r.sha256, createdAt: r.created_at });
@@ -360,8 +360,8 @@ Export `./thread` from `index.ts`.
 
 ```ts
 import { describe, expect, it } from "vitest";
-import { verifyChain } from "@panorama/core";
-import { listEvents } from "@panorama/db";
+import { verifyChain } from "@boomerang/core";
+import { listEvents } from "@boomerang/db";
 import { agentIn, setupApp } from "./test/helpers";
 
 async function world() {
@@ -487,7 +487,7 @@ describe("files", () => {
 `attachments.test.ts`:
 ```ts
 import { describe, expect, it } from "vitest";
-import { signRequest } from "@panorama/core";
+import { signRequest } from "@boomerang/core";
 import { agentIn, multipart, setupApp } from "./test/helpers";
 const png = Buffer.from("89504e470d0a1a0a0000000d49484452", "hex");
 async function world() { const s = await setupApp(); const { project } = (await s.human("POST", "/api/v1/projects", { name: "P", key: "PP" })).json; const { agent } = await agentIn(s, project.id); const t = (await agent("POST", "/api/v1/tickets", { projectId: project.id, title: "x" })).json; return { ...s, project, agent, t }; }
@@ -535,7 +535,7 @@ describe("attachments", () => {
 
 ```ts
 import { describe, expect, it } from "vitest";
-import { signRequest } from "@panorama/core";
+import { signRequest } from "@boomerang/core";
 import { agentIn, setupApp } from "./test/helpers";
 
 async function open(app: any, seed: Uint8Array, actor: string) {
@@ -600,7 +600,7 @@ describe("stream", () => {
 
 - [ ] **Step 1: Write the failing test** `stream.test.ts` (node env): feed `connectStream` a fake `fetchImpl` returning a `Response` whose body is a `ReadableStream` emitting `": connected\n\n"`, then `"id: 1\nevent: ticket.moved\ndata: {\"id\":\"t1\",\"projectId\":\"p\"}\n\n"` split across two chunks, then closing; assert `onEvent` got exactly one event with `type: "ticket.moved"` and `data.id === "t1"`, `onStatus` saw `open` then `closed`, and after abort no further fetch happens (count calls). Test `invalidationsFor("comment.added", { ticketId: "t1" })` contains `["thread","t1"]` and `["queue"]`.
 
-- [ ] **Step 2: Run, confirm FAIL. Step 3: Implement.** Reconnect loop: `while (!signal.aborted) { try { await once() } catch {} ; await sleep(backoff) }` with `sleep` racing the abort signal. Ensure `pnpm vitest run apps/web` and `pnpm --filter @panorama/web build` pass and `grep -rn refetchInterval apps/web/src` returns nothing.
+- [ ] **Step 2: Run, confirm FAIL. Step 3: Implement.** Reconnect loop: `while (!signal.aborted) { try { await once() } catch {} ; await sleep(backoff) }` with `sleep` racing the abort signal. Ensure `pnpm vitest run apps/web` and `pnpm --filter @boomerang/web build` pass and `grep -rn refetchInterval apps/web/src` returns nothing.
 
 - [ ] **Step 4: Commit** `feat(web): live updates over server-sent events`
 
@@ -642,7 +642,7 @@ describe("renderBlocks", () => {
 });
 ```
 
-- [ ] **Step 2: Run, confirm FAIL. Step 3: Implement** as specified. **Step 4: Run** `pnpm vitest run apps/web && pnpm --filter @panorama/web build`. **Step 5: Commit** `feat(web): markdown rendering with sandboxed html and attachment images`
+- [ ] **Step 2: Run, confirm FAIL. Step 3: Implement** as specified. **Step 4: Run** `pnpm vitest run apps/web && pnpm --filter @boomerang/web build`. **Step 5: Commit** `feat(web): markdown rendering with sandboxed html and attachment images`
 
 ---
 
@@ -664,7 +664,7 @@ describe("renderBlocks", () => {
 
 - [ ] **Step 3: Implement.** CSS: `.thread`, `.comment`, `.comment .who`, `.composer` (bordered `card` with the ProseMirror area at min-height 6rem, `.ProseMirror:focus{outline:none}` and the card gets the focus ring via `:focus-within`), `.upload-row`, `.attachment-row`, `.htmlframe{width:100%;height:320px;border:1px solid var(--line);border-radius:var(--r-input);resize:vertical}`. Type in the editor uses the body scale; headings use the `h2` size for `#` and a step down for `##`.
 
-- [ ] **Step 4: Run** `pnpm vitest run apps/web && pnpm --filter @panorama/web build`. Then check by hand with the dev servers (`PANORAMA_DATA_DIR=$(mktemp -d) PANORAMA_ALLOW_FAST_KDF=1 pnpm dev:server`, `VITE_FAST_KDF=1 pnpm dev:web`): type `# ` and see a heading, drop a PNG and see it inline after posting, paste an HTML snippet in a fenced `html` block and see it in the frame with no script execution.
+- [ ] **Step 4: Run** `pnpm vitest run apps/web && pnpm --filter @boomerang/web build`. Then check by hand with the dev servers (`BOOMERANG_DATA_DIR=$(mktemp -d) BOOMERANG_ALLOW_FAST_KDF=1 pnpm dev:server`, `VITE_FAST_KDF=1 pnpm dev:web`): type `# ` and see a heading, drop a PNG and see it inline after posting, paste an HTML snippet in a fenced `html` block and see it in the frame with no script execution.
 - [ ] **Step 5: Commit** `feat(web): comment composer with markdown shorthand and thread`
 
 ---
@@ -750,7 +750,7 @@ Added by the owner on 2026-09-24 after using the milestone 1 build: "it feels of
 - Sidebar polish: icons 20px regular; collapsed width 60px; in collapsed mode the active item is a 36px rounded square (`--r-input`) not a pill; Lock becomes an icon-only nav item with `title` and `aria-label` when collapsed; the collapse toggle is a 28px square ghost button pinned at the bottom edge with a `CaretLineLeft` or `CaretLineRight` icon; the project switcher in collapsed mode shows the first two letters of the key in mono inside a stone square.
 
 - [ ] **Step 1: Write the failing tests.** `presence.test.ts`: an approved agent creating a ticket gets `currentTicketId` set; moving it to Done clears it; `GET /api/v1/agents` as the agent returns 200 with only the public fields; the human's stream receives `agent.seen` after the agent's first request and not again within 30 s (use a controllable `now`). `PresenceStrip.test.tsx` (jsdom): `presenceLine` for none, one idle, two with one working; `agentFamily` is stable and never coral.
-- [ ] **Step 2: Run, confirm FAIL. Step 3: Implement. Step 4: Run** `pnpm test`, `pnpm --filter @panorama/web build`; check by hand at 1280 and 375 (collapsed and expanded sidebar, both Queue empty states, an agent card).
+- [ ] **Step 2: Run, confirm FAIL. Step 3: Implement. Step 4: Run** `pnpm test`, `pnpm --filter @boomerang/web build`; check by hand at 1280 and 375 (collapsed and expanded sidebar, both Queue empty states, an agent card).
 - [ ] **Step 5: Commit** `feat: presence-first home, agent cards, sidebar polish`
 
 ---
@@ -763,4 +763,4 @@ Added by the owner on 2026-09-24: a Board is a group of tickets inside a project
 - Modify: `packages/core/src/schemas.ts` (`interface Board { id; projectId; name; description: string | null; family: Family; position: number; createdAt }`, `Ticket` gains `boardId: string`, `CreateTicketInput` gains optional `boardId`, new `CreateBoardInput { projectId; name 1..80; description?: string <= 500; family?: Family }`), `packages/db/src/migrations.ts` (M5 or the next free number: `boards` table, `tickets.board_id text references boards(id)`; backfill: for each existing project insert a default board named after the project with family stone and set every ticket's `board_id` to it; then the column is treated as required by the repositories), `packages/db/src/projects.ts` (`createProject` also creates the default board; `listBoards(db, projectId)`, `createBoard(db, input, now)`, `getBoard(db, id)`), `packages/db/src/tickets.ts` (`createTicket` takes `boardId`, defaulting to the project's first board by position; `listTickets` accepts `boardId`; `toTicket` maps it), `apps/server/src/routes/projects.ts` (`GET /api/v1/projects/:id/boards` with `read`; `POST /api/v1/boards` human only, action `board.create` added to `HUMAN_ACTIONS`; event `board.created {id, projectId, name}`), `apps/server/src/routes/tickets.ts` (`boardId` on create validated to belong to the ticket's project else 400 `wrong_project`; `?boardId=` filter on `GET /tickets`; `ticket.created` payload gains `boardId`), `apps/web/src/lib/hooks.ts` (`useBoards(projectId)` keyed `["boards", projectId]`, `useCreateBoard()`), `apps/web/src/views/Board.tsx` (the view header always carries a labelled `<select>` "Board" listing the project's boards followed by an option "New board"; choosing it opens `<NewBoard projectId onClose />`; the selection lives in the URL as `?board=<id>` so it survives reloads and is shareable; after creating a board the view switches to it), new `apps/web/src/components/NewBoard.tsx` (dialog with `useFocusTrap`: name, optional description, a colour family choice rendered as five labelled radio swatches from the families, Create and Cancel, errors with role="alert", focus returns to the opener), `apps/web/src/components/NewTicket.tsx` (when more than one board exists, a "Board" select defaulting to the one currently shown).
 - Test: `packages/db/src/db.test.ts` (default board created with a project; tickets land on it; a ticket may be created on a second board; `listTickets` filters by board), `apps/server/src/tickets.test.ts` (boardId from another project is 400; agent cannot create a board; human can; `ticket.created` carries `boardId`), `apps/web/src/views/Board.test.tsx` (the select renders with the default board; with two boards it filters), `apps/web/src/components/NewBoard.test.tsx` (jsdom: Create disabled while the name is empty; submitting posts `{projectId, name, family}` and calls `onClose` with the new board).
 
-- [ ] **Step 1: Write the failing tests. Step 2: Run, confirm FAIL. Step 3: Implement. Step 4: Run** `pnpm test`, `pnpm exec tsc -p packages/db && pnpm exec tsc -p apps/server`, `pnpm --filter @panorama/web build`, and the e2e suites (`pnpm e2e`) because the demo agent and specs create tickets. **Step 5: Commit** `feat: boards group tickets inside a project`
+- [ ] **Step 1: Write the failing tests. Step 2: Run, confirm FAIL. Step 3: Implement. Step 4: Run** `pnpm test`, `pnpm exec tsc -p packages/db && pnpm exec tsc -p apps/server`, `pnpm --filter @boomerang/web build`, and the e2e suites (`pnpm e2e`) because the demo agent and specs create tickets. **Step 5: Commit** `feat: boards group tickets inside a project`

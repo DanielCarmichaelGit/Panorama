@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useOutletContext } from "react-router-dom";
 import { CaretDown, CaretRight } from "@phosphor-icons/react";
-import type { Lane, Project } from "@panorama/core";
+import type { Lane, Project } from "@boomerang/core";
 import { LaneScene } from "../lib/iso";
 import { useAgents, useBoards, useEpics, useQueue, useTags, useTickets } from "../lib/hooks";
 import { isTypingTarget } from "../lib/keys";

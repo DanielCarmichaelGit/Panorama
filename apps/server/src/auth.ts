@@ -1,13 +1,13 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
-import { can, verifyRequest, type Action, type Actor } from "@panorama/core";
-import { getActor, touchActor, type DB } from "@panorama/db";
+import { can, verifyRequest, type Action, type Actor } from "@boomerang/core";
+import { getActor, touchActor, type DB } from "@boomerang/db";
 import type { Ctx } from "./context";
 import { HttpError } from "./errors";
 
 declare module "fastify" { interface FastifyRequest { actor: Actor; sig: string } }
 
 export function getDb(ctx: Ctx): DB {
-  if (!ctx.db) throw new HttpError(423, "locked", "Panorama is locked");
+  if (!ctx.db) throw new HttpError(423, "locked", "Boomerang is locked");
   return ctx.db;
 }
 

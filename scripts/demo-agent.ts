@@ -1,12 +1,12 @@
-import { publicKeyFromSeed, signRequest } from "@panorama/core";
+import { publicKeyFromSeed, signRequest } from "@boomerang/core";
 
-// A worked example of an agent talking to Panorama over REST. It generates a key, registers,
+// A worked example of an agent talking to Boomerang over REST. It generates a key, registers,
 // waits for a human to approve it, then walks one ticket through the model: a tag, a blocking
 // dependency and the gate refusal it causes, a gated move refused for missing evidence, the
-// evidence itself, and finally the move succeeding. PANORAMA_URL points it at a server (default
+// evidence itself, and finally the move succeeding. BOOMERANG_URL points it at a server (default
 // 127.0.0.1:4400) and AGENT_NAME names the key it registers (default demo-agent).
 
-const BASE = process.env.PANORAMA_URL ?? "http://127.0.0.1:4400";
+const BASE = process.env.BOOMERANG_URL ?? "http://127.0.0.1:4400";
 const NAME = process.env.AGENT_NAME ?? "demo-agent";
 const seed = crypto.getRandomValues(new Uint8Array(32));
 let actorId = "";

@@ -4,7 +4,7 @@ Date: 2026-09-24. Status: approved by the owner (local only, no CI, iterate late
 
 ## Purpose
 
-Every change to Panorama should carry a verifiable record of how it was made: who, with which tool, with what stated intent, through which prompts and tool calls, producing which diff. A reviewer, human or AI, can then check that the record presented matches what was committed, and read the intent and the process next to the diff. Hunks that no prompt explains are the ones to look at hardest.
+Every change to Boomerang should carry a verifiable record of how it was made: who, with which tool, with what stated intent, through which prompts and tool calls, producing which diff. A reviewer, human or AI, can then check that the record presented matches what was committed, and read the intent and the process next to the diff. Hunks that no prompt explains are the ones to look at hardest.
 
 What this proves: the record was not altered after the commit, the commit is bound to that record, and (when the commit is signed) a named person stands behind it. What it does not prove: that the record is truthful, or that the code is safe. It raises the cost of injecting a change and leaves a trail; review still happens.
 
@@ -29,4 +29,4 @@ A repository skill at `.claude/skills/contribute/SKILL.md` (with `AGENTS.md` at 
 
 ## Out of scope for now
 
-GitHub Actions, a remote lineage server, uploading transcripts anywhere, and key management beyond git's own commit signing. Later, Panorama itself is the lineage server: a change is a ticket and the transcript is evidence.
+GitHub Actions, a remote lineage server, uploading transcripts anywhere, and key management beyond git's own commit signing. Later, Boomerang itself is the lineage server: a change is a ticket and the transcript is evidence.

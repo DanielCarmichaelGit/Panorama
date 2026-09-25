@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { signRequest } from "@panorama/core";
+import { signRequest } from "@boomerang/core";
 import { agentIn, multipart, setupApp } from "./test/helpers";
 const png = Buffer.from("89504e470d0a1a0a0000000d49484452", "hex");
 async function world() { const s = await setupApp(); const { project } = (await s.human("POST", "/api/v1/projects", { name: "P", key: "PP" })).json; const { agent } = await agentIn(s, project.id); const t = (await agent("POST", "/api/v1/tickets", { projectId: project.id, title: "x" })).json; return { ...s, project, agent, t }; }
@@ -42,7 +42,7 @@ describe("attachments", () => {
   });
   it("refuses more than one file part with 413 too_large", async () => {
     const w = await world();
-    const boundary = "panorama-two-files";
+    const boundary = "boomerang-two-files";
     const body = Buffer.from(
       `--${boundary}\r\nContent-Disposition: form-data; name="ticketId"\r\n\r\n${w.t.id}\r\n` +
       `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="a.png"\r\nContent-Type: image/png\r\n\r\n` +

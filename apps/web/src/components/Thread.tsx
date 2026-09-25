@@ -1,4 +1,4 @@
-import type { Actor, Comment, Evidence } from "@panorama/core";
+import type { Actor, Comment, Evidence } from "@boomerang/core";
 import { useEvidenceTypes, useThread } from "../lib/hooks";
 import { AttachmentLink, Markdown } from "../lib/markdown";
 import { EvidenceChip } from "./EvidenceChip";

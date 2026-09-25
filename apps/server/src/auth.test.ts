@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ARGON_FAST, deriveKeys, signRequest } from "@panorama/core";
+import { ARGON_FAST, deriveKeys, signRequest } from "@boomerang/core";
 import { buildApp } from "./app";
 import { multipart, setupApp } from "./test/helpers";
 

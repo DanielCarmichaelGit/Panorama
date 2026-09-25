@@ -1,5 +1,5 @@
 import { CheckCircle, Circle } from "@phosphor-icons/react";
-import type { EvidenceType, Lane } from "@panorama/core";
+import type { EvidenceType, Lane } from "@boomerang/core";
 import type { GateMiss } from "../lib/hooks";
 import { Chip } from "./Chip";
 

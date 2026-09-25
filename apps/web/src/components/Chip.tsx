@@ -1,4 +1,4 @@
-import type { Epic, Family, Tag } from "@panorama/core";
+import type { Epic, Family, Tag } from "@boomerang/core";
 import { chipTokens } from "../lib/color";
 
 // Chips are labels here. Filtering happens through the Board's Arc and Tags Pickers, not by

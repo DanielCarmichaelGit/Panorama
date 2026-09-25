@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { Attachment, Comment, Evidence, EvidenceType, LaneRequirement } from "@panorama/core";
+import type { Attachment, Comment, Evidence, EvidenceType, LaneRequirement } from "@boomerang/core";
 import type { DB } from "./open";
 const toType = (r: any): EvidenceType => ({ id: r.id, name: r.name, kind: r.kind, params: JSON.parse(r.params), humanOnly: !!r.human_only, needsAttachment: !!r.needs_attachment, createdAt: r.created_at });
 const toAtt = (r: any): Attachment => ({ id: r.id, ticketId: r.ticket_id, commentId: r.comment_id, actorId: r.actor_id, filename: r.filename, mime: r.mime, size: r.size, sha256: r.sha256, createdAt: r.created_at });

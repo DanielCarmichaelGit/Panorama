@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { ArgonParams } from "@panorama/core";
+import type { ArgonParams } from "@boomerang/core";
 export interface Config { kdfSalt: string; argon: ArgonParams; humanPublicKey: string; encryption: boolean }
 export function readConfig(dir: string): Config | null {
   const f = join(dir, "config.json");

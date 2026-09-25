@@ -2,7 +2,7 @@
 // keys, and this file's name keep the API's word.
 import { useMemo, useState } from "react";
 import { Archive, PencilSimple } from "@phosphor-icons/react";
-import type { Epic } from "@panorama/core";
+import type { Epic } from "@boomerang/core";
 import { useCreateEpic, useEpics, useTickets, useUpdateEpic } from "../../lib/hooks";
 import { Chip } from "../Chip";
 import { ColorField, type ColorValue } from "../ColorField";

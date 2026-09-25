@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { CreateEpicInput, CreateTagInput, FieldDefinitionInput, LinkInput, UpdateEpicInput, UpdateFieldInput, UpdateTagInput } from "@panorama/core";
+import { CreateEpicInput, CreateTagInput, FieldDefinitionInput, LinkInput, UpdateEpicInput, UpdateFieldInput, UpdateTagInput } from "@boomerang/core";
 import {
   addLink,
   appendEvent,
@@ -21,7 +21,7 @@ import {
   updateField,
   updateTag,
   type DB,
-} from "@panorama/db";
+} from "@boomerang/db";
 import { getDb, requireCan } from "../auth";
 import { record } from "../bus";
 import { changedKeys } from "../changed";

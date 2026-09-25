@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Trash } from "@phosphor-icons/react";
-import { EVIDENCE_KINDS, type EvidenceKind, type EvidenceType } from "@panorama/core";
+import { EVIDENCE_KINDS, type EvidenceKind, type EvidenceType } from "@boomerang/core";
 import { useCreateEvidenceType, useDeleteEvidenceType, useEvidenceTypes, useLanes } from "../../lib/hooks";
 import { Chip } from "../Chip";
 import { Picker } from "../Picker";

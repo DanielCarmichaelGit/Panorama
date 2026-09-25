@@ -1,4 +1,4 @@
-import type { Family } from "@panorama/core";
+import type { Family } from "@boomerang/core";
 
 /** One sRGB colour, channels 0 to 255. Fractional channels are allowed mid-calculation. */
 export interface RGB {

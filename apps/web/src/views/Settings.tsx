@@ -1,12 +1,13 @@
 import { useRef, useState } from "react";
 import { useOutletContext, useSearchParams } from "react-router-dom";
 import { Columns, Compass, SealCheck, Tag, TextColumns, type Icon } from "@phosphor-icons/react";
-import type { Project } from "@panorama/core";
+import type { Project } from "@boomerang/core";
 import { EpicsTab } from "../components/settings/EpicsTab";
 import { EvidenceTab } from "../components/settings/EvidenceTab";
 import { FieldsTab } from "../components/settings/FieldsTab";
 import { LanesTab } from "../components/settings/LanesTab";
 import { TagsTab } from "../components/settings/TagsTab";
+import { INTRO_KEY } from "../lib/storage";
 
 const TABS = [
   { id: "fields", label: "Fields" },
@@ -37,7 +38,7 @@ const CONCEPTS: { id: TabId; icon: Icon; name: string; text: string }[] = [
 ];
 
 /** Remembers whether the owner hid the intro strip; the only Settings state kept in the browser. */
-export const INTRO_KEY = "pan.settingsIntro";
+export { INTRO_KEY };
 
 function readIntroHidden(): boolean {
   try {

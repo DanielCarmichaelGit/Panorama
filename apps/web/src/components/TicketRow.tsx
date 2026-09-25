@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import type { Actor, Epic, Family, Lane, Tag, Ticket } from "@panorama/core";
+import type { Actor, Epic, Family, Lane, Tag, Ticket } from "@boomerang/core";
 import { Chip, EpicChip, TagChips } from "./Chip";
 
 export const laneFamily = (t: Ticket, lanes: Lane[]): Family =>

@@ -76,8 +76,6 @@ a{color:var(--accent)}
 .collapsed .collapse-btn{justify-self:center}
 .collapsed .side{padding:16px 10px}
 .collapsed .side .nav-item{justify-content:center;width:44px;height:44px;padding:0;gap:0;border-radius:var(--r-input)}
-.collapsed .side .switcher{display:flex;justify-content:center;margin-bottom:.5rem}
-.key-mark{display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:var(--r-input);background:var(--stone-top);color:var(--stone-ink);font-size:.8125rem;font-weight:500}
 .side .label{white-space:nowrap;overflow:hidden;transition:opacity var(--dur) var(--ease)}
 .collapsed .side .label{opacity:0;position:absolute;width:1px;height:1px;clip:rect(0 0 0 0)}
 .view{padding:2rem var(--gutter);max-width:1200px;position:relative}
@@ -105,7 +103,7 @@ a{color:var(--accent)}
 .side .menu-item{display:none}
 .sheet{background:var(--surface);border-top:1px solid var(--line);border-radius:var(--r-card) var(--r-card) 0 0;padding:1rem var(--gutter) 1.25rem;display:grid;gap:.75rem;justify-items:stretch;animation:sheet-in 250ms var(--ease-in) both}
 @keyframes sheet-in{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
-@media (max-width:860px){.shell,.shell.collapsed{grid-template-columns:1fr}.side{position:fixed;inset:auto 0 0 0;height:auto;flex-direction:row;border-right:0;border-top:1px solid var(--line)}.side .foot,.side .switcher{display:none}.side .menu-item{display:flex}.sheet-back{align-items:end;justify-items:stretch;padding:0}.sheet{width:100%;padding-bottom:5rem}.view{padding-bottom:5rem}.trow .ag,.trow .tk{display:none}}
+@media (max-width:860px){.shell,.shell.collapsed{grid-template-columns:1fr}.side{position:fixed;inset:auto 0 0 0;height:auto;flex-direction:row;border-right:0;border-top:1px solid var(--line)}.side .foot,.side .switcher,.side .brand{display:none}.side .menu-item{display:flex}.sheet-back{align-items:end;justify-items:stretch;padding:0}.sheet{width:100%;padding-bottom:5rem}.view{padding-bottom:5rem}.trow .ag,.trow .tk{display:none}}
 .panel{position:fixed;top:0;right:0;bottom:0;width:min(clamp(520px,60vw,1100px),100%);background:var(--surface);border-left:1px solid var(--line);z-index:var(--z-panel);padding:1.25rem var(--gutter);overflow:auto;animation:panel-in 250ms var(--ease-in) both;box-shadow:var(--shadow)}
 @keyframes panel-in{from{transform:translateX(24px);opacity:0}to{transform:none;opacity:1}}
 @media (min-width:1600px){.with-panel .view{margin-right:min(60vw,1100px)}}
@@ -376,3 +374,35 @@ a{color:var(--accent)}
 .color-hex-wrap{display:grid;gap:.35rem;width:9rem}
 .color-hex{width:100%}
 .color-hex-error{font-size:.8125rem;margin:0}
+
+/* Sidebar brand, project row, status card (owner request 2026-09-25) */
+.brand{display:flex;align-items:center;gap:.5rem;padding:.25rem .45rem .9rem;font-weight:700;font-size:.9375rem;letter-spacing:-.01em;color:var(--text)}
+.brand-glyph{display:inline-flex;width:20px;height:20px;flex:none}
+.collapsed .brand{justify-content:center;padding:.25rem 0 .75rem}
+.side .switcher{margin-bottom:.75rem}
+.proj-row{display:flex;align-items:center;gap:.6rem;width:100%;min-height:44px;padding:.35rem .5rem;border-radius:var(--r-input);border:1px solid var(--line);background:var(--surface);color:var(--text);text-align:left;font:inherit}
+.proj-row.compact{justify-content:center;width:44px;height:44px;padding:0;border:0;background:none}
+.proj-btn{cursor:pointer;transition:background var(--dur) var(--ease),border-color var(--dur) var(--ease)}
+.proj-btn:hover,.proj-btn[aria-expanded="true"]{background:var(--bg);border-color:var(--muted)}
+.proj-avatar{display:inline-flex;align-items:center;justify-content:center;flex:none;border-radius:var(--r-input);font-weight:700;font-size:.8125rem;letter-spacing:0}
+.proj-text{display:flex;flex-direction:column;min-width:0;flex:1;gap:1px;line-height:1.2}
+.proj-name{font-weight:600;font-size:.875rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.proj-key{align-self:flex-start;font-size:.6875rem;padding:0 .35rem;border-radius:var(--r-pill);background:var(--stone-top);color:var(--stone-ink)}
+.proj-caret{flex:none;color:var(--muted)}
+.proj-switcher{position:relative}
+.proj-menu{position:absolute;left:0;right:0;top:calc(100% + 4px);margin:0;padding:4px;list-style:none;background:var(--surface);border:1px solid var(--line);border-radius:var(--r-input);box-shadow:0 8px 24px rgba(27,34,48,.08);z-index:var(--z-menu);animation:fade var(--dur) var(--ease-in) both}
+.proj-option{display:flex;align-items:center;gap:.5rem;padding:.4rem .5rem;border-radius:var(--r-input);cursor:pointer;color:var(--text)}
+.proj-option.active{background:var(--bg)}
+.proj-option[aria-selected="true"] .proj-name{color:var(--accent)}
+.side-status{display:grid;gap:6px;padding:8px 10px;margin-bottom:12px;border:1px solid var(--line);border-radius:var(--r-input);background:var(--surface)}
+.collapsed .side-status{padding:8px 0;justify-items:center;border-color:transparent}
+.sheet .side-status{margin-bottom:0}
+
+/* Scrollbars: thin, rounded, in the line colour, so they belong to the page */
+*{scrollbar-width:thin;scrollbar-color:var(--line) transparent}
+*:hover{scrollbar-color:var(--stone-right) transparent}
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--line);border-radius:var(--r-pill);border:3px solid transparent;background-clip:padding-box}
+::-webkit-scrollbar-thumb:hover{background:var(--stone-right);background-clip:padding-box}
+::-webkit-scrollbar-corner{background:transparent}

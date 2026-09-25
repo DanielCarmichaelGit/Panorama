@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import type { Evidence, EvidenceType } from "@panorama/core";
+import type { Evidence, EvidenceType } from "@boomerang/core";
 import { EvidenceChip } from "./EvidenceChip";
 
 afterEach(cleanup);

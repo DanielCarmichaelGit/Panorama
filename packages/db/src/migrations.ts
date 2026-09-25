@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { DEFAULT_EVIDENCE_TYPES } from "@panorama/core";
+import { DEFAULT_EVIDENCE_TYPES } from "@boomerang/core";
 import type { DB } from "./open";
 const M1 = `
 create table actors(id text primary key, kind text not null check(kind in('human','agent')), name text not null, public_key text not null unique,
@@ -43,7 +43,7 @@ create index evidence_ticket on evidence(ticket_id, created_at);
 create trigger evidence_no_update before update on evidence begin select raise(abort, 'evidence is append-only'); end;
 create trigger evidence_no_delete before delete on evidence begin select raise(abort, 'evidence is append-only'); end;
 ` + DEFAULT_EVIDENCE_TYPES.map((e) => `insert into evidence_types(id, name, kind, params, human_only, needs_attachment, created_at) values(${[e.id, e.name, e.kind, JSON.stringify(e.params)].map((v) => `'${v}'`).join(",")}, ${e.humanOnly ? 1 : 0}, ${e.needsAttachment ? 1 : 0}, '2026-09-22T00:00:00.000Z');`).join("\n");
-// DEFAULT_EVIDENCE_TYPES is a fixed constant in @panorama/core: its id, name, kind, and
+// DEFAULT_EVIDENCE_TYPES is a fixed constant in @boomerang/core: its id, name, kind, and
 // params values are hardcoded literals containing no quote characters, so interpolating
 // them into this migration string is safe. This is the one exception to bound parameters;
 // everything else in this file (and every other query in this package) uses them.

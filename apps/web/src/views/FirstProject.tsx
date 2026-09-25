@@ -25,9 +25,9 @@ export function FirstProject() {
     <main id="main" className="lock">
       <a className="skip" href="#main">Skip to content</a>
       <form onSubmit={submit}>
-        <div className="mark">Panorama</div>
+        <div className="mark">Boomerang</div>
         <h1>Name your first project</h1>
-        <p className="muted">Everything in Panorama belongs to a project. You can add more later.</p>
+        <p className="muted">Everything in Boomerang belongs to a project. You can add more later.</p>
         <div className="field">
           <label htmlFor="proj-name">Project name</label>
           <input id="proj-name" className="input" autoFocus value={name} onChange={(e) => onNameChange(e.target.value)} />

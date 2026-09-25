@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { verifyChain } from "@panorama/core";
-import { listEvents } from "@panorama/db";
+import { verifyChain } from "@boomerang/core";
+import { listEvents } from "@boomerang/db";
 import { agentIn, setupApp } from "./test/helpers";
 
 async function world() {

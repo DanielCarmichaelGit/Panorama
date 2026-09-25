@@ -23,7 +23,7 @@ import type {
   Ticket,
   TicketLink,
   UpdateLaneInput,
-} from "@panorama/core";
+} from "@boomerang/core";
 import { api } from "./api";
 import { session } from "./session";
 import { connectStream, invalidationsFor } from "./stream";

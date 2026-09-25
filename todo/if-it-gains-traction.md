@@ -1,4 +1,4 @@
-# To do if Panorama gains traction
+# To do if Boomerang gains traction
 
 Deliberately cut from v1. Revisit when real users ask.
 
@@ -13,5 +13,5 @@ Deliberately cut from v1. Revisit when real users ask.
 - [ ] Plugin marketplace
 - [ ] Dark theme (the "Night shift" direction from the brand harness)
 - [ ] Postgres as an alternative database
-- [ ] Live isometric Panorama view: lanes as platforms, tickets as clickable blocks
+- [ ] Live isometric Boomerang view: lanes as platforms, tickets as clickable blocks
 - [ ] Scripted rule actions (sandboxed) beyond the fixed action list

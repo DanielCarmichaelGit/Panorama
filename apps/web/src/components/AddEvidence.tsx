@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { EvidenceType, EvidenceResult } from "@panorama/core";
+import type { EvidenceType, EvidenceResult } from "@boomerang/core";
 import { ApiError } from "../lib/api";
 import { uploadFile } from "../lib/attachments";
 import { useAddEvidence } from "../lib/hooks";
@@ -29,7 +29,7 @@ function parsedNumber(s: string): number | null {
 /**
  * Dialog to attach one piece of evidence to a ticket. The type Picker drives which fields show,
  * matching the payload each kind's zod schema accepts server-side (`EvidencePayload` in
- * `@panorama/core`). Screenshot and file types upload through `uploadFile` first and attach the
+ * `@boomerang/core`). Screenshot and file types upload through `uploadFile` first and attach the
  * resulting attachment id; every other kind posts payload fields only.
  */
 export function AddEvidence({ ticketId, types, onClose }: { ticketId: string; types: EvidenceType[]; onClose: () => void }) {

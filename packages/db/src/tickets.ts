@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { FieldValue, Ticket } from "@panorama/core";
+import type { FieldValue, Ticket } from "@boomerang/core";
 import type { DB } from "./open";
 import { getLane, listBoards, listLanes } from "./projects";
 import { listTicketTags, setTicketTags } from "./tags";

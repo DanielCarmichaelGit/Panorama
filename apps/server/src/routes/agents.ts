@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { FastifyInstance } from "fastify";
-import { ApproveAgentInput, RegisterAgentInput, type Scopes } from "@panorama/core";
-import { appendEvent, countPending, getActor, getTicket, insertActor, listActors, setActorStatus } from "@panorama/db";
+import { ApproveAgentInput, RegisterAgentInput, type Scopes } from "@boomerang/core";
+import { appendEvent, countPending, getActor, getTicket, insertActor, listActors, setActorStatus } from "@boomerang/db";
 import { getDb, inScope, requireCan } from "../auth";
 import { record } from "../bus";
 import type { Ctx } from "../context";

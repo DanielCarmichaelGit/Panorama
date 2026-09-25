@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { X } from "@phosphor-icons/react";
-import type { CreateTicketInput, EvidenceType, FieldValue, Lane, Ticket } from "@panorama/core";
+import type { CreateTicketInput, EvidenceType, FieldValue, Lane, Ticket } from "@boomerang/core";
 import { uploadFile } from "../lib/attachments";
 import type { GateMiss } from "../lib/hooks";
 import {

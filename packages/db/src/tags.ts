@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { Family, Tag } from "@panorama/core";
+import type { Family, Tag } from "@boomerang/core";
 import type { DB } from "./open";
 
 const toTag = (r: any): Tag => ({

@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import type { ChainEvent } from "@panorama/core";
+import type { ChainEvent } from "@boomerang/core";
 import { inScope } from "./auth";
 import type { Ctx } from "./context";
 

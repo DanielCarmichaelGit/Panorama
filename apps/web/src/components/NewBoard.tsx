@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { FAMILIES, type Board, type Family } from "@panorama/core";
+import { FAMILIES, type Board, type Family } from "@boomerang/core";
 import { useCreateBoard } from "../lib/hooks";
 import { useFocusTrap } from "../lib/useFocusTrap";
 

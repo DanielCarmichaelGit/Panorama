@@ -1,6 +1,6 @@
 import { useLayoutEffect, useRef } from "react";
 import { X } from "@phosphor-icons/react";
-import type { EvidenceType, LaneRequirement } from "@panorama/core";
+import type { EvidenceType, LaneRequirement } from "@boomerang/core";
 import { Picker } from "./Picker";
 
 /** A requirement as the Lanes tab edits it: typeId, count, and what the evidence should show. */

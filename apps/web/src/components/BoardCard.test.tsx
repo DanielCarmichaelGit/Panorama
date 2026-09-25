@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { Lane, Ticket } from "@panorama/core";
+import type { Lane, Ticket } from "@boomerang/core";
 import { api } from "../lib/api";
 import { BoardCard } from "./BoardCard";
 

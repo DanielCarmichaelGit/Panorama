@@ -1,4 +1,4 @@
-import type { Family } from "@panorama/core";
+import type { Family } from "@boomerang/core";
 import { FAMILY } from "./families";
 const C = Math.cos(Math.PI / 6), S = 0.5;
 const r = (n: number) => Math.round(n * 100) / 100 + 0;

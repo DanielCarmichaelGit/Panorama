@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import Fastify from "fastify";
 import fastifyMultipart from "@fastify/multipart";
 import fastifyStatic from "@fastify/static";
-import { migrate, openDatabase, readConfig } from "@panorama/db";
+import { migrate, openDatabase, readConfig } from "@boomerang/db";
 import { installAuth } from "./auth";
 import { EventBus, installStream } from "./bus";
 import type { Ctx } from "./context";
@@ -53,7 +53,7 @@ export async function buildApp(opts: { dataDir: string; now?: () => Date; webDis
   app.addHook("onRequest", async (req, reply) => {
     const path = req.url.split("?")[0];
     if (!path.startsWith("/api/") || OPEN.has(path)) return;
-    if (!ctx.db) return reply.status(423).header("retry-after", "30").send({ error: { code: "locked", message: "Panorama is locked" } });
+    if (!ctx.db) return reply.status(423).header("retry-after", "30").send({ error: { code: "locked", message: "Boomerang is locked" } });
   });
 
   installAuth(app, ctx, new Set([...OPEN, "/api/v1/agents/register"]));

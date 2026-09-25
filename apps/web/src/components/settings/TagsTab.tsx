@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Archive, PencilSimple } from "@phosphor-icons/react";
-import type { Tag } from "@panorama/core";
+import type { Tag } from "@boomerang/core";
 import { useArchiveTag, useCreateTag, useTags, useTickets, useUpdateTag } from "../../lib/hooks";
 import { Chip } from "../Chip";
 import { ColorField, type ColorValue } from "../ColorField";

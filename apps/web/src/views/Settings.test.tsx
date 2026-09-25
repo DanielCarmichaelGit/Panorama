@@ -16,7 +16,7 @@ afterEach(() => {
   localStorage.removeItem(INTRO_KEY);
 });
 
-const project = { id: "p1", key: "PAN", name: "Panorama", createdAt: "" };
+const project = { id: "p1", key: "PAN", name: "Boomerang", createdAt: "" };
 
 function renderSettings(path = "/settings") {
   vi.mocked(api).mockResolvedValue([]);

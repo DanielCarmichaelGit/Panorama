@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { FAMILIES } from "@panorama/core";
-import type { Family } from "@panorama/core";
+import { FAMILIES } from "@boomerang/core";
+import type { Family } from "@boomerang/core";
 import { PRESET_COLORS, chipTokens, parseHex, toHex } from "../lib/color";
 import { FAMILY } from "../lib/families";
 

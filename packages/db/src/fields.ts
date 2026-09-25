@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { FieldDefinition, FieldKind, FieldValue } from "@panorama/core";
+import type { FieldDefinition, FieldKind, FieldValue } from "@boomerang/core";
 import type { DB } from "./open";
 
 const toField = (r: any): FieldDefinition => ({

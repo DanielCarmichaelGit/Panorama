@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { DEFAULT_LANES, type Board, type Family, type Lane, type LaneRequirement, type Project } from "@panorama/core";
+import { DEFAULT_LANES, type Board, type Family, type Lane, type LaneRequirement, type Project } from "@boomerang/core";
 import type { DB } from "./open";
 const toProject = (r: any): Project => ({ id: r.id, key: r.key, name: r.name, createdAt: r.created_at });
 const toLane = (r: any): Lane => ({ id: r.id, projectId: r.project_id, name: r.name, position: r.position, family: r.family, setsNeedsHuman: !!r.sets_needs_human, isDone: !!r.is_done, evidenceRequirements: JSON.parse(r.evidence_requirements) });

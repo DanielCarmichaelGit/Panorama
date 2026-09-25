@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useDraggable } from "@dnd-kit/core";
-import type { Actor, Epic, EvidenceType, Lane, Tag, Ticket } from "@panorama/core";
+import type { Actor, Epic, EvidenceType, Lane, Tag, Ticket } from "@boomerang/core";
 import { ApiError } from "../lib/api";
 import { useGates, useMoveTicket, usePrefetchGates } from "../lib/hooks";
 import { isTypingTarget } from "../lib/keys";

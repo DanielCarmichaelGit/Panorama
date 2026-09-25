@@ -17,7 +17,7 @@ const agent = (over: Record<string, unknown>) => ({
 function renderAgents(list: unknown[]) {
   vi.mocked(api).mockImplementation(async (_method: string, path: string) => {
     if (path === "/api/v1/agents") return list;
-    throw new Error("Panorama could not reach the agent");
+    throw new Error("Boomerang could not reach the agent");
   });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   return render(
@@ -39,13 +39,13 @@ describe("Agents view", () => {
   it("reports a failed reject beside the row", async () => {
     renderAgents([agent({})]);
     fireEvent.click(await screen.findByRole("button", { name: "Reject" }));
-    expect((await screen.findByRole("alert")).textContent).toContain("Panorama could not reach the agent");
+    expect((await screen.findByRole("alert")).textContent).toContain("Boomerang could not reach the agent");
   });
 
   it("reports a failed revoke beside the row", async () => {
     renderAgents([agent({ id: "ag2", name: "runner", status: "active", scopes: { projects: "*", actions: ["read"] } })]);
     fireEvent.click(await screen.findByRole("button", { name: "Revoke" }));
-    expect((await screen.findByRole("alert")).textContent).toContain("Panorama could not reach the agent");
+    expect((await screen.findByRole("alert")).textContent).toContain("Boomerang could not reach the agent");
   });
 });
 

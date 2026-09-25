@@ -1,6 +1,6 @@
-# Panorama
+# Boomerang
 
-A free, MIT licensed, self-hosted project manager for one developer supervising several AI agents. Agents connect from outside through REST or MCP. Work moves only by deterministic rules. A ticket enters a gated lane only with the evidence that lane requires. Panorama contains no agents and makes no LLM calls.
+A free, MIT licensed, self-hosted project manager for one developer supervising several AI agents. Agents connect from outside through REST or MCP. Work moves only by deterministic rules. A ticket enters a gated lane only with the evidence that lane requires. Boomerang contains no agents and makes no LLM calls.
 
 ## Requirements
 
@@ -20,13 +20,15 @@ Open `http://127.0.0.1:4400` and set a password on first run.
 
 ## Data and encryption
 
-Panorama stores its SQLite database and file attachments in `PANORAMA_DATA_DIR`, or `~/.panorama/` if that variable is not set.
+Boomerang stores its SQLite database and file attachments in `BOOMERANG_DATA_DIR`, or `~/.boomerang/` if that variable is not set.
 
-At setup you choose whether to encrypt the database. With encryption on, the browser derives an Ed25519 signing seed and a database key from your password with Argon2id and a stored salt. Only the public key and salt are kept on disk; the password and seed are never written anywhere, and the private key lives only in browser memory for the session. Restarting the server leaves Panorama locked: every API call other than `/api/v1/health`, `/api/v1/status`, `/api/v1/setup`, and `/api/v1/unlock` answers `423 Locked` until you enter the password again. With encryption off, there is no lock step and the database is stored in plaintext.
+Boomerang was called Panorama until 2026-09-25; the `PANORAMA_*` environment variables are still read for one release and logged as deprecated, an existing `~/.panorama` is moved to `~/.boomerang` on first start, and the database file inside it keeps its `panorama.db` name.
+
+At setup you choose whether to encrypt the database. With encryption on, the browser derives an Ed25519 signing seed and a database key from your password with Argon2id and a stored salt. Only the public key and salt are kept on disk; the password and seed are never written anywhere, and the private key lives only in browser memory for the session. Restarting the server leaves Boomerang locked: every API call other than `/api/v1/health`, `/api/v1/status`, `/api/v1/setup`, and `/api/v1/unlock` answers `423 Locked` until you enter the password again. With encryption off, there is no lock step and the database is stored in plaintext.
 
 ## Tamper evidence
 
-Every state change is appended to a hash chained event log, signed by the actor who made it, in the same transaction as the change itself. When you unlock, the server verifies every entry from the beginning of the log and then checks that the log still contains the point you last signed, with the same hash. Your browser signs the new head as the text `<seq>:<headHash>`, and keeps that pair in `localStorage` under `pan.anchor` so that the next unlock can cross check the server's answer against what this browser last saw. A failure shows a banner naming the first bad entry and what went wrong. The password and the signing seed are never stored anywhere.
+Every state change is appended to a hash chained event log, signed by the actor who made it, in the same transaction as the change itself. When you unlock, the server verifies every entry from the beginning of the log and then checks that the log still contains the point you last signed, with the same hash. Your browser signs the new head as the text `<seq>:<headHash>`, and keeps that pair in `localStorage` under `bm.anchor` so that the next unlock can cross check the server's answer against what this browser last saw. A failure shows a banner naming the first bad entry and what went wrong. The password and the signing seed are never stored anywhere.
 
 What this detects:
 
@@ -204,13 +206,13 @@ carries a hash bound record of the session that produced it; see
 
 ## Milestone status
 
-Panorama is at milestone 2c of 5: the Settings refresh (lanes and evidence types added, reordered, and removed under the in-use rules, requirement descriptions that travel with the gate, preset and custom colours on arcs and tags, the file field kind) on top of milestone 2b's ticket model and creation (arcs, tags, dependencies with the blocked-by gate, custom fields, success criteria, Settings, the full-screen create dialog, and a keyboard-first Picker in place of every native select) on top of milestone 2's evidence and conversation (evidence types and gated lanes, comments and threads, attachments, the live SSE stream, the Board, the demo agent, end to end coverage of the gate flow) and milestone 1's foundation (monorepo, database, setup and unlock, human key, agent registration and approval, signing, hash chain, projects, lanes, tickets, REST, app shell with sidebar, Queue, ticket panel, lock screen). See `docs/superpowers/specs` for the full design and `todo/` for what is planned next.
+Boomerang is at milestone 2c of 5: the Settings refresh (lanes and evidence types added, reordered, and removed under the in-use rules, requirement descriptions that travel with the gate, preset and custom colours on arcs and tags, the file field kind) on top of milestone 2b's ticket model and creation (arcs, tags, dependencies with the blocked-by gate, custom fields, success criteria, Settings, the full-screen create dialog, and a keyboard-first Picker in place of every native select) on top of milestone 2's evidence and conversation (evidence types and gated lanes, comments and threads, attachments, the live SSE stream, the Board, the demo agent, end to end coverage of the gate flow) and milestone 1's foundation (monorepo, database, setup and unlock, human key, agent registration and approval, signing, hash chain, projects, lanes, tickets, REST, app shell with sidebar, Queue, ticket panel, lock screen). See `docs/superpowers/specs` for the full design and `todo/` for what is planned next.
 
 Board virtualisation for very long lanes is planned for milestone 4; today every card in a lane renders at once.
 
 ## Licences
 
-Every dependency Panorama ships is under a permissive licence: MIT, ISC, BSD, Apache 2.0, MPL 2.0, Blue Oak 1.0.0, or OFL. The one further exception is `argparse`, a transitive dependency of the markdown editor, which is under the Python Software Foundation licence; that licence is also permissive and imposes no obligation beyond keeping its own notice. `pnpm licenses list` shows the full set.
+Every dependency Boomerang ships is under a permissive licence: MIT, ISC, BSD, Apache 2.0, MPL 2.0, Blue Oak 1.0.0, or OFL. The one further exception is `argparse`, a transitive dependency of the markdown editor, which is under the Python Software Foundation licence; that licence is also permissive and imposes no obligation beyond keeping its own notice. `pnpm licenses list` shows the full set.
 
 ## License
 

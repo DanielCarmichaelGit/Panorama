@@ -1,4 +1,4 @@
-import { FAMILIES } from "@panorama/core";
+import { FAMILIES } from "@boomerang/core";
 import { describe, expect, it } from "vitest";
 import { PRESET_COLORS, chipTokens, contrastRatio, derivePair, mix, parseHex, relativeLuminance, toHex } from "./color";
 

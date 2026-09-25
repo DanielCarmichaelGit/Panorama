@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { Actor, Board, EvidenceType, Lane } from "@panorama/core";
+import type { Actor, Board, EvidenceType, Lane } from "@boomerang/core";
 import { api } from "../lib/api";
 import { uploadFile } from "../lib/attachments";
 import { NewTicket } from "./NewTicket";
@@ -27,7 +27,7 @@ vi.mock("../lib/attachments", async (importOriginal) => {
 afterEach(cleanup);
 
 const board = (over: Partial<Board>): Board => ({
-  id: "b1", projectId: "p1", name: "Panorama", description: null, family: "stone", position: 0, createdAt: "", ...over,
+  id: "b1", projectId: "p1", name: "Boomerang", description: null, family: "stone", position: 0, createdAt: "", ...over,
 });
 
 const lane = (over: Partial<Lane>): Lane => ({
@@ -133,7 +133,7 @@ describe("NewTicket", () => {
     expect(screen.queryByRole("button", { name: "Board" })).toBeNull();
     cleanup();
 
-    renderDialog({ boards: [board({ id: "b1", name: "Panorama" }), board({ id: "b2", name: "Growth", position: 1 })] });
+    renderDialog({ boards: [board({ id: "b1", name: "Boomerang" }), board({ id: "b2", name: "Growth", position: 1 })] });
     await screen.findByRole("button", { name: "Board" });
     expect(screen.getByRole("button", { name: "Board" })).toBeTruthy();
   });

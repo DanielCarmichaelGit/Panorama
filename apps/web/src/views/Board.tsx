@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useNavigate, useOutletContext, useSearchParams } from "react-router-dom";
 import { DndContext, DragOverlay, PointerSensor, useDroppable, useSensor, useSensors } from "@dnd-kit/core";
 import type { DragEndEvent, DragStartEvent } from "@dnd-kit/core";
-import type { Board as BoardType, Epic, EvidenceType, Lane, Project, Tag, Ticket } from "@panorama/core";
+import type { Board as BoardType, Epic, EvidenceType, Lane, Project, Tag, Ticket } from "@boomerang/core";
 import { ApiError } from "../lib/api";
 import { useAgents, useBoard, useBoards, useEpics, useEvidenceTypes, useGates, useMoveTicket, useTags } from "../lib/hooks";
 import { BoardCard, BoardCardContent } from "../components/BoardCard";

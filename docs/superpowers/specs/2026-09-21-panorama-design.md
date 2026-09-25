@@ -1,10 +1,10 @@
-# Panorama system design
+# Boomerang system design
 
 Date: 2026-09-21. Status: approved and frozen by the owner on 2026-09-21. Amend through the owner. UI brief: `BRIEF.md`. Visual system: `BRAND.md`.
 
 ## 1. Purpose
 
-A free, MIT licensed, self-hosted project manager for one developer supervising several AI agents. Agents connect from outside through REST or MCP. Work moves only by deterministic rules. A ticket enters a gated lane only with the evidence that lane requires. Panorama contains no agents and makes no LLM calls.
+A free, MIT licensed, self-hosted project manager for one developer supervising several AI agents. Agents connect from outside through REST or MCP. Work moves only by deterministic rules. A ticket enters a gated lane only with the evidence that lane requires. Boomerang contains no agents and makes no LLM calls.
 
 ## 2. Architecture
 
@@ -20,7 +20,7 @@ TypeScript monorepo, pnpm workspaces.
 
 All open source libraries: Fastify, zod, croner (cron), `@noble/ed25519`, `hash-wasm` (Argon2id), TipTap (editor, markdown input rules), dnd-kit (board), DOMPurify, Phosphor icons, Vitest, Playwright. The Timeline is a custom SVG component.
 
-Run: `pnpm start` or `docker compose up`. Default bind `127.0.0.1:4400`. Data directory `~/.panorama/` holds `panorama.db` and `files/`.
+Run: `pnpm start` or `docker compose up`. Default bind `127.0.0.1:4400`. Data directory `~/.boomerang/` holds `panorama.db` and `files/`.
 
 ## 3. Vocabulary and data model
 
@@ -120,7 +120,7 @@ Each milestone is its own implementation plan and ends in something usable.
 1. **Foundation**: monorepo, database, setup and unlock, human key, agent registration and approval, signing, hash chain, projects, lanes, tickets, REST, app shell with sidebar, Queue, ticket panel, lock screen.
 2. **Evidence and conversation**: comments and composer, attachments, evidence types, lane gates, flags, Board with gated drag, SSE, presence-first home, boards.
 2b. **Ticket model and creation** (added by the owner on 2026-09-24): epics and dependencies pulled forward from milestone 4, tags, success criteria, per-project custom fields (kinds text, number, date, select, checkbox, and file, whose value is `{attachmentId}` naming one of the ticket's own attachments; the server refuses any other ticket's, and a required file field is not checked at create since the attachment can only exist after the ticket does: the panel's "Needs fields" chip flags it instead), a Settings view (fields, tags, epics, lanes and requirements, evidence types), a full-screen create dialog, and a shared Picker replacing every native select.
-3. **Automation**: rule engine, the Automations canvas, triggers, missed-run catch-up, outbox, webhooks, run logs, MCP server, timers and cost reporting (pulled forward from milestone 4 at the owner's request). The Automations view (sidebar item after Board) is a visual flow canvas, not a form: a rule is drawn as nodes on a canvas, When (event), If (conditions), Then (actions), connected left to right, with no code anywhere. Built on `@xyflow/react` (MIT) with every node, edge, handle, and control drawn in Panorama's own tokens and families (event nodes sky, condition nodes lilac, action nodes mint, refusals coral), pan and zoom, snap to an 8px grid, keyboard reachable node creation and deletion, a node palette that lists exactly the events, conditions, and actions the rule engine supports, and a run log beside the canvas. The canvas serialises to the same `{event, conditions[], actions[]}` rule data the engine runs, so nothing on the canvas can express what the engine cannot do. (Owner decision on 2026-09-24; the sentence builder from the milestone 2 plan is dropped.)
+3. **Automation**: rule engine, the Automations canvas, triggers, missed-run catch-up, outbox, webhooks, run logs, MCP server, timers and cost reporting (pulled forward from milestone 4 at the owner's request). The Automations view (sidebar item after Board) is a visual flow canvas, not a form: a rule is drawn as nodes on a canvas, When (event), If (conditions), Then (actions), connected left to right, with no code anywhere. Built on `@xyflow/react` (MIT) with every node, edge, handle, and control drawn in Boomerang's own tokens and families (event nodes sky, condition nodes lilac, action nodes mint, refusals coral), pan and zoom, snap to an 8px grid, keyboard reachable node creation and deletion, a node palette that lists exactly the events, conditions, and actions the rule engine supports, and a run log beside the canvas. The canvas serialises to the same `{event, conditions[], actions[]}` rule data the engine runs, so nothing on the canvas can express what the engine cannot do. (Owner decision on 2026-09-24; the sentence builder from the milestone 2 plan is dropped.)
 4. **Planning and accounting**: epics, Timeline, dependencies, timers, cost entries and rollups, Agents view totals.
 5. **Hardening and release**: encryption toggle, recovery code and motion-noise canvas, chain export, Docker, docs, README, contribution guide, seed demo project.
 

@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
-import { CheckpointInput, GENESIS, verifyChain, verifyText, type ChainEvent } from "@panorama/core";
-import { addCheckpoint, latestCheckpoint, listEvents, type DB } from "@panorama/db";
+import { CheckpointInput, GENESIS, verifyChain, verifyText, type ChainEvent } from "@boomerang/core";
+import { addCheckpoint, latestCheckpoint, listEvents, type DB } from "@boomerang/db";
 import { getDb, requireCan } from "../auth";
 import type { Ctx } from "../context";
 import { HttpError } from "../errors";

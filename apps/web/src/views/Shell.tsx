@@ -3,18 +3,18 @@ import { Link, NavLink, Outlet, useMatch, useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { CaretLineLeft, CaretLineRight, GearSix, Kanban, List, Lock, Robot, Tray } from "@phosphor-icons/react";
 import { SidebarStatus } from "../components/SidebarStatus";
-import type { Project } from "@panorama/core";
+import type { Project } from "@boomerang/core";
 import type { Status } from "../App";
 import { api } from "../lib/api";
 import { session } from "../lib/session";
+import { SIDEBAR_KEY } from "../lib/storage";
 import { useLanes, useProjects, useStream } from "../lib/hooks";
 import { isTypingTarget } from "../lib/keys";
 import { useFocusTrap } from "../lib/useFocusTrap";
-import { Picker } from "../components/Picker";
+import { ProjectSwitcher } from "../components/ProjectSwitcher";
+import { BrandMark } from "../components/BrandMark";
 import { FirstProject } from "./FirstProject";
 import { TicketPanel } from "./TicketPanel";
-
-const SIDEBAR_KEY = "pan.sidebar";
 
 function readCollapsed(): boolean {
   try {
@@ -36,27 +36,6 @@ function SkeletonRows() {
   return (
     <div className="view">
       {[0, 1, 2, 3].map((i) => <div key={i} className="skeleton" />)}
-    </div>
-  );
-}
-
-function ProjectSwitcher({ id, list, current, onChange }: { id: string; list: Project[]; current: Project; onChange: (id: string) => void }) {
-  if (list.length > 1) {
-    return (
-      <Picker
-        id={id}
-        label="Project"
-        hideLabel
-        options={list.map((p) => ({ id: p.id, label: p.name }))}
-        value={current.id}
-        onChange={(v) => v && onChange(v)}
-      />
-    );
-  }
-  return (
-    <div>
-      <strong>{current.name}</strong>
-      <div className="mono muted">{current.key}</div>
     </div>
   );
 }
@@ -135,14 +114,14 @@ export function Shell({ status, chainOk }: { status: Status; chainOk: boolean })
       session.clear();
       qc.invalidateQueries({ queryKey: ["status"] });
     } catch (e) {
-      setLockError(e instanceof Error ? e.message : "Could not lock Panorama.");
+      setLockError(e instanceof Error ? e.message : "Could not lock Boomerang.");
     }
   }
 
   if (projects.isError) {
     return (
       <main className="view">
-        <p className="error" role="alert">Cannot reach the Panorama server.</p>
+        <p className="error" role="alert">Cannot reach the Boomerang server.</p>
         <button className="btn" onClick={() => projects.refetch()}>Try again</button>
       </main>
     );
@@ -153,12 +132,9 @@ export function Shell({ status, chainOk }: { status: Status; chainOk: boolean })
     <div className={collapsed ? "shell collapsed" : "shell"}>
       <a className="skip" href="#main">Skip to content</a>
       <nav className="side" aria-label="Main">
-        <div className="switcher" title={current?.name}>
-          {!current ? null : collapsed ? (
-            <strong className="mono key-mark" aria-label={current.name}>{current.key.slice(0, 2)}</strong>
-          ) : (
-            <ProjectSwitcher id="project-switcher" list={list} current={current} onChange={setProjectOverride} />
-          )}
+        <BrandMark collapsed={collapsed} />
+        <div className="switcher">
+          {current && <ProjectSwitcher id="project-switcher" list={list} current={current} onChange={setProjectOverride} compact={collapsed} />}
         </div>
         <Link to="/" className="nav-item" aria-label="Queue" title="Queue" aria-current={queueCurrent ? "page" : undefined}>
           <Tray size={22} weight="regular" aria-hidden="true" />

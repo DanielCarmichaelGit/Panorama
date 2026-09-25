@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { File as FileIcon, X } from "@phosphor-icons/react";
-import { isFileValue, type FieldDefinition, type FieldValue } from "@panorama/core";
+import { isFileValue, type FieldDefinition, type FieldValue } from "@boomerang/core";
 import { uploadFile, useAttachmentMeta } from "../lib/attachments";
 import { AttachmentImage, AttachmentLink } from "../lib/markdown";
 import { Picker } from "./Picker";

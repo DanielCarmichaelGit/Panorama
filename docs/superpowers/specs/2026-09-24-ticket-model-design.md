@@ -4,7 +4,7 @@ Date: 2026-09-24. Status: approved by the owner. Amends `docs/superpowers/specs/
 
 ## Why
 
-Creating a ticket in Panorama should feel like Jira's create dialog, not a name box, and the owner must be able to decide what a ticket carries. Automations (milestone 3) need epics, tags, and fields to match on, so the model comes first.
+Creating a ticket in Boomerang should feel like Jira's create dialog, not a name box, and the owner must be able to decide what a ticket carries. Automations (milestone 3) need epics, tags, and fields to match on, so the model comes first.
 
 ## Vocabulary additions
 

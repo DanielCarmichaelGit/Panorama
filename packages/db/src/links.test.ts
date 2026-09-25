@@ -9,7 +9,7 @@ const NOW = "2026-09-24T10:00:00.000Z";
 function world() {
   const db = d.openDatabase(join(mkdtempSync(join(tmpdir(), "pan-")), "p.db"), null);
   d.migrate(db);
-  const { project } = d.createProject(db, { name: "Panorama", key: "PAN" }, NOW);
+  const { project } = d.createProject(db, { name: "Boomerang", key: "PAN" }, NOW);
   const a = d.createTicket(db, { projectId: project.id, title: "A" }, NOW);
   const b = d.createTicket(db, { projectId: project.id, title: "B" }, NOW);
   const c = d.createTicket(db, { projectId: project.id, title: "C" }, NOW);

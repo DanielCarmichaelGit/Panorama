@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { LinkKind, TicketLink } from "@panorama/core";
+import type { LinkKind, TicketLink } from "@boomerang/core";
 import type { DB } from "./open";
 
 const toLink = (r: any): TicketLink => ({

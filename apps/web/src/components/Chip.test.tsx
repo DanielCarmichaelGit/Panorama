@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen } from "@testing-library/react";
-import type { Epic, Tag } from "@panorama/core";
+import type { Epic, Tag } from "@boomerang/core";
 import { afterEach, describe, expect, it } from "vitest";
 import { derivePair } from "../lib/color";
 import { Chip, EpicChip, TagChips } from "./Chip";

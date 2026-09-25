@@ -1,8 +1,9 @@
 import { chmodSync, existsSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { ARGON, ARGON_FAST, signRequest } from "@panorama/core";
+import { ARGON, ARGON_FAST, signRequest } from "@boomerang/core";
 import { buildApp } from "./app";
+import { DB_FILE } from "./routes/lifecycle";
 import { humanKeys, tempDir } from "./test/helpers";
 
 const SALT = "00".repeat(16);
@@ -50,14 +51,14 @@ describe("lifecycle", () => {
 describe("setup guards", () => {
   it("refuses setup when a database is already there but config.json is not", async () => {
     const dir = tempDir(); const keys = await humanKeys();
-    writeFileSync(join(dir, "panorama.db"), "");
+    writeFileSync(join(dir, DB_FILE), "");
     const res = await doSetup(await app(dir), keys, true);
     expect(res.statusCode).toBe(409);
     expect(res.json().error.code).toBe("already_setup");
   });
 
   it("sets up into a data directory that does not exist yet", async () => {
-    const dir = join(tempDir(), "panorama");
+    const dir = join(tempDir(), "boomerang");
     const keys = await humanKeys();
     expect((await doSetup(await app(dir), keys, true)).statusCode).toBe(200);
     expect(existsSync(join(dir, "config.json"))).toBe(true);
@@ -66,7 +67,7 @@ describe("setup guards", () => {
   it("creates the database readable by its owner only", async () => {
     const dir = tempDir(); const keys = await humanKeys();
     expect((await doSetup(await app(dir), keys, true)).statusCode).toBe(200);
-    expect(statSync(join(dir, "panorama.db")).mode & 0o777).toBe(0o600);
+    expect(statSync(join(dir, DB_FILE)).mode & 0o777).toBe(0o600);
   });
 
   it("leaves nothing behind when setup fails after opening the database", async () => {
@@ -76,7 +77,7 @@ describe("setup guards", () => {
     const broken = await app(dir, { now: () => new Date(NaN) });
     expect((await doSetup(broken, keys, true)).statusCode).toBe(500);
     expect(broken.ctx.db).toBeNull();
-    expect(existsSync(join(dir, "panorama.db"))).toBe(false);
+    expect(existsSync(join(dir, DB_FILE))).toBe(false);
     expect(existsSync(join(dir, "config.json"))).toBe(false);
     expect((await doSetup(await app(dir), keys, true)).statusCode).toBe(200);
   });
@@ -95,7 +96,7 @@ describe("unlock failures", () => {
   it("separates a bad key from a database that cannot be opened at all", async () => {
     const dir = tempDir(); const keys = await humanKeys();
     const first = await app(dir); await doSetup(first, keys, true); await first.close();
-    const file = join(dir, "panorama.db");
+    const file = join(dir, DB_FILE);
     chmodSync(file, 0o444);
     chmodSync(dir, 0o555);
     try {

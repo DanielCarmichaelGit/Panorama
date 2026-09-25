@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { Epic, Family } from "@panorama/core";
+import type { Epic, Family } from "@boomerang/core";
 import type { DB } from "./open";
 
 const toEpic = (r: any): Epic => ({

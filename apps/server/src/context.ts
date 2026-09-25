@@ -1,4 +1,4 @@
-import type { Config, DB } from "@panorama/db";
+import type { Config, DB } from "@boomerang/db";
 import type { EventBus } from "./bus";
 
 export interface Ctx {

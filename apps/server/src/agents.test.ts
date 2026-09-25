@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ARGON_FAST, deriveKeys, signRequest } from "@panorama/core";
+import { ARGON_FAST, deriveKeys, signRequest } from "@boomerang/core";
 import { client, setupApp } from "./test/helpers";
 
 const agentKeys = () => deriveKeys("agent-secret-xyz", "11".repeat(16), ARGON_FAST);

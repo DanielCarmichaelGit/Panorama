@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
-import { CreateBoardInput, CreateLaneInput, CreateProjectInput, LaneOrderInput, UpdateLaneInput } from "@panorama/core";
-import { appendEvent, createBoard, createLane, createProject, deleteLane, getLane, getProject, listBoards, listLanes, listProjects, reorderLanes, updateLane, type DB } from "@panorama/db";
+import { CreateBoardInput, CreateLaneInput, CreateProjectInput, LaneOrderInput, UpdateLaneInput } from "@boomerang/core";
+import { appendEvent, createBoard, createLane, createProject, deleteLane, getLane, getProject, listBoards, listLanes, listProjects, reorderLanes, updateLane, type DB } from "@boomerang/db";
 import { getDb, inScope, requireCan } from "../auth";
 import { record } from "../bus";
 import { changedKeys } from "../changed";

@@ -1,5 +1,5 @@
-import { checkDependencies } from "@panorama/core";
-import { listLanes, listLinks, listTickets, type DB } from "@panorama/db";
+import { checkDependencies } from "@boomerang/core";
+import { listLanes, listLinks, listTickets, type DB } from "@boomerang/db";
 
 /**
  * The `blocked_by` entries a ticket's move into a done lane picks up from `blocks` links,

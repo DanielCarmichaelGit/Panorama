@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import createDOMPurify from "dompurify";
 import { marked, type Token, type Tokens } from "marked";
-import type { Attachment } from "@panorama/core";
+import type { Attachment } from "@boomerang/core";
 import { ATTACHMENT_ID_PATTERN, fetchBlob, isValidAttachmentId, useAttachmentUrl } from "./attachments";
 
 export type Block = { kind: "rich"; html: string } | { kind: "html"; html: string };

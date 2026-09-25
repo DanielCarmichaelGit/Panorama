@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { CaretDown, Check, X } from "@phosphor-icons/react";
-import type { Family } from "@panorama/core";
+import type { Family } from "@boomerang/core";
 import { chipTokens, parseHex } from "../lib/color";
 
 export interface PickerOption {

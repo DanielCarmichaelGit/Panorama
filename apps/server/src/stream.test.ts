@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { AGENT_ACTIONS, ARGON_FAST, deriveKeys, randomHex, signRequest } from "@panorama/core";
+import { AGENT_ACTIONS, ARGON_FAST, deriveKeys, randomHex, signRequest } from "@boomerang/core";
 import { agentIn, setupApp } from "./test/helpers";
 
 async function open(app: any, seed: Uint8Array, actor: string, base?: string) {

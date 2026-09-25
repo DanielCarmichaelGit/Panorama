@@ -1,4 +1,4 @@
-import { GENESIS, hashEvent, type ChainEvent } from "@panorama/core";
+import { GENESIS, hashEvent, type ChainEvent } from "@boomerang/core";
 import type { DB } from "./open";
 const toEvent = (r: any): ChainEvent => ({ seq: r.seq, prevHash: r.prev_hash, hash: r.hash, actorId: r.actor_id, type: r.type, payload: JSON.parse(r.payload), createdAt: r.created_at });
 

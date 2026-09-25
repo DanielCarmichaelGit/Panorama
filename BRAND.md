@@ -1,4 +1,4 @@
-# Panorama: BRAND.md
+# Boomerang: BRAND.md
 
 Locked visual system. Re-read before every visual change. Values marked **exact** were tuned and are not to be rounded or swapped for framework palette names.
 
@@ -53,7 +53,7 @@ The teal appears on: the primary button, the active sidebar item, the focus ring
 
 ## Composition
 
-Panorama is an application shell with views. It is carried by structure.
+Boomerang is an application shell with views. It is carried by structure.
 
 One sentence: sidebar on the left, view header top left with a mono count beside the title, content rows running the full width, the open ticket as a right-hand panel, and nothing centred except empty states.
 

@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { rmSync } from "node:fs";
 import { basename } from "node:path";
 import type { FastifyInstance } from "fastify";
-import { addAttachment, appendEvent, getAttachment, getTicket, type DB } from "@panorama/db";
+import { addAttachment, appendEvent, getAttachment, getTicket, type DB } from "@boomerang/db";
 import { getDb, requireCan } from "../auth";
 import { record } from "../bus";
 import type { Ctx } from "../context";

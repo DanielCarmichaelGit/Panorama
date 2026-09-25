@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { AddCommentInput, AddEvidenceInput, checkGate, CreateEvidenceTypeInput, evaluateEvidence, LaneRequirementsInput } from "@panorama/core";
+import { AddCommentInput, AddEvidenceInput, checkGate, CreateEvidenceTypeInput, evaluateEvidence, LaneRequirementsInput } from "@boomerang/core";
 import {
   addComment,
   addEvidence,
@@ -18,7 +18,7 @@ import {
   setLaneRequirements,
   thread,
   type DB,
-} from "@panorama/db";
+} from "@boomerang/db";
 import { getDb, requireCan } from "../auth";
 import { record } from "../bus";
 import type { Ctx } from "../context";

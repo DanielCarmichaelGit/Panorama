@@ -21,7 +21,7 @@ Owner asked how images, files and video fit fields. Add a `file` field kind: the
 Spec: `docs/superpowers/specs/2026-09-25-boomerang-rename-design.md`. Runs after every 2c task has landed, on the same branch, before the final review.
 
 ### Task 6: The rename
-Package names, imports, filters, root name, lockfile; env names with PANORAMA fallback; data dir move; storage keys; every user-facing string; docs (README, BRIEF, BRAND, specs' titles, skill copy); demo agent; e2e; launch.json. Acceptance 1 to 3 of the spec.
+Package names, imports, filters, root name, lockfile; env names with the old names read as a fallback; data dir move; storage keys; every user-facing string; docs (README, BRIEF, BRAND, specs' titles, skill copy); demo agent; e2e; launch.json. Acceptance 1 to 3 of the spec.
 
 ### Task 7: The boomerang illustration
 `BoomerangScene` per spec section 2 replacing `LaneScene` everywhere, with tests and a screenshot pass at the lock screen, first project and an empty state. Acceptance 4.

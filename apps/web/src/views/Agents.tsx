@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useOutletContext } from "react-router-dom";
 import { CaretDown, CaretRight } from "@phosphor-icons/react";
-import { AGENT_ACTIONS, type Actor, type AgentAction, type Lane, type Project, type Scopes } from "@panorama/core";
+import { AGENT_ACTIONS, type Actor, type AgentAction, type Lane, type Project, type Scopes } from "@boomerang/core";
 import { LaneScene } from "../lib/iso";
 import { useAgents, useApproveAgent, useProjects, useRevokeAgent, useTickets } from "../lib/hooks";
 import { isPickerOpen } from "../lib/keys";

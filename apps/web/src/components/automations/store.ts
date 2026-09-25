@@ -75,7 +75,7 @@ export function defaultData(kind: CanvasNodeKind): Record<string, unknown> {
     } catch {
       // keep UTC
     }
-    return { timezone };
+    return { timezone, missed: "run_once" };
   }
   return {};
 }

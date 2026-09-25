@@ -534,8 +534,10 @@ export interface RuleTestResult {
   refusals: RuleRefusal[];
 }
 
-/** A webhook destination (task 5); the emit_webhook action's Picker reads this list. */
-export interface Destination { id: string; projectId: string; name: string; url: string }
+/** A webhook destination (task 5); the emit_webhook action's Picker reads the live ones, the Settings tab all of them. */
+export interface Destination { id: string; projectId: string; name: string; url: string; archived: boolean; createdAt: string }
+/** What create and rotate answer: the destination with its secret, shown once and never listed again. */
+export interface DestinationWithSecret extends Destination { secret: string }
 
 export const useRules = (projectId: string | undefined) =>
   useQuery({
@@ -583,12 +585,55 @@ export const useTestRule = () =>
     mutationFn: (v: { id: string; ticketId: string }) => api<RuleTestResult>("POST", `/api/v1/rules/${v.id}/test`, { ticketId: v.ticketId }),
   });
 
+/** The project's live destinations, for the notify node's Picker. */
 export const useDestinations = (projectId: string | undefined) =>
   useQuery({
-    queryKey: ["destinations", projectId],
+    queryKey: ["destinations", projectId, "live"],
     queryFn: () => api<Destination[]>("GET", `/api/v1/destinations?projectId=${encodeURIComponent(projectId ?? "")}`),
     enabled: !!projectId,
     retry: false,
+  });
+
+/** Every destination of the project, archived ones included, for the Settings tab. */
+export const useAllDestinations = (projectId: string | undefined) =>
+  useQuery({
+    queryKey: ["destinations", projectId, "all"],
+    queryFn: () => api<Destination[]>("GET", `/api/v1/destinations?projectId=${encodeURIComponent(projectId ?? "")}&includeArchived=1`),
+    enabled: !!projectId,
+    retry: false,
+  });
+
+/** Human only: adds a destination. The answer carries the secret once; nothing lists it afterwards (400 duplicate_name, validation for a url with credentials). */
+export const useCreateDestination = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { projectId: string; name: string; url: string }) => api<DestinationWithSecret>("POST", "/api/v1/destinations", v),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["destinations"] }),
+  });
+};
+
+/** Human only: renames a destination, changes its url, or archives and restores it. */
+export const useUpdateDestination = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { id: string; patch: { name?: string; url?: string; archived?: boolean } }) => api<Destination>("PATCH", `/api/v1/destinations/${v.id}`, v.patch),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["destinations"] }),
+  });
+};
+
+/** Human only: replaces the secret; the new one comes back once. */
+export const useRotateDestination = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api<DestinationWithSecret>("POST", `/api/v1/destinations/${id}/rotate`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["destinations"] }),
+  });
+};
+
+/** Human only: queues a signed test delivery, sent by the outbox worker like any other. */
+export const useTestDestination = () =>
+  useMutation({
+    mutationFn: (id: string) => api<{ id: string }>("POST", `/api/v1/destinations/${id}/test`),
   });
 
 /**

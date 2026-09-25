@@ -1,14 +1,15 @@
 import { createContext, useContext, useEffect, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { Handle, Position, type NodeProps, type Node } from "@xyflow/react";
 import type { Actor, Board, CanvasNodeKind, Epic, EvidenceType, FieldDefinition, Lane, Tag } from "@boomerang/core";
 import { Picker, type PickerOption } from "../Picker";
 import type { Destination } from "../../lib/hooks";
+import { DEFAULT_FIELDS, HOUR_OPTIONS, MISSED_OPTIONS, REPEAT_OPTIONS, WEEKDAY_OPTIONS, buildCron, describeCron, parseCron, timezoneOptions, type Repeat, type ScheduleFields } from "./schedule";
 import {
   ACTION_OPTIONS,
   ACTOR_OPTIONS,
   CHANGED_OPTIONS,
   CONDITION_KINDS,
-  CRON_PRESETS,
   EVENT_OPTIONS,
   KIND_LABEL,
   OP_OPTIONS,
@@ -100,8 +101,9 @@ function fieldOptions(o: CanvasOptions, kinds?: string[]): PickerOption[] {
 function flagOptions(o: CanvasOptions, exclude?: string): PickerOption[] {
   return o.flags.filter((f) => f !== exclude).map((f) => ({ id: f, label: f }));
 }
+/** Only live destinations can be notified; an archived one stays named on a saved rule but is not offered. */
 function destinationOptions(o: CanvasOptions): PickerOption[] {
-  return o.destinations.map((d) => ({ id: d.id, label: d.name, hint: d.url }));
+  return o.destinations.filter((d) => !d.archived).map((d) => ({ id: d.id, label: d.name, hint: d.url }));
 }
 
 /** A typed flag name becomes an option when it is a flag name the engine accepts. */
@@ -407,56 +409,102 @@ export function ActionNode({ id, data }: NodeProps<RuleNode>) {
       )}
       {type === "add_comment" && <Field label="Comment" multiline value={(values.body as string) ?? ""} onCommit={(v) => patch({ body: v })} placeholder="Posted by the system" />}
       {type === "emit_webhook" && (
-        <Picker id={`${id}-dest`} label="Destination" options={destinationOptions(options)} value={(values.destinationId as string) ?? null} onChange={(v) => patch({ destinationId: v ?? undefined })} placeholder={options.destinations.length ? "Choose" : "No destinations yet"} />
+        <>
+          <Picker id={`${id}-dest`} label="Destination" options={destinationOptions(options)} value={(values.destinationId as string) ?? null} onChange={(v) => patch({ destinationId: v ?? undefined })} placeholder={destinationOptions(options).length ? "Choose" : "No destinations yet"} />
+          <Link className="rnode-link" to="/settings?tab=destinations">Manage destinations</Link>
+        </>
       )}
     </Card>
   );
 }
 
-const CUSTOM = "__custom__";
+const wholeNumber = (v: string, lo: number, hi: number, fallback: number): number => {
+  const n = Number(v);
+  if (v.trim() === "" || !Number.isFinite(n)) return fallback;
+  return Math.min(hi, Math.max(lo, Math.floor(n)));
+};
 
-let zones: PickerOption[] | null = null;
-function timezoneOptions(current: string | undefined): PickerOption[] {
-  if (!zones) {
-    let list: string[] = [];
-    try {
-      const intl = Intl as unknown as { supportedValuesOf?: (k: string) => string[] };
-      list = intl.supportedValuesOf ? intl.supportedValuesOf("timeZone") : [];
-    } catch {
-      list = [];
-    }
-    if (!list.includes("UTC")) list = ["UTC", ...list];
-    zones = list.map((z) => ({ id: z, label: z }));
-  }
-  return current && !zones.some((z) => z.id === current) ? [{ id: current, label: current }, ...zones] : zones;
-}
-
-/** The schedule node: a cron expression (a preset or typed) and its timezone. Task 9 brings the builder. */
+/**
+ * The schedule node: a cron builder (Repeats, then only the fields that preset needs), the
+ * timezone, and what to do with missed runs. Custom shows the five cron fields in mono with
+ * a live description. The data stays `{cron, timezone, missed}`: the builder's fields are
+ * read back out of the cron, so undo and a rule drawn by the API show as the preset they fit.
+ */
 export function ScheduleNode({ id, data }: NodeProps<RuleNode>) {
   const { values, patch } = useNode(id, data);
   const cron = (values.cron as string) ?? "";
-  const preset = CRON_PRESETS.find((p) => p.id === cron);
+  const parsed = parseCron(cron);
   // Whether the cron field is shown lives here, not in the data: the schema is strict.
-  const [customOn, setCustomOn] = useState(cron !== "" && !preset);
-  const custom = customOn || (cron !== "" && !preset);
+  const [customOn, setCustomOn] = useState(cron !== "" && parsed.repeat === "custom");
+  // The builder's fields outlive a preset change, so switching Every day to Every week keeps the hour.
+  const [fields, setFields] = useState<ScheduleFields>(cron && parsed.repeat !== "custom" ? parsed : DEFAULT_FIELDS);
+  useEffect(() => {
+    if (parsed.repeat !== "custom") setFields(parsed);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cron]);
+  const custom = customOn || (cron !== "" && parsed.repeat === "custom");
+  const repeat: Repeat | null = custom ? "custom" : cron ? parsed.repeat : null;
+
+  function choose(next: string | null) {
+    if (next === "custom") {
+      setCustomOn(true);
+      return;
+    }
+    setCustomOn(false);
+    if (!next) {
+      patch({ cron: undefined });
+      return;
+    }
+    const f = { ...fields, repeat: next as Repeat };
+    setFields(f);
+    patch({ cron: buildCron(f) });
+  }
+  function setField(delta: Partial<ScheduleFields>) {
+    const f = { ...fields, ...delta };
+    setFields(f);
+    patch({ cron: buildCron(f) });
+  }
+
+  const hourPicker = <Picker id={`${id}-hour`} label="Hour" options={HOUR_OPTIONS} value={String(fields.hour)} onChange={(v) => v && setField({ hour: Number(v) })} />;
+  const minuteField = <Field label="Minute" className="mono-input" type="number" min={0} max={59} step={1} value={String(fields.minute)} onCommit={(v) => setField({ minute: wholeNumber(v, 0, 59, fields.minute) })} />;
+  const description = custom ? (describeCron(cron) ?? "Not a valid schedule") : null;
+
   return (
     <Card id={id} kind="schedule" title={scheduleSentence(values)}>
-      <Picker
-        id={`${id}-preset`}
-        label="Schedule"
-        options={[...CRON_PRESETS, { id: CUSTOM, label: "Custom cron" }]}
-        value={custom ? CUSTOM : (preset?.id ?? null)}
-        onChange={(v) => {
-          if (v === CUSTOM) setCustomOn(true);
-          else {
-            setCustomOn(false);
-            patch({ cron: v ?? undefined });
-          }
-        }}
-        placeholder="Choose a schedule"
-      />
-      {custom && <Field label="Cron, five fields" className="mono-input" type="text" value={cron} onCommit={(v) => patch({ cron: v || undefined })} placeholder="0 9 * * 1-5" spellCheck={false} />}
+      <Picker id={`${id}-repeat`} label="Repeats" options={REPEAT_OPTIONS} value={repeat} onChange={choose} placeholder="Choose how often" />
+      {repeat === "hour" && minuteField}
+      {(repeat === "day" || repeat === "weekday") && (
+        <div className="rnode-row">
+          {hourPicker}
+          {minuteField}
+        </div>
+      )}
+      {repeat === "week" && (
+        <>
+          <Picker id={`${id}-weekday`} label="Weekday" options={WEEKDAY_OPTIONS} value={String(fields.weekday)} onChange={(v) => v && setField({ weekday: Number(v) })} />
+          <div className="rnode-row">
+            {hourPicker}
+            {minuteField}
+          </div>
+        </>
+      )}
+      {repeat === "month" && (
+        <>
+          <Field label="Day of month" className="mono-input" type="number" min={1} max={31} step={1} value={String(fields.day)} onCommit={(v) => setField({ day: wholeNumber(v, 1, 31, fields.day) })} />
+          <div className="rnode-row">
+            {hourPicker}
+            {minuteField}
+          </div>
+        </>
+      )}
+      {repeat === "custom" && (
+        <>
+          <Field label="Cron, five fields" className="mono-input" type="text" value={cron} onCommit={(v) => patch({ cron: v.trim() || undefined })} placeholder="0 9 * * 1-5" spellCheck={false} />
+          <p className={description === "Not a valid schedule" ? "rnode-note rnode-invalid" : "rnode-note muted"}>{cron ? description : "Type five fields: minute, hour, day of month, month, weekday."}</p>
+        </>
+      )}
       <Picker id={`${id}-tz`} label="Timezone" options={timezoneOptions(values.timezone as string | undefined)} value={(values.timezone as string) ?? null} onChange={(v) => patch({ timezone: v ?? undefined })} searchable placeholder="Choose a timezone" />
+      <Picker id={`${id}-missed`} label="Missed runs" options={MISSED_OPTIONS} value={(values.missed as string) ?? "run_once"} onChange={(v) => patch({ missed: v ?? "run_once" })} />
     </Card>
   );
 }

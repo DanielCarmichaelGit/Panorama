@@ -35,13 +35,22 @@ function renderSettings(path = "/settings") {
 }
 
 describe("Settings", () => {
-  it("explains the five concepts above the tabs", () => {
+  it("explains the six concepts above the tabs", () => {
     renderSettings();
-    for (const name of ["Lanes", "Evidence types", "Arcs", "Tags", "Fields"]) {
+    for (const name of ["Lanes", "Evidence types", "Arcs", "Tags", "Fields", "Destinations"]) {
       expect(screen.getByRole("button", { name: new RegExp(`^${name} `) })).toBeTruthy();
     }
+    expect(document.querySelectorAll(".settings-intro-item")).toHaveLength(6);
     expect(screen.getByText(/A ticket is always in exactly one lane/)).toBeTruthy();
     expect(screen.getByText(/That is the gate/)).toBeTruthy();
+    expect(screen.getByText(/keep the secret it shows you once/)).toBeTruthy();
+  });
+
+  it("has a Destinations tab after Evidence types that opens from the URL", () => {
+    renderSettings("/settings?tab=destinations");
+    const tabs = screen.getAllByRole("tab").map((t) => t.textContent);
+    expect(tabs).toEqual(["Fields", "Tags", "Arcs", "Lanes", "Evidence types", "Destinations"]);
+    expect(screen.getByRole("tab", { name: "Destinations" }).getAttribute("aria-selected")).toBe("true");
   });
 
   it("selects a tab when its concept is clicked", () => {

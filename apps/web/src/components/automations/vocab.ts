@@ -1,6 +1,7 @@
 import type { Action, CanvasNodeKind, Family, RuleEvent } from "@boomerang/core";
 import { ACTION_TARGET_KEY, ACTION_TYPES, MAX_CONDITION_DEPTH, RULE_EVENT_TYPES } from "@boomerang/core";
 import type { CanvasError } from "@boomerang/core";
+import { scheduleTitle } from "./schedule";
 
 /**
  * The words the canvas uses for the engine's vocabulary: every event, condition, operator
@@ -320,19 +321,9 @@ export function eventSentence(data: Record<string, unknown>, names: Names): stri
   }
 }
 
-export const CRON_PRESETS = [
-  { id: "0 * * * *", label: "Every hour" },
-  { id: "0 9 * * *", label: "Every day at 9:00" },
-  { id: "0 9 * * 1-5", label: "Every weekday at 9:00" },
-  { id: "0 9 * * 1", label: "Every Monday at 9:00" },
-  { id: "0 0 1 * *", label: "The first of every month" },
-];
-
+/** The schedule node's title: the cron in words and its timezone ("Every weekday at 09:00, Europe/London"). */
 export function scheduleSentence(data: Record<string, unknown>): string {
-  const cron = data.cron as string | undefined;
-  if (!cron) return "Choose a schedule";
-  const preset = CRON_PRESETS.find((p) => p.id === cron);
-  return preset ? preset.label : `Cron ${cron}`;
+  return scheduleTitle(data);
 }
 
 /** The fields `ticket.updated` can name, as people read them; the id is the key the event carries. The Picker also takes a typed key. */

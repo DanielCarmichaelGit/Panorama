@@ -252,6 +252,92 @@ describe("Automations view", () => {
   });
 });
 
+/** A rule that starts on a schedule, drawn as the builder reads it. */
+const scheduled = rule({
+  id: "r3",
+  name: "Morning sweep",
+  event: { type: "schedule", cron: "0 9 * * 1-5", timezone: "Europe/London", missed: "run_once" },
+  conditions: [],
+  actions: [{ type: "emit_webhook", destinationId: "d1" }],
+  canvas: {
+    nodes: [
+      { id: "schedule", kind: "schedule", position: { x: 0, y: 0 }, data: { cron: "0 9 * * 1-5", timezone: "Europe/London", missed: "run_once" } },
+      { id: "a1", kind: "action", position: { x: 288, y: 0 }, data: { type: "emit_webhook", destinationId: "d1" } },
+    ],
+    edges: [{ id: "schedule-a1", source: "schedule", target: "a1" }],
+  },
+});
+
+const destinations = [
+  { id: "d1", projectId: "p1", name: "Slack relay", url: "https://hooks.example.com/a", archived: false, createdAt: "" },
+  { id: "d2", projectId: "p1", name: "Old relay", url: "https://old.example.com/b", archived: true, createdAt: "" },
+];
+
+describe("Schedule node", () => {
+  it("reads the cron as a preset with its fields, titles the node in words, and rewrites the cron when the preset changes", async () => {
+    mockApi([scheduled]);
+    renderView("/automations/r3");
+    await waitFor(() => expect(document.querySelectorAll(".rnode")).toHaveLength(2));
+    const node = nodeEl("schedule")!;
+    expect(node.querySelector(".rnode-kind")?.textContent).toBe("Every");
+    expect(node.querySelector(".rnode-title")?.textContent).toBe("Every weekday at 09:00, Europe/London");
+    expect(within(node).getByRole("button", { name: "Repeats" }).textContent).toBe("Every weekday");
+    expect(within(node).getByRole("button", { name: "Hour" }).textContent).toBe("09:00");
+    expect((within(node).getByLabelText("Minute") as HTMLInputElement).value).toBe("0");
+    expect(within(node).getByRole("button", { name: "Missed runs" }).textContent).toBe("Run once");
+    expect(within(node).queryByLabelText("Cron, five fields")).toBeNull();
+
+    fireEvent.click(within(node).getByRole("button", { name: "Repeats" }));
+    fireEvent.click(await screen.findByRole("option", { name: "Every week" }));
+    await waitFor(() => expect(nodeEl("schedule")?.querySelector(".rnode-title")?.textContent).toBe("Every Monday at 09:00, Europe/London"));
+    fireEvent.click(within(nodeEl("schedule")!).getByRole("button", { name: "Weekday" }));
+    fireEvent.click(await screen.findByRole("option", { name: "Friday" }));
+    await waitFor(() => expect(nodeEl("schedule")?.querySelector(".rnode-title")?.textContent).toBe("Every Friday at 09:00, Europe/London"));
+
+    fireEvent.click(within(nodeEl("schedule")!).getByRole("button", { name: "Missed runs" }));
+    fireEvent.click(await screen.findByRole("option", { name: "Skip" }));
+    await waitFor(() => expect(within(nodeEl("schedule")!).getByRole("button", { name: "Missed runs" }).textContent).toBe("Skip"));
+  });
+
+  it("custom shows the cron in mono with a live description, and says when it is not a schedule", async () => {
+    mockApi([scheduled]);
+    renderView("/automations/r3");
+    await waitFor(() => expect(document.querySelectorAll(".rnode")).toHaveLength(2));
+    fireEvent.click(within(nodeEl("schedule")!).getByRole("button", { name: "Repeats" }));
+    fireEvent.click(await screen.findByRole("option", { name: "Custom" }));
+    const cron = within(nodeEl("schedule")!).getByLabelText("Cron, five fields") as HTMLInputElement;
+    expect(cron.classList.contains("mono-input")).toBe(true);
+    expect(cron.value).toBe("0 9 * * 1-5");
+    expect(within(nodeEl("schedule")!).getByText("Every weekday at 09:00")).toBeTruthy();
+
+    fireEvent.change(cron, { target: { value: "*/15 * * * *" } });
+    fireEvent.blur(cron);
+    await waitFor(() => expect(nodeEl("schedule")?.querySelector(".rnode-title")?.textContent).toBe("Every 15 minutes, Europe/London"));
+    expect(within(nodeEl("schedule")!).getByText("Every 15 minutes")).toBeTruthy();
+
+    fireEvent.change(cron, { target: { value: "0 9 * *" } });
+    fireEvent.blur(cron);
+    await waitFor(() => expect(nodeEl("schedule")?.querySelector(".rnode-title")?.textContent).toBe("Not a valid schedule, Europe/London"));
+    expect(within(nodeEl("schedule")!).getByText("Not a valid schedule").classList.contains("rnode-invalid")).toBe(true);
+  });
+});
+
+describe("notify node", () => {
+  it("offers only live destinations and links to the Destinations tab", async () => {
+    mockApi([scheduled], (c) => (c.path.startsWith("/api/v1/destinations?") ? destinations : undefined));
+    renderView("/automations/r3");
+    await waitFor(() => expect(document.querySelectorAll(".rnode")).toHaveLength(2));
+    const node = nodeEl("a1")!;
+    expect(node.querySelector(".rnode-title")?.textContent).toBe("Send to Slack relay");
+    const link = within(node).getByRole("link", { name: "Manage destinations" }) as HTMLAnchorElement;
+    expect(link.getAttribute("href")).toBe("/settings?tab=destinations");
+    fireEvent.click(within(node).getByRole("button", { name: "Destination" }));
+    const options = (await screen.findAllByRole("option")).map((o) => o.textContent);
+    expect(options.some((t) => t?.includes("Slack relay"))).toBe(true);
+    expect(options.some((t) => t?.includes("Old relay"))).toBe(false);
+  });
+});
+
 describe("keyboard inside nodes", () => {
   async function drawn() {
     mockApi([rule({})]);

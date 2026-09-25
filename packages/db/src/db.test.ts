@@ -149,7 +149,7 @@ describe("ticket refs", () => {
 });
 
 describe("keyed database migration", () => {
-  it("upgrades an encrypted database from version 7 with every foreign key intact", () => {
+  it("upgrades an encrypted database from version 7 to the current version with every foreign key intact", () => {
     const dir = mkdtempSync(join(tmpdir(), "pan-"));
     const key = "ab".repeat(32);
     const db = d.openDatabase(join(dir, "p.db"), key);
@@ -159,7 +159,7 @@ describe("keyed database migration", () => {
     const field = d.createField(db, { projectId: project.id, name: "Points", key: "points", kind: "number", required: false }, NOW);
     d.setTicketFields(db, t.id, { points: 3 });
     d.migrate(db);
-    expect(db.pragma("user_version", { simple: true })).toBe(8);
+    expect(db.pragma("user_version", { simple: true })).toBe(9);
     expect(db.pragma("foreign_key_check")).toEqual([]);
     expect(d.getTicketFields(db, t.id)).toEqual({ points: 3 });
     expect(d.getField(db, field.id)!.key).toBe("points");
@@ -184,7 +184,7 @@ describe("M8 migration", () => {
     expect(() => db.prepare("insert into field_definitions(id, project_id, name, key, kind, options, required, position, archived, created_at) values(?,?,?,?,?,?,?,?,?,?)")
       .run("fd2", "proj1", "Spec", "spec", "file", "[]", 0, 1, 0, NOW)).toThrow(/CHECK constraint/);
 
-    d.migrate(db); // completes the upgrade to M8
+    d.migrateTo(db, 8); // applies M8 alone; M9 has its own test in automation.test.ts
 
     expect(db.pragma("user_version", { simple: true })).toBe(8);
     expect(d.getField(db, "fd1")).toMatchObject({ key: "points", kind: "number", required: true });

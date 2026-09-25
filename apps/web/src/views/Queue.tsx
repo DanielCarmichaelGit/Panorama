@@ -3,11 +3,37 @@ import { useNavigate, useOutletContext } from "react-router-dom";
 import { CaretDown, CaretRight } from "@phosphor-icons/react";
 import type { Lane, Project } from "@boomerang/core";
 import { BoomerangScene } from "../lib/iso";
-import { useAgents, useBoards, useEpics, useQueue, useTags, useTickets } from "../lib/hooks";
+import { useAgents, useBoards, useEpics, useProjectMetrics, useQueue, useTags, useTickets } from "../lib/hooks";
 import { isTypingTarget } from "../lib/keys";
+import { PERIODS, periodFrom, usePeriod } from "../lib/metrics";
+import { FigureSpans } from "../components/Figures";
+import { Picker } from "../components/Picker";
 import { TicketRow } from "../components/TicketRow";
 import { NewTicket } from "../components/NewTicket";
 import { PresenceStrip, presenceLine } from "../components/PresenceStrip";
+
+/**
+ * The quiet figures row under the Queue's title: the period (This week by default, kept in the
+ * URL as `?period=`) and the project's time, tokens and estimated cost for it. The figures wait
+ * for the rollup rather than showing zeros that would then jump.
+ */
+function QueueFigures({ projectId }: { projectId: string }) {
+  const [period, setPeriod] = usePeriod();
+  const metrics = useProjectMetrics(projectId, period, "project");
+  return (
+    <div className="figures enter-header">
+      <Picker
+        id="queue-period"
+        label="Period"
+        hideLabel
+        options={PERIODS.map((p) => ({ id: p.id, label: p.label }))}
+        value={period}
+        onChange={(id) => setPeriod(periodFrom(id))}
+      />
+      {metrics.data && <FigureSpans figures={metrics.data.total} priceDate={metrics.data.priceDate} />}
+    </div>
+  );
+}
 
 export function Queue() {
   const { project, lanes } = useOutletContext<{ project: Project; lanes: Lane[] }>();
@@ -112,6 +138,7 @@ export function Queue() {
             </>
           )}
         </div>
+        <QueueFigures projectId={project.id} />
         <PresenceStrip agents={agents} tickets={tickets} onOpen={(id) => navigate(`/t/${id}`)} />
         <div className="rows">
           {active.length > 0 && (
@@ -137,6 +164,7 @@ export function Queue() {
         <div className="spacer" />
         <button className="btn" onClick={() => setShowNew(true)}>New ticket</button>
       </div>
+      <QueueFigures projectId={project.id} />
       <PresenceStrip agents={agents} tickets={tickets} onOpen={(id) => navigate(`/t/${id}`)} />
       <div ref={rowsRef}>
         {needsHuman.map((t, i) => (

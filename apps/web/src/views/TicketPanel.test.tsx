@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -29,6 +29,12 @@ const ticket: Ticket = {
 
 const lanes = [lane({}), lane({ id: "l2", name: "Ready", position: 1 })];
 
+const tokens = (total: number) => ({ input: total, output: 0, cacheRead: 0, cacheWrite: 0, total });
+const emptyMetrics = () => ({
+  ticketId: "t1", estimate: true, priceDate: "2026-09-24", seconds: 0, openTimers: 0, tokens: tokens(0), usd: 0, known: 0, unpriced: 0, entries: 0,
+  byModel: [], byActor: [], running: [],
+});
+
 /** Renders the panel with the gates query held open until `resolveGates` is called. */
 function renderPanel(
   opts: {
@@ -40,6 +46,7 @@ function renderPanel(
     fields?: unknown[];
     tickets?: unknown[];
     links?: { links: unknown[]; tickets: unknown[] };
+    metrics?: Record<string, unknown>;
   } = {},
 ) {
   const {
@@ -51,6 +58,7 @@ function renderPanel(
     fields = [],
     tickets = [],
     links = { links: [], tickets: [] },
+    metrics = emptyMetrics(),
   } = opts;
   let resolveGates!: (v: Record<string, unknown>) => void;
   const gates = new Promise<Record<string, unknown>>((resolve) => { resolveGates = resolve; });
@@ -66,6 +74,7 @@ function renderPanel(
     if (method === "GET" && path === "/api/v1/fields?projectId=p1") return fields;
     if (method === "GET" && path === "/api/v1/tickets?projectId=p1") return tickets;
     if (method === "GET" && path === "/api/v1/tickets/t1/links") return links;
+    if (method === "GET" && path === "/api/v1/tickets/t1/metrics") return metrics;
     if (method === "PATCH" && path === "/api/v1/tickets/t1") return { ...currentTicket, ...(body as object) };
     if (method === "POST" && /^\/api\/v1\/tickets\/.+\/links$/.test(path)) {
       return { id: "link1", projectId: "p1", fromId: path.split("/")[4], toId: (body as any)?.toId, kind: (body as any)?.kind, createdAt: "" };
@@ -280,6 +289,54 @@ describe("TicketPanel success criteria", () => {
     await waitFor(() =>
       expect(api).toHaveBeenCalledWith("PATCH", "/api/v1/tickets/t1", { successCriteria: "- [ ] One <input type=\"checkbox\">\n- [x] Two\n" }),
     );
+  });
+});
+
+describe("TicketPanel cost block", () => {
+  const model = (over: Record<string, unknown>) => ({ model: "anthropic/claude-fable-5-1", tokens: tokens(12_345), usd: 9.4, known: 9.4, unpriced: 0, entries: 3, ...over });
+  const actor = (over: Record<string, unknown>) => ({ actorId: "ag1", name: "worker", seconds: 7500, openTimers: 0, tokens: tokens(12_345), usd: 9.4, known: 9.4, unpriced: 0, entries: 3, ...over });
+
+  it("says one muted line when nothing was recorded", async () => {
+    renderPanel();
+    await screen.findByRole("button", { name: "Lane" });
+    expect(await screen.findByText("No time or cost recorded")).toBeTruthy();
+    expect(screen.queryByText(/Timer running/)).toBeNull();
+  });
+
+  it("shows time, tokens and the estimate with its price date on hover, plus the model and actor breakdowns", async () => {
+    renderPanel({ metrics: { ...emptyMetrics(), seconds: 7500, tokens: tokens(12_345), usd: 9.4, known: 9.4, entries: 3, byModel: [model({})], byActor: [actor({})] } });
+    const heading = await screen.findByRole("heading", { name: "Cost" });
+    const block = heading.parentElement!;
+    const costs = await within(block).findAllByText("~$9.40");
+    expect(costs.length).toBeGreaterThanOrEqual(1);
+    for (const c of costs) expect(c.getAttribute("title")).toBe("Estimate from models.dev prices dated 2026-09-24; this could be lower");
+    expect(within(block).getAllByText("2h 5m").length).toBeGreaterThanOrEqual(1);
+    expect(within(block).getAllByText("12.3k").length).toBeGreaterThanOrEqual(1);
+    expect(within(block).getByText("anthropic/claude-fable-5-1")).toBeTruthy();
+    expect(within(block).getByText("worker")).toBeTruthy();
+    expect(screen.queryByText("No time or cost recorded")).toBeNull();
+  });
+
+  it("marks an unpriced model as no price and gives the total as at least the priced part", async () => {
+    renderPanel({
+      metrics: {
+        ...emptyMetrics(), tokens: tokens(2_000_000), usd: null, known: 1.5, unpriced: 1, entries: 2,
+        byModel: [model({ usd: 1.5, known: 1.5, tokens: tokens(1_000_000), entries: 1 }), model({ model: "acme/mystery-model-9", usd: null, known: 0, unpriced: 1, tokens: tokens(1_000_000), entries: 1 })],
+        byActor: [actor({ seconds: 0, tokens: tokens(2_000_000), usd: null, known: 1.5, unpriced: 1, entries: 2 })],
+      },
+    });
+    // The summary and the actor row both say it; the model row for the priced model says its own figure.
+    expect((await screen.findAllByText("at least ~$1.50")).length).toBeGreaterThanOrEqual(1);
+    const heading = screen.getByRole("heading", { name: "Cost" });
+    const block = heading.parentElement!;
+    const row = within(block).getByText("acme/mystery-model-9").closest("li")!;
+    expect(within(row).getByText("no price")).toBeTruthy();
+  });
+
+  it("says who has a timer running and since when", async () => {
+    renderPanel({ metrics: { ...emptyMetrics(), seconds: 90, openTimers: 1, running: [{ actorId: "ag1", name: "worker", startedAt: "2026-09-24T10:00:00.000Z" }], byActor: [actor({ seconds: 90, openTimers: 1, tokens: tokens(0), usd: 0, known: 0, entries: 0 })] } });
+    const line = await screen.findByText(/Timer running for worker since /);
+    expect(line.textContent).toContain(new Date("2026-09-24T10:00:00.000Z").toLocaleString());
   });
 });
 

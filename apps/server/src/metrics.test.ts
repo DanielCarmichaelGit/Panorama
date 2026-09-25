@@ -77,6 +77,8 @@ describe("timers", () => {
     const metrics = (await w.human("GET", `/api/v1/tickets/${t.id}/metrics`)).json;
     expect(metrics.openTimers).toBe(1);
     expect(metrics.seconds).toBe(20);
+    // The panel says who is on the clock and since when, so the open timers come back named.
+    expect(metrics.running).toEqual([{ actorId: "human", name: expect.any(String), startedAt: "2026-09-23T10:00:00.000Z" }]);
   });
 
   it("refuses an agent without timer.use, and one outside the project", async () => {

@@ -3,8 +3,9 @@ import { useOutletContext } from "react-router-dom";
 import { CaretDown, CaretRight } from "@phosphor-icons/react";
 import { AGENT_ACTIONS, type Actor, type AgentAction, type Lane, type Project, type Scopes } from "@boomerang/core";
 import { BoomerangScene } from "../lib/iso";
-import { useAgents, useApproveAgent, useProjects, useRevokeAgent, useTickets } from "../lib/hooks";
+import { useAgents, useApproveAgent, useProjectMetrics, useProjects, useRevokeAgent, useTickets } from "../lib/hooks";
 import { isPickerOpen } from "../lib/keys";
+import { periodLabel, usePeriod } from "../lib/metrics";
 import { useFocusTrap } from "../lib/useFocusTrap";
 import { AgentCard } from "../components/AgentCard";
 import { Picker } from "../components/Picker";
@@ -152,6 +153,13 @@ export function Agents() {
   const revoke = useRevokeAgent();
   const outlet = useOutletContext<{ project: Project; lanes: Lane[] } | undefined>();
   const tickets = useTickets(outlet?.project.id).data ?? [];
+  // The same period the Queue shows, from the URL; each card gets its own row of the rollup.
+  const [period] = usePeriod();
+  const metrics = useProjectMetrics(outlet?.project.id, period, "agent");
+  const totalsFor = (agentId: string) => {
+    const group = metrics.data?.groups.find((g) => g.id === agentId);
+    return group ? { figures: group, priceDate: metrics.data!.priceDate, periodLabel: periodLabel(period) } : undefined;
+  };
   const [approving, setApproving] = useState<Actor | null>(null);
   const [working, setWorking] = useState<string | null>(null);
   const [rowError, setRowError] = useState<{ id: string; message: string } | null>(null);
@@ -238,6 +246,7 @@ export function Agents() {
                 revoking={working === a.id}
                 error={errorFor(a.id)}
                 onRevoke={() => withdraw(a.id)}
+                totals={totalsFor(a.id)}
               />
             ))}
           </div>

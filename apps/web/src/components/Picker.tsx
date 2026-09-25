@@ -35,6 +35,8 @@ export type PickerProps = (Single | Multi) & {
   autoOpen?: boolean;
   /** Keeps the label in the accessibility tree but hides it visually, for a spot too tight for one (the sidebar's project switcher). */
   hideLabel?: boolean;
+  /** A fact shown after the value on a single trigger, in the mono meta style (the Board's arc figures). */
+  hint?: React.ReactNode;
 };
 
 type Row =
@@ -91,7 +93,7 @@ interface Position {
  * cramped for a visible label.
  */
 export function Picker(props: PickerProps): JSX.Element {
-  const { id, label, options, placeholder, searchable, swatch, clearable, onCreate, createLabel, disabled, busy, describedBy, autoOpen, hideLabel } = props;
+  const { id, label, options, placeholder, searchable, swatch, clearable, onCreate, createLabel, disabled, busy, describedBy, autoOpen, hideLabel, hint } = props;
 
   const [open, setOpen] = useState(!!autoOpen);
   const [search, setSearch] = useState("");
@@ -431,6 +433,7 @@ export function Picker(props: PickerProps): JSX.Element {
             <span className={selectedOptions[0] ? "picker-value-text" : "picker-placeholder"}>
               {selectedOptions[0]?.label ?? placeholder ?? "Select"}
             </span>
+            {hint && <span className="picker-trigger-hint">{hint}</span>}
           </span>
         )}
         {props.multi && (

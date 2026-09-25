@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -93,13 +93,17 @@ describe("filterTickets", () => {
   });
 });
 
+const tokens = (total: number) => ({ input: total, output: 0, cacheRead: 0, cacheWrite: 0, total });
+const epicGroup = (over: Record<string, unknown>) => ({ id: "e1", name: "Growth", seconds: 7500, openTimers: 0, tokens: tokens(12_345), usd: 9.4, known: 9.4, unpriced: 0, entries: 3, ...over });
+
 function renderBoard(
   tickets: Ticket[],
   boards: BoardType[] = [board({})],
-  options: { epics?: Epic[]; tags?: Tag[]; initialEntries?: string[] } = {},
+  options: { epics?: Epic[]; tags?: Tag[]; initialEntries?: string[]; epicGroups?: unknown[] } = {},
 ) {
-  const { epics = [], tags = [], initialEntries = ["/"] } = options;
+  const { epics = [], tags = [], initialEntries = ["/"], epicGroups = [] } = options;
   outletContext = { project, lanes };
+  const metricsCalls: string[] = [];
   vi.mocked(api).mockImplementation(async (method: string, path: string) => {
     if (path === `/api/v1/tickets?projectId=${project.id}`) return tickets;
     if (path === `/api/v1/projects/${project.id}/boards`) return boards;
@@ -108,17 +112,53 @@ function renderBoard(
     if (path === `/api/v1/epics?projectId=${project.id}`) return epics;
     if (path === `/api/v1/tags?projectId=${project.id}`) return tags;
     if (path.endsWith("/gates")) return {};
+    if (path.startsWith("/api/v1/metrics?")) {
+      metricsCalls.push(path);
+      return { projectId: project.id, estimate: true, priceDate: "2026-09-24", period: { kind: "week", from: null, to: null }, groupBy: "epic", total: epicGroup({}), groups: epicGroups };
+    }
     throw new Error(`unexpected ${method} ${path}`);
   });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
-  return render(
+  const utils = render(
     <QueryClientProvider client={client}>
       <MemoryRouter initialEntries={initialEntries} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         <Board />
       </MemoryRouter>
     </QueryClientProvider>,
   );
+  return { ...utils, metricsCalls };
 }
+
+describe("Board arc figures", () => {
+  it("shows the selected arc's time and estimated cost for the period on the Arc picker, with the price date on hover", async () => {
+    const epics = [epic({ id: "e1", name: "Growth" })];
+    const { metricsCalls } = renderBoard([ticket({ id: "t1", laneId: "l1", key: "PAN-1", epicId: "e1" })], [board({})], {
+      epics, initialEntries: ["/board?epic=e1&period=month"], epicGroups: [epicGroup({}), epicGroup({ id: "e2", name: "Platform", usd: 1, known: 1 })],
+    });
+    await screen.findByRole("heading", { name: "Backlog" });
+    const trigger = screen.getByRole("button", { name: "Arc" });
+    await waitFor(() => expect(trigger.textContent).toContain("~$9.40"));
+    expect(trigger.textContent).toContain("2h 5m");
+    expect(trigger.textContent).not.toContain("~$1.00");
+    expect(within(trigger).getByText("~$9.40").closest("[title]")!.getAttribute("title")).toBe("Estimate from models.dev prices dated 2026-09-24; this could be lower");
+    expect(metricsCalls).toEqual(["/api/v1/metrics?projectId=p1&period=month&groupBy=epic"]);
+  });
+
+  it("says at least on the arc when one of its models has no price", async () => {
+    const epics = [epic({ id: "e1", name: "Growth" })];
+    renderBoard([], [board({})], { epics, initialEntries: ["/board?epic=e1"], epicGroups: [epicGroup({ usd: null, known: 4, unpriced: 1 })] });
+    await screen.findByRole("heading", { name: "Backlog" });
+    const trigger = screen.getByRole("button", { name: "Arc" });
+    await waitFor(() => expect(trigger.textContent).toContain("at least ~$4.00"));
+  });
+
+  it("asks for no rollup while no arc is selected", async () => {
+    const { metricsCalls } = renderBoard([], [board({})], { epics: [epic({ id: "e1", name: "Growth" })] });
+    await screen.findByRole("heading", { name: "Backlog" });
+    expect(metricsCalls).toEqual([]);
+    expect(screen.getByRole("button", { name: "Arc" }).textContent).not.toContain("~$");
+  });
+});
 
 describe("Board", () => {
   it("renders a column per lane with its count and a card link into the board route", async () => {

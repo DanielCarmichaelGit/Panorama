@@ -176,8 +176,8 @@ export function Picker(props: PickerProps): JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  // Outside click closes the popover. The popover itself lives in a portal on document.body, so
-  // its containment has to be checked separately from the trigger's own subtree.
+  // Outside click closes the popover. The popover itself lives in a portal outside the trigger's
+  // subtree, so its containment has to be checked separately.
   useEffect(() => {
     if (!open) return;
     function onDocMouseDown(e: MouseEvent) {
@@ -559,7 +559,11 @@ export function Picker(props: PickerProps): JSX.Element {
               </>
             )}
           </div>,
-          document.body,
+          // Popovers sit at the menu layer (50), modals at the modal layer (60), so a popover
+          // portalled to document.body from a Picker inside a modal would paint under the
+          // backdrop. Portalling it into the backdrop instead keeps it inside the modal's own
+          // stacking context, above the dialog, without moving it off the menu layer.
+          wrapRef.current?.closest(".modal-back") ?? document.body,
         )}
     </div>
   );

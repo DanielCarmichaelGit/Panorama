@@ -286,3 +286,25 @@ describe("Picker", () => {
     expect(trigger.getAttribute("aria-activedescendant")).toBe("swap-picker-option-y1");
   });
 });
+
+describe("Picker inside a modal", () => {
+  it("mounts its popover inside the modal's backdrop, so it stacks above the dialog rather than under the backdrop", () => {
+    render(
+      <div className="modal-back">
+        <div className="modal card" role="dialog">
+          <SingleHarness options={BOARD_OPTIONS} />
+        </div>
+      </div>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Board" }));
+    const listbox = screen.getByRole("listbox");
+    expect(listbox.parentElement?.classList.contains("modal-back")).toBe(true);
+  });
+
+  it("still mounts on document.body when there is no modal", () => {
+    render(<SingleHarness options={BOARD_OPTIONS} />);
+    fireEvent.click(screen.getByRole("button", { name: "Board" }));
+    expect(screen.getByRole("listbox").parentElement).toBe(document.body);
+  });
+});
+

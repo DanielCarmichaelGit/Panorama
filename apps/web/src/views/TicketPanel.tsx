@@ -23,6 +23,7 @@ import {
 import { AddEvidence } from "../components/AddEvidence";
 import { Chip } from "../components/Chip";
 import { Composer } from "../components/Composer";
+import { FieldControl, isFieldEmpty } from "../components/FieldControl";
 import { GateList, laneOptionLabel, nextLane } from "../components/GateList";
 import { Picker, type PickerOption } from "../components/Picker";
 import { Thread } from "../components/Thread";
@@ -48,12 +49,6 @@ function errorMessage(e: unknown, fallback: string): string {
 const NOTICES: Record<string, string> = {
   partial: "Ticket created; some details did not save",
 };
-
-/** A required field with nothing in it: blank text counts as empty, `false` on a checkbox does not. */
-function isFieldEmpty(def: FieldDefinition, value: FieldValue | undefined): boolean {
-  if (value === undefined || value === null) return true;
-  return def.kind === "text" && value === "";
-}
 
 function EpicRow({ ticket }: { ticket: Ticket }) {
   const epics = useEpics(ticket.projectId);
@@ -218,69 +213,7 @@ function FieldRow({ ticket, def }: { ticket: Ticket; def: FieldDefinition }) {
         {def.required && " *"}
       </span>
       <div className="props-control">
-        {def.kind === "text" && (
-          <input
-            id={inputId}
-            className="input"
-            aria-label={def.name}
-            value={typeof draft === "string" ? draft : ""}
-            onChange={(e) => setDraft(e.target.value)}
-            onBlur={() => save(draft === "" ? null : draft)}
-          />
-        )}
-        {def.kind === "number" && (
-          <input
-            id={inputId}
-            className="input"
-            type="number"
-            inputMode="numeric"
-            aria-label={def.name}
-            value={typeof draft === "number" ? draft : ""}
-            onChange={(e) => setDraft(e.target.value === "" ? null : Number(e.target.value))}
-            onBlur={() => save(draft)}
-          />
-        )}
-        {def.kind === "date" && (
-          <input
-            id={inputId}
-            className="input"
-            type="date"
-            aria-label={def.name}
-            value={typeof draft === "string" ? draft : ""}
-            onChange={(e) => {
-              const value = e.target.value || null;
-              setDraft(value);
-              save(value);
-            }}
-          />
-        )}
-        {def.kind === "select" && (
-          <Picker
-            id={inputId}
-            label={def.name}
-            hideLabel
-            clearable
-            value={typeof draft === "string" ? draft : null}
-            onChange={(value) => {
-              setDraft(value);
-              save(value);
-            }}
-            options={def.options.map((o) => ({ id: o.value, label: o.label }))}
-          />
-        )}
-        {def.kind === "checkbox" && (
-          <label className="checkbox-row">
-            <input
-              type="checkbox"
-              checked={draft === true}
-              onChange={(e) => {
-                setDraft(e.target.checked);
-                save(e.target.checked);
-              }}
-            />
-            {def.name}
-          </label>
-        )}
+        <FieldControl id={inputId} def={def} value={draft} onChange={setDraft} onCommit={save} />
         {error && <p className="error" role="alert">{error}</p>}
       </div>
     </>

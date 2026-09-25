@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { checkGate, DEFAULT_EVIDENCE_TYPES, evaluateEvidence } from "./index";
+import { checkGate, DEFAULT_EVIDENCE_TYPES, evaluateEvidence, LaneRequirementsInput } from "./index";
 
 const t = (kind: any, params: any = {}) => ({ kind, params });
 
@@ -42,6 +42,32 @@ describe("checkGate", () => {
     expect(checkGate(req, [{ typeId: "et_eval_score", result: "pass" }, { typeId: "et_test_run", result: "pass" }, { typeId: "et_test_run", result: "pass" }])).toEqual([]);
   });
   it("is empty for a lane with no requirements", () => { expect(checkGate([], [])).toEqual([]); });
+  it("carries the requirement's description on a missing entry, and omits the key when there is none", () => {
+    const described = [{ typeId: "et_file", count: 1, description: "A markdown file explaining what needs to be done" }, { typeId: "et_test_run", count: 1 }];
+    expect(checkGate(described, [])).toEqual([
+      { typeId: "et_file", need: 1, have: 0, description: "A markdown file explaining what needs to be done" },
+      { typeId: "et_test_run", need: 1, have: 0 },
+    ]);
+    expect(Object.keys(checkGate(described, [])[1])).toEqual(["typeId", "need", "have"]);
+  });
+});
+
+describe("LaneRequirementsInput", () => {
+  it("trims a description, drops an empty one, and refuses one over 2000 characters", () => {
+    const parsed = LaneRequirementsInput.parse({ requirements: [
+      { typeId: "et_file", count: 1, description: "  Show that the issue reproduces  " },
+      { typeId: "et_test_run", count: 2, description: "   " },
+      { typeId: "et_pr_link", count: 1 },
+    ] });
+    expect(parsed.requirements).toEqual([
+      { typeId: "et_file", count: 1, description: "Show that the issue reproduces" },
+      { typeId: "et_test_run", count: 2 },
+      { typeId: "et_pr_link", count: 1 },
+    ]);
+    expect(LaneRequirementsInput.safeParse({ requirements: [{ typeId: "et_file", count: 1, description: "x".repeat(2000) }] }).success).toBe(true);
+    expect(LaneRequirementsInput.safeParse({ requirements: [{ typeId: "et_file", count: 1, description: "x".repeat(2001) }] }).success).toBe(false);
+    expect(LaneRequirementsInput.safeParse({ requirements: [{ typeId: "et_file", count: 1, description: 3 }] }).success).toBe(false);
+  });
 });
 
 describe("defaults", () => {

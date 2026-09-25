@@ -18,6 +18,13 @@ describe("evidence types and lanes", () => {
     expect(lanes.find((l) => l.name === "Ready for Production")!.evidenceRequirements).toEqual([{ typeId: "et_eval_score", count: 1 }]);
     expect(lanes.find((l) => l.name === "Backlog")!.evidenceRequirements).toEqual([]);
   });
+  it("round-trips a requirement's description through the lane's JSON", () => {
+    const { db, lanes } = world();
+    const reqs = [{ typeId: "et_file", count: 1, description: "A markdown file explaining what needs to be done" }, { typeId: "et_test_run", count: 1 }];
+    expect(d.setLaneRequirements(db, lanes[1].id, reqs).evidenceRequirements).toEqual(reqs);
+    expect(d.getLane(db, lanes[1].id)!.evidenceRequirements).toEqual(reqs);
+    expect(d.listLanes(db, lanes[1].projectId)[1].evidenceRequirements).toEqual(reqs);
+  });
   it("updates lane requirements", () => {
     const { db, lanes } = world();
     const l = d.setLaneRequirements(db, lanes[1].id, [{ typeId: "et_test_run", count: 2 }]);

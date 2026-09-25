@@ -294,9 +294,12 @@ export const AddEvidenceInput = z
   .strict();
 export type AddEvidenceInput = z.infer<typeof AddEvidenceInput>;
 
-export const LaneRequirementsInput = z
-  .object({
-    requirements: z.array(z.object({ typeId: z.string().min(1), count: z.number().int().min(1).max(20) }).strict()).max(20),
-  })
-  .strict();
+// An empty or whitespace-only description is the same as none: it is dropped rather than
+// stored as "", so a requirement either has something to show or has no key at all.
+const laneRequirement = z
+  .object({ typeId: z.string().min(1), count: z.number().int().min(1).max(20), description: z.string().trim().max(2000).optional() })
+  .strict()
+  .transform(({ description, ...r }): LaneRequirement => (description ? { ...r, description } : r));
+
+export const LaneRequirementsInput = z.object({ requirements: z.array(laneRequirement).max(20) }).strict();
 export type LaneRequirementsInput = z.infer<typeof LaneRequirementsInput>;

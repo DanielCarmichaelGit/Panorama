@@ -77,6 +77,15 @@ export function listRuleRuns(db: DB, ruleId: string, opts: { limit?: number; bef
   ).all(ruleId, opts.before, limit).map(toRun);
 }
 
+/** Per rule of a project, how many runs it has and when the last fired: one grouped query,
+ *  so the rule list can carry `runCount` and `lastFiredAt` without a query per rule. */
+export function ruleRunStats(db: DB, projectId: string): Map<string, { runCount: number; lastFiredAt: string | null }> {
+  const rows = db
+    .prepare("select rule_id, count(*) as n, max(fired_at) as last from rule_runs where rule_id in (select id from rules where project_id = ?) group by rule_id")
+    .all(projectId) as { rule_id: string; n: number; last: string | null }[];
+  return new Map(rows.map((r) => [r.rule_id, { runCount: r.n, lastFiredAt: r.last }]));
+}
+
 export type MissedPolicy = "skip" | "run_once" | "run_all";
 /** The scheduler's state for a rule whose event is a schedule. `nextRunAt` is computed by the
  *  scheduler (croner, task 5) and is null until it has; a null never comes due. */

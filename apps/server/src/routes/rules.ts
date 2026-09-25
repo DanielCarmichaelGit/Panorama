@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { CanvasDocSchema, canvasToRule, type CanvasDoc, type Rule, type RuleBody } from "@boomerang/core";
-import { createRule, deleteRule, getProject, getRule, listRuleRuns, listRules, updateRule, type DB } from "@boomerang/db";
+import { createRule, deleteRule, getProject, getRule, listRuleRuns, listRules, ruleRunStats, updateRule, type DB } from "@boomerang/db";
 import { getDb, requireCan } from "../auth";
 import { changedKeys } from "../changed";
 import type { Ctx } from "../context";
@@ -55,7 +55,9 @@ export function rulesRoutes(app: FastifyInstance, ctx: Ctx): void {
     const db = getDb(ctx); const projectId = String(req.query.projectId ?? "");
     if (!getProject(db, projectId)) throw new HttpError(404, "not_found", "No such project");
     requireCan(req, "read", projectId);
-    return listRules(db, projectId);
+    // The list carries each rule's run figures for the Automations view, from one grouped query.
+    const stats = ruleRunStats(db, projectId);
+    return listRules(db, projectId).map((r) => ({ ...r, ...(stats.get(r.id) ?? { runCount: 0, lastFiredAt: null }) }));
   });
 
   app.post("/api/v1/rules", async (req) => {

@@ -226,6 +226,12 @@ function recordFailure(acting: Acting, rule: Rule, actions: Action[], f: { actio
     if (!ticket.flags.includes("blocked")) setFlagAs(acting, ticket, "blocked", true, "rule");
     return;
   }
+  // Any other 422 is something that cannot be done now rather than a broken rule (the outbox
+  // refusing a destination that is archived or gone): refused, without the gate's comment.
+  if (e instanceof HttpError && e.status === 422) {
+    fired("refused", { actions, action: f.action, index: f.index, code: e.code, message: e.message, ...(e.details !== undefined ? { details: e.details } : {}) });
+    return;
+  }
   const code = e instanceof HttpError ? e.code : "internal";
   const message = e instanceof Error ? e.message : String(e);
   fired("error", { actions, action: f.action, index: f.index, code, message, ...(e instanceof HttpError && e.details !== undefined ? { details: e.details } : {}) });
@@ -299,12 +305,20 @@ function applyAction(a: Acting, rule: Rule, action: Action, ticket: Ticket | und
       addCommentAs(a, needTicket(ticket, "comment on"), action.body, []);
       return;
     case "emit_webhook": {
+      // Another project's destination is a rule authoring error; what the outbox itself will
+      // not take (a destination gone or archived) is a refusal, recorded as one.
       const dest = getDestination(db, action.destinationId);
-      if (!dest || dest.projectId !== rule.projectId) throw new HttpError(400, "wrong_project", "That destination belongs to another project");
-      if (dest.archived) throw new HttpError(400, "validation", "That destination is archived", { destinationId: dest.id });
-      // Written in the same transaction as the fire, through the outbox's own door (task 5);
-      // its worker signs and delivers it.
-      enqueueNotification(db, dest.id, event.seq, { event: { seq: event.seq, type: event.type, payload: event.payload, createdAt: event.createdAt }, ticket: ticket ?? null, ruleId: rule.id }, a.now());
+      if (dest && dest.projectId !== rule.projectId) throw new HttpError(400, "wrong_project", "That destination belongs to another project");
+      try {
+        // Written in the same transaction as the fire, through the outbox's own door (task 5);
+        // its worker signs and delivers it.
+        enqueueNotification(db, action.destinationId, event.seq, { event: { seq: event.seq, type: event.type, payload: event.payload, createdAt: event.createdAt }, ticket: ticket ?? null, ruleId: rule.id }, a.now());
+      } catch (e) {
+        const code = (e as Error).message;
+        if (code === "no_destination") throw new HttpError(422, code, "That destination no longer exists", { destinationId: action.destinationId });
+        if (code === "destination_archived") throw new HttpError(422, code, "That destination is archived", { destinationId: action.destinationId });
+        throw e;
+      }
       return;
     }
     case "create_ticket":

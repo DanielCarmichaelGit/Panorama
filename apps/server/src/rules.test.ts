@@ -56,7 +56,9 @@ describe("rules routes", () => {
     const r = await w.rule("Done goes to eval", { type: "ticket.moved", toLaneId: w.lane("Done").id }, [], [{ type: "move_to_lane", laneId: w.lane("Eval").id }]);
     expect(r).toMatchObject({ projectId: w.project.id, name: "Done goes to eval", enabled: true, event: { type: "ticket.moved", toLaneId: w.lane("Done").id }, conditions: [], actions: [{ type: "move_to_lane", laneId: w.lane("Eval").id }] });
     expect(r.canvas.nodes.map((n: any) => n.id)).toEqual(["e", "a0"]);
-    expect((await w.human("GET", `/api/v1/rules?projectId=${w.project.id}`)).json.map((x: any) => x.id)).toEqual([r.id]);
+    const listed = (await w.human("GET", `/api/v1/rules?projectId=${w.project.id}`)).json;
+    expect(listed.map((x: any) => x.id)).toEqual([r.id]);
+    expect(listed[0]).toMatchObject({ runCount: 0, lastFiredAt: null });
 
     const patched = await w.human("PATCH", `/api/v1/rules/${r.id}`, { name: "Build done goes to eval", enabled: false });
     expect(patched.json).toMatchObject({ name: "Build done goes to eval", enabled: false });
@@ -159,6 +161,10 @@ describe("rule engine", () => {
     await w.agent("POST", "/api/v1/evidence", { ticketId: t.id, typeId: "et_eval_score", payload: { score: 0.97 } });
     expect((await w.ticket(t.id))).toMatchObject({ laneId: rfp.id, flags: ["needs_human"] });
     expect((await w.runs(r2.id)).map((x: any) => x.outcome)).toEqual(["applied"]);
+
+    const listed = (await w.human("GET", `/api/v1/rules?projectId=${w.project.id}`)).json;
+    expect(listed.find((x: any) => x.id === r1.id)).toMatchObject({ runCount: 1, lastFiredAt: r1Runs[0].firedAt });
+    expect(listed.map((x: any) => x.runCount)).toEqual([1, 1, 1]);
 
     const fired = w.events().filter((e) => e.type === "rule.fired");
     expect(fired.map((e) => [(e.payload as any).ruleId, (e.payload as any).outcome])).toEqual([[r1.id, "applied"], [r3.id, "applied"], [r2.id, "applied"]]);
@@ -416,7 +422,7 @@ describe("rule engine with the workers", () => {
     const res = await w.human("POST", "/api/v1/rules", { projectId: w.project.id, name: "Nightly", enabled: true, canvas: scheduled("* * * * *", { type: "create_ticket", title: "Nightly check", laneId: w.lane("Ready").id }) });
     expect(res.status).toBe(200);
     const r = res.json;
-    expect(r.event).toEqual({ type: "schedule", cron: "* * * * *", timezone: "UTC" });
+    expect(r.event).toMatchObject({ type: "schedule", cron: "* * * * *", timezone: "UTC" });
     const triggers = listTriggers(w.app.ctx.db!, { ruleId: r.id });
     expect(triggers).toHaveLength(1);
     expect(triggers[0]).toMatchObject({ cron: "* * * * *", timezone: "UTC", nextRunAt: expect.any(String) });
@@ -470,9 +476,12 @@ describe("rule engine with the workers", () => {
     expect(rows[0].payload).toMatchObject({ ruleId: r.id, event: { seq: created.seq, type: "ticket.created" }, ticket: { id: t.id } });
     expect((await w.runs(r.id)).map((x: any) => x.outcome)).toEqual(["applied"]);
 
+    // The outbox's own refusals (a destination archived or gone) are refused runs, not errors.
     expect((await w.human("PATCH", `/api/v1/destinations/${dest.id}`, { archived: true })).status).toBe(200);
     await w.human("POST", "/api/v1/tickets", { projectId: w.project.id, title: "Again" });
     expect(dueOutbox(w.app.ctx.db!, FAR)).toHaveLength(1);
-    expect((await w.runs(r.id)).map((x: any) => [x.outcome, x.detail.code])).toEqual([["error", "validation"], ["applied", undefined]]);
+    expect((await w.runs(r.id)).map((x: any) => [x.outcome, x.detail.code])).toEqual([["refused", "destination_archived"], ["applied", undefined]]);
+    const refused = w.events().filter((e) => e.type === "rule.fired").at(-1)!;
+    expect(refused.payload).toMatchObject({ ruleId: r.id, outcome: "refused", code: "destination_archived" });
   });
 });

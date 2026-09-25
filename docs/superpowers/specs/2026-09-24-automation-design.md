@@ -30,6 +30,8 @@ Sidebar item after Board, route `/automations`. Left: the rule list (name, enabl
 
 The canvas uses only tokens: node cards are `--surface` with `--line` borders and a 4px family bar on the left (an exception to the side-tab rule, ruled by the owner's request for coloured node types), 12px radius, the two easing curves, and no shadows except on the dragged node.
 
+How a drawing becomes a rule (`canvasToRule` in `packages/core`): conditions on the path from the When node to a Then node chain as `all`; two paths into the same Then node branch as `any`. The conditions every Then node shares (the common prefix of all paths) become the rule's `conditions`; whatever remains on a Then node's own paths becomes that action's `when`, so one rule holds the branches the canvas draws and the engine applies `when` on top of `conditions`. When every action ends with the same `when` it is lifted into `conditions`, so a rule has one canonical form and the round trip canvas, rule, canvas, rule is stable. `ruleToCanvas` draws a rule left to right on a 240 by 120 grid: the When node, the shared conditions in a row, then one row per action. Validation names the offending node: `no_event`, `two_events`, `cycle`, `unknown_kind:<nodeId>`, `disconnected:<nodeId>` (no path from the When node), `missing_target:<nodeId>` (an action whose Picker value is empty), `invalid:<nodeId>` (data the engine cannot run for any other reason, such as `clear_flag needs_human`), and `bad_edge:<edgeId>`.
+
 ## Triggers, outbox, webhooks
 
 As base spec section 9. The trigger editor lives on the canvas as a **Schedule** node that can stand in for the When node: cron through a small builder (every N minutes or hours, daily at, weekly on), timezone, missed policy.

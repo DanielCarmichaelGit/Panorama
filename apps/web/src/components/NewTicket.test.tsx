@@ -415,6 +415,26 @@ describe("NewTicket required fields", () => {
   });
 });
 
+describe("NewTicket required checkbox", () => {
+  it("treats an untouched required checkbox as false: Create stays enabled and the POST carries false for it", async () => {
+    const posts: unknown[] = [];
+    vi.mocked(api).mockClear();
+    renderDialog({ fields: [fieldDef({ id: "f2", name: "Approved", key: "approved", kind: "checkbox" })] });
+    await screen.findByRole("dialog", { name: "New ticket" });
+    await screen.findByRole("checkbox", { name: "Approved" });
+    fireEvent.change(screen.getByLabelText("Title"), { target: { value: "Ship it" } });
+
+    const create = screen.getByRole("button", { name: "Create" }) as HTMLButtonElement;
+    expect(create.disabled).toBe(false);
+    fireEvent.click(create);
+
+    await waitFor(() => expect(screen.getByTestId("location").textContent).toBe("/t/t1"));
+    for (const call of vi.mocked(api).mock.calls) if (call[0] === "POST" && call[1] === "/api/v1/tickets") posts.push(call[2]);
+    expect(posts).toHaveLength(1);
+    expect((posts[0] as any).fields).toEqual({ approved: false });
+  });
+});
+
 describe("NewTicket request order", () => {
   it("sends epic, tags, fields and success criteria in the one POST, then the flag, then the dependency link from the other ticket", async () => {
     const calls: { method: string; path: string; body?: unknown }[] = [];
@@ -488,6 +508,43 @@ describe("NewTicket request order", () => {
   });
 });
 
+describe("NewTicket request order, Blocks direction", () => {
+  it('posts a "Blocks" link from the new ticket\'s own endpoint with the other ticket as toId', async () => {
+    const calls: { method: string; path: string; body?: unknown }[] = [];
+    const apiImpl = async (method: string, path: string, body?: unknown) => {
+      calls.push({ method, path, body });
+      if (method === "GET" && path === "/api/v1/projects/p1/boards") return [board({})];
+      if (method === "GET" && path === "/api/v1/projects/p1/lanes") return [lane({})];
+      if (method === "GET" && path === "/api/v1/agents") return [];
+      if (method === "GET" && path === "/api/v1/evidence-types") return [signoffType];
+      if (method === "GET" && path === "/api/v1/epics?projectId=p1") return [];
+      if (method === "GET" && path === "/api/v1/tags?projectId=p1") return [];
+      if (method === "GET" && path === "/api/v1/fields?projectId=p1") return [];
+      if (method === "GET" && path === "/api/v1/tickets?projectId=p1") return [otherTicket];
+      if (method === "POST" && path === "/api/v1/tickets") {
+        return { id: "t1", projectId: "p1", boardId: "b1", key: "PAN-1", title: (body as any).title, laneId: "l1", number: 1, position: 1, flags: [], assigneeId: null, startDate: null, dueDate: null, metadata: {}, archived: false, createdAt: "", updatedAt: "" };
+      }
+      if (method === "POST" && path === "/api/v1/tickets/t1/links") return { id: "link1", projectId: "p1", fromId: "t1", toId: "t2", kind: "blocks", createdAt: "" };
+      throw new Error(`unexpected ${method} ${path}`);
+    };
+
+    renderDialog({ agents: [], apiImpl });
+    await screen.findByRole("dialog", { name: "New ticket" });
+    fireEvent.change(screen.getByLabelText("Title"), { target: { value: "Ship it" } });
+
+    const blocks = screen.getByRole("button", { name: "Blocks" });
+    fireEvent.click(blocks);
+    fireEvent.click(await screen.findByRole("option", { name: "PAN-2 Other ticket" }));
+    fireEvent.keyDown(blocks, { key: "Escape" });
+    fireEvent.click(screen.getByRole("button", { name: "Create" }));
+
+    await waitFor(() => expect(screen.getByTestId("location").textContent).toBe("/t/t1"));
+    const writes = calls.filter((c) => c.method !== "GET");
+    expect(writes.map((c) => `${c.method} ${c.path}`)).toEqual(["POST /api/v1/tickets", "POST /api/v1/tickets/t1/links"]);
+    expect(writes[1].body).toEqual({ toId: "t2", kind: "blocks" });
+  });
+});
+
 describe("NewTicket automations preview", () => {
   const prType: EvidenceType = { id: "et_pr_link", name: "PR link", kind: "pr_link", params: {}, humanOnly: false, needsAttachment: false, createdAt: "" };
   const testType: EvidenceType = { id: "et_test_run", name: "Test run", kind: "test_run", params: {}, humanOnly: false, needsAttachment: false, createdAt: "" };
@@ -502,6 +559,26 @@ describe("NewTicket automations preview", () => {
       evidenceTypes: [signoffType, prType, testType],
     });
     expect(await screen.findByText("Gated at Review (PR link, Test run) and Done (Human sign-off).")).toBeTruthy();
+  });
+
+  it("leaves out the lane the ticket is created into, even when that lane carries a requirement", async () => {
+    renderDialog({
+      lanes: [
+        lane({ evidenceRequirements: [{ typeId: "et_pr_link", count: 1 }] }),
+        lane({ id: "l4", name: "Review", position: 3, family: "lilac", evidenceRequirements: [{ typeId: "et_test_run", count: 1 }] }),
+        lane({ id: "l6", name: "Done", position: 5, family: "mint", isDone: true, evidenceRequirements: [{ typeId: "et_human_signoff", count: 1 }] }),
+      ],
+      evidenceTypes: [signoffType, prType, testType],
+    });
+    const preview = await screen.findByText(/^Gated at/);
+    expect(preview.textContent).toBe("Gated at Review (Test run) and Done (Human sign-off).");
+  });
+
+  it("phrases a single gated lane without a conjunction", async () => {
+    renderDialog({
+      lanes: [lane({}), lane({ id: "l6", name: "Done", position: 5, family: "mint", isDone: true, evidenceRequirements: [{ typeId: "et_human_signoff", count: 1 }] })],
+    });
+    expect(await screen.findByText("Gated at Done (Human sign-off).")).toBeTruthy();
   });
 
   it("says so when no lane gates it", async () => {

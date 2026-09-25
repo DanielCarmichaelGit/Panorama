@@ -214,8 +214,13 @@ export function NewTicket({
     if (tagIds.length > 0) input.tagIds = tagIds;
     const criteria = successCriteria.trim();
     if (criteria) input.successCriteria = criteria;
-    // `false` on a checkbox is a value and goes through; null and blank text are "not set".
+    // `false` on a checkbox is a value and goes through; null and blank text are "not set". A
+    // required checkbox the user never touched reads as unticked, so it goes through as false.
     const fields = Object.entries(fieldValues).filter(([, v]) => v !== null && v !== undefined && v !== "");
+    for (const f of activeFields) {
+      const untouched = fieldValues[f.key] === undefined || fieldValues[f.key] === null;
+      if (f.kind === "checkbox" && f.required && untouched) fields.push([f.key, false]);
+    }
     if (fields.length > 0) input.fields = Object.fromEntries(fields);
     return input;
   }
@@ -523,7 +528,8 @@ export function NewTicket({
 
           <footer className="create-foot">
             <div className="create-foot-row">
-              <p className="muted create-preview">{gatePreview(lanes, evidenceTypes)}</p>
+              {/* The lane the ticket starts in is not a gate it has to pass, so it is left out. */}
+              <p className="muted create-preview">{gatePreview(lanes.filter((l) => l.id !== effectiveLane), evidenceTypes)}</p>
               <div className="create-actions">
                 {busyStep && <span className="mono muted">{busyStep}</span>}
                 <button type="button" className="btn ghost" onClick={cancel}>Cancel</button>

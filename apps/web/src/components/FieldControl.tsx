@@ -1,8 +1,14 @@
 import type { FieldDefinition, FieldValue } from "@panorama/core";
 import { Picker } from "./Picker";
 
-/** A required field with nothing in it: blank text counts as empty, `false` on a checkbox does not. */
+/**
+ * A required field with nothing in it: blank text counts as empty, and a checkbox never does.
+ * An unticked box looks like `false`, and `false` is a value, so an untouched required checkbox
+ * reads as `false` rather than as missing (the create dialog sends it that way; the panel's
+ * "Needs fields" chip does not count it).
+ */
 export function isFieldEmpty(def: FieldDefinition, value: FieldValue | undefined): boolean {
+  if (def.kind === "checkbox") return false;
   if (value === undefined || value === null) return true;
   return def.kind === "text" && value === "";
 }

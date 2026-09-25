@@ -5,6 +5,7 @@ import type {
   Attachment,
   Board,
   Comment,
+  CreateTicketInput,
   Epic,
   Evidence,
   EvidenceType,
@@ -187,8 +188,7 @@ export const useCreateProject = () => {
 export const useCreateTicket = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (v: { projectId: string; title: string; boardId?: string; laneId?: string; metadata?: Record<string, unknown> }) =>
-      api<Ticket>("POST", "/api/v1/tickets", v),
+    mutationFn: (v: CreateTicketInput) => api<Ticket>("POST", "/api/v1/tickets", v),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["queue"] });
       qc.invalidateQueries({ queryKey: ["tickets"] });

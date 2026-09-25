@@ -170,6 +170,13 @@ describe("TicketPanel Needs fields chip", () => {
     expect(await screen.findByText("Needs fields")).toBeTruthy();
   });
 
+  it("never counts a required checkbox as missing, since an unticked box reads as false", async () => {
+    renderPanel({ fields: [fieldDef({ id: "f2", name: "Approved", key: "approved", kind: "checkbox" })] });
+    await screen.findByRole("button", { name: "Lane" });
+    await screen.findByRole("checkbox", { name: "Approved" });
+    expect(screen.queryByText("Needs fields")).toBeNull();
+  });
+
   it("does not show the chip once the required field has a value", async () => {
     renderPanel({ fields: [fieldDef()], ticket: { ...ticket, fields: { severity: "high" } } });
     await screen.findByRole("button", { name: "Lane" });

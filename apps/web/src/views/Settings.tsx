@@ -1,7 +1,8 @@
 import { useRef, useState } from "react";
 import { useOutletContext, useSearchParams } from "react-router-dom";
-import { Columns, Compass, SealCheck, Tag, TextColumns, type Icon } from "@phosphor-icons/react";
+import { Columns, Compass, PaperPlaneTilt, SealCheck, Tag, TextColumns, type Icon } from "@phosphor-icons/react";
 import type { Project } from "@boomerang/core";
+import { DestinationsTab } from "../components/settings/DestinationsTab";
 import { EpicsTab } from "../components/settings/EpicsTab";
 import { EvidenceTab } from "../components/settings/EvidenceTab";
 import { FieldsTab } from "../components/settings/FieldsTab";
@@ -15,6 +16,7 @@ const TABS = [
   { id: "epics", label: "Arcs" },
   { id: "lanes", label: "Lanes" },
   { id: "evidence", label: "Evidence types" },
+  { id: "destinations", label: "Destinations" },
 ] as const;
 
 type TabId = (typeof TABS)[number]["id"];
@@ -23,7 +25,7 @@ function isTabId(v: string | null): v is TabId {
   return TABS.some((t) => t.id === v);
 }
 
-/** The five concepts Settings manages, in the order they build on each other, each with two plain sentences. */
+/** The six concepts Settings manages, in the order they build on each other, each with two plain sentences. */
 const CONCEPTS: { id: TabId; icon: Icon; name: string; text: string }[] = [
   { id: "lanes", icon: Columns, name: "Lanes", text: "The stages a ticket moves through, like Backlog, In progress and Done. A ticket is always in exactly one lane." },
   {
@@ -35,6 +37,7 @@ const CONCEPTS: { id: TabId; icon: Icon; name: string; text: string }[] = [
   { id: "epics", icon: Compass, name: "Arcs", text: "A body of work that a group of tickets carries forward, what other tools call an epic. One arc per ticket." },
   { id: "tags", icon: Tag, name: "Tags", text: "Quick labels for finding and filtering tickets. As many per ticket as you like." },
   { id: "fields", icon: TextColumns, name: "Fields", text: "Extra properties every ticket in this project carries, such as a customer name or a priority. A field can be required when a ticket is created." },
+  { id: "destinations", icon: PaperPlaneTilt, name: "Destinations", text: "Where a rule can send a signed webhook when it says notify. Add the receiver's url and keep the secret it shows you once." },
 ];
 
 /** Remembers whether the owner hid the intro strip; the only Settings state kept in the browser. */
@@ -57,11 +60,12 @@ function writeIntroHidden(hidden: boolean) {
 }
 
 /**
- * Settings: Fields, Tags, Arcs (epics in the API), Lanes, and Evidence types, each its own tab
- * component. Every save here is human-signed like the rest of the app. The active tab lives in
- * the URL (`?tab=...`) so a link into a specific tab (the Board's Requirements button goes to
- * `?tab=lanes`) lands in the right place. Above the tabs, a strip explains how the five concepts
- * fit together; each column opens its tab, and Hide puts the strip away.
+ * Settings: Fields, Tags, Arcs (epics in the API), Lanes, Evidence types, and Destinations, each
+ * its own tab component. Every save here is human-signed like the rest of the app. The active tab
+ * lives in the URL (`?tab=...`) so a link into a specific tab (the Board's Requirements button
+ * goes to `?tab=lanes`, the canvas's Manage destinations link to `?tab=destinations`) lands in
+ * the right place. Above the tabs, a strip explains how the six concepts fit together; each
+ * column opens its tab, and Hide puts the strip away.
  */
 export function Settings() {
   const { project } = useOutletContext<{ project: Project }>();
@@ -140,6 +144,7 @@ export function Settings() {
         {activeTab === "epics" && <EpicsTab projectId={project.id} />}
         {activeTab === "lanes" && <LanesTab projectId={project.id} />}
         {activeTab === "evidence" && <EvidenceTab projectId={project.id} />}
+        {activeTab === "destinations" && <DestinationsTab projectId={project.id} />}
       </div>
     </div>
   );

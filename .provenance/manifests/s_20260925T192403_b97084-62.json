@@ -1,0 +1,26 @@
+{
+  "sessionId": "s_20260925T192403_b97084",
+  "actor": "Daniel Carmichael",
+  "tool": "cli",
+  "intent": "milestone 3 task 9 schedule and destinations",
+  "head": "7ae1d5cc40de69d118ee5714e9e414d265cb3c65356c1110a7eb83a97cbc4ba6",
+  "count": 62,
+  "diffHash": "d62eacd6cbaadacc88c87023f266785881f417c13341daf2a637a9c111754049",
+  "files": [
+    "README.md",
+    "apps/web/src/components/automations/nodes.tsx",
+    "apps/web/src/components/automations/schedule.test.ts",
+    "apps/web/src/components/automations/schedule.ts",
+    "apps/web/src/components/automations/store.ts",
+    "apps/web/src/components/automations/vocab.ts",
+    "apps/web/src/components/settings/DestinationsTab.test.tsx",
+    "apps/web/src/components/settings/DestinationsTab.tsx",
+    "apps/web/src/lib/hooks.ts",
+    "apps/web/src/styles/app.css",
+    "apps/web/src/views/Automations.test.tsx",
+    "apps/web/src/views/Settings.test.tsx",
+    "apps/web/src/views/Settings.tsx"
+  ],
+  "base": "c94d5e2c3178baca0520fbecc0b35c5e485a7a2b",
+  "ts": "2026-09-25T19:36:43.215Z"
+}

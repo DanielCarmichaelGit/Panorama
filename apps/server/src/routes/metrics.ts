@@ -1,17 +1,19 @@
-import type { FastifyInstance, FastifyRequest } from "fastify";
+import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { BUNDLED_PRICES, CostInput, estimateCost, sumEstimates } from "@boomerang/core";
-import { addCostEntry, costByAgent, costByBoard, costByEpic, costByProject, getActor, getProject, getTicket, listBoards, listCostEntries, listEpics, listOpenTimers, listProjectTimers, listTimers, startTimer, stopTimer, type CostEntry, type CostRollup, type DB, type Period, type Timer } from "@boomerang/db";
+import { addCostEntry, costByAgent, costByBoard, costByEpic, costByProject, getActor, getProject, listBoards, listCostEntries, listEpics, listProjectTimers, listTimers, type CostEntry, type CostRollup, type Period, type Timer } from "@boomerang/db";
 import { getDb, requireCan } from "../auth";
 import type { Ctx } from "../context";
 import { HttpError } from "../errors";
-import { loadTicket, makeLog } from "./common";
+import { secondsOf, startTimerAs, stopOwnTimerAs } from "../services/timers";
+import { actingAs, loadTicket, makeLog } from "./common";
 
 // Timers and cost (milestone 3, task 6). The server measures time: a timer is opened and closed
-// here and its duration is never taken from the caller. Cost is priced once, at write time, from
-// the bundled table, and every figure that leaves this file is an estimate: `usd` is a number
-// (or null when a model was unknown) with `estimate: true` beside it, and the web renders it
-// through `formatEstimate`, which puts the tilde on. Nothing here fetches a price.
+// in services/timers.ts (which the rule engine runs through too) and its duration is never
+// taken from the caller. Cost is priced once, at write time, from the bundled table, and every
+// figure that leaves this file is an estimate: `usd` is a number (or null when a model was
+// unknown) with `estimate: true` beside it, and the web renders it through `formatEstimate`,
+// which puts the tilde on. Nothing here fetches a price.
 
 const ROLLUP_PERIODS = ["week", "month", "all"] as const;
 const GROUPINGS = ["agent", "epic", "board", "project"] as const;
@@ -31,7 +33,6 @@ export interface Figures {
   entries: number;
 }
 
-const secondsOf = (t: Timer, nowMs: number): number => Math.max(0, Math.round(((t.stoppedAt === null ? nowMs : Date.parse(t.stoppedAt)) - Date.parse(t.startedAt)) / 1000));
 const timeOf = (timers: Timer[], nowMs: number) => ({
   seconds: timers.reduce((s, t) => s + secondsOf(t, nowMs), 0),
   openTimers: timers.filter((t) => t.stoppedAt === null).length,
@@ -69,55 +70,18 @@ const groupBy = <T, K extends string>(items: T[], key: (t: T) => K | null): Map<
   return out;
 };
 
-/**
- * Closes one timer inside the caller's transaction and records `timer.stopped`. The event's
- * actor is whoever caused the stop (the timer's owner, the mover of a ticket into a done lane,
- * or the human revoking an agent); the payload names the timer's owner, and `auto: true` says
- * the owner did not ask for it.
- */
-function stopOne(ctx: Ctx, db: DB, req: FastifyRequest, timer: Timer, projectId: string, auto: boolean) {
-  const stopped = stopTimer(db, { ticketId: timer.ticketId, actorId: timer.actorId }, ctx.now().toISOString());
-  const seconds = secondsOf(stopped, ctx.now().getTime());
-  makeLog(ctx)(db, req, "timer.stopped", { ticketId: stopped.ticketId, actorId: stopped.actorId, projectId, seconds, ...(auto ? { auto: true } : {}) });
-  return { ...stopped, seconds };
-}
-
-/** Stops every open timer on a ticket, whoever owns it; the move handler calls this when the
- *  ticket enters a done lane. Runs inside the move's transaction. */
-export function stopTicketTimers(ctx: Ctx, db: DB, req: FastifyRequest, ticket: { id: string; projectId: string }): void {
-  for (const t of listTimers(db, ticket.id)) if (t.stoppedAt === null) stopOne(ctx, db, req, t, ticket.projectId, true);
-}
-
-/** Stops an actor's open timers on every ticket; the revoke handler calls this so a revoked
- *  agent's clock does not run on. Runs inside the revoke's transaction. */
-export function stopActorTimers(ctx: Ctx, db: DB, req: FastifyRequest, actorId: string): void {
-  for (const t of listOpenTimers(db, actorId)) stopOne(ctx, db, req, t, getTicket(db, t.ticketId)?.projectId ?? "", true);
-}
-
 export function metricsRoutes(app: FastifyInstance, ctx: Ctx): void {
   const iso = () => ctx.now().toISOString();
   const log = makeLog(ctx);
 
   app.post("/api/v1/tickets/:id/timer/start", async (req: any) => {
     const db = getDb(ctx); const t = loadTicket(db, req.params.id); requireCan(req, "timer.use", t.projectId);
-    return db.transaction(() => {
-      let timer: Timer;
-      try {
-        timer = startTimer(db, { ticketId: t.id, actorId: req.actor.id }, iso());
-      } catch (e) {
-        if ((e as Error).message === "timer_open") throw new HttpError(409, "timer_open", "You already have a timer running on this ticket");
-        throw e;
-      }
-      log(db, req, "timer.started", { ticketId: t.id, actorId: req.actor.id, projectId: t.projectId });
-      return timer;
-    })();
+    return startTimerAs(actingAs(ctx, db, req), t);
   });
 
   app.post("/api/v1/tickets/:id/timer/stop", async (req: any) => {
     const db = getDb(ctx); const t = loadTicket(db, req.params.id); requireCan(req, "timer.use", t.projectId);
-    const open = listTimers(db, t.id).find((x) => x.actorId === req.actor.id && x.stoppedAt === null);
-    if (!open) throw new HttpError(404, "timer_not_open", "You have no timer running on this ticket");
-    return db.transaction(() => stopOne(ctx, db, req, open, t.projectId, false))();
+    return stopOwnTimerAs(actingAs(ctx, db, req), t);
   });
 
   app.post("/api/v1/tickets/:id/cost", async (req: any) => {

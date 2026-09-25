@@ -58,8 +58,10 @@ export type RuleRunOutcome = "applied" | "skipped" | "refused" | "error";
 export interface RuleRun { id: string; ruleId: string; ticketId: string | null; eventSeq: number; firedAt: string; outcome: RuleRunOutcome; detail: Record<string, unknown> }
 const toRun = (r: any): RuleRun => ({ id: r.id, ruleId: r.rule_id, ticketId: r.ticket_id, eventSeq: r.event_seq, firedAt: r.fired_at, outcome: r.outcome, detail: JSON.parse(r.detail) });
 
-export function addRuleRun(db: DB, run: { ruleId: string; ticketId: string | null; eventSeq: number; outcome: RuleRunOutcome; detail: Record<string, unknown> }, now: string): RuleRun {
-  const id = randomUUID();
+/** `id` may be supplied so the events a fire produces can cite their run before its row is
+ *  written (the outcome is only known once the actions have run). */
+export function addRuleRun(db: DB, run: { id?: string; ruleId: string; ticketId: string | null; eventSeq: number; outcome: RuleRunOutcome; detail: Record<string, unknown> }, now: string): RuleRun {
+  const id = run.id ?? randomUUID();
   db.prepare("insert into rule_runs(id, rule_id, ticket_id, event_seq, fired_at, outcome, detail) values(?,?,?,?,?,?,?)")
     .run(id, run.ruleId, run.ticketId, run.eventSeq, now, run.outcome, JSON.stringify(run.detail));
   return toRun(db.prepare("select * from rule_runs where id = ?").get(id));
@@ -73,6 +75,15 @@ export function listRuleRuns(db: DB, ruleId: string, opts: { limit?: number; bef
     `select * from rule_runs where rule_id = ? and (fired_at, id) < (select fired_at, id from rule_runs where id = ?)
      order by fired_at desc, id desc limit ?`
   ).all(ruleId, opts.before, limit).map(toRun);
+}
+
+/** Per rule of a project, how many runs it has and when the last fired: one grouped query,
+ *  so the rule list can carry `runCount` and `lastFiredAt` without a query per rule. */
+export function ruleRunStats(db: DB, projectId: string): Map<string, { runCount: number; lastFiredAt: string | null }> {
+  const rows = db
+    .prepare("select rule_id, count(*) as n, max(fired_at) as last from rule_runs where rule_id in (select id from rules where project_id = ?) group by rule_id")
+    .all(projectId) as { rule_id: string; n: number; last: string | null }[];
+  return new Map(rows.map((r) => [r.rule_id, { runCount: r.n, lastFiredAt: r.last }]));
 }
 
 export type MissedPolicy = "skip" | "run_once" | "run_all";

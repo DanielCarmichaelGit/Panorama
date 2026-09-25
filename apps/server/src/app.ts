@@ -6,6 +6,7 @@ import { migrate, openDatabase, readConfig } from "@boomerang/db";
 import { installAuth } from "./auth";
 import { EventBus, installStream } from "./bus";
 import type { Ctx } from "./context";
+import { installEngine } from "./engine/install";
 import { installErrorHandler, notFoundBody } from "./errors";
 import { dbFile, lifecycleRoutes } from "./routes/lifecycle";
 import { agentRoutes } from "./routes/agents";
@@ -15,6 +16,7 @@ import { destinationRoutes } from "./routes/destinations";
 import { metricsRoutes } from "./routes/metrics";
 import { modelRoutes } from "./routes/model";
 import { projectRoutes } from "./routes/projects";
+import { rulesRoutes } from "./routes/rules";
 import { threadRoutes } from "./routes/thread";
 import { ticketRoutes } from "./routes/tickets";
 
@@ -70,6 +72,8 @@ export async function buildApp(opts: { dataDir: string; now?: () => Date; webDis
   attachmentRoutes(app, ctx);
   destinationRoutes(app, ctx);
   metricsRoutes(app, ctx);
+  rulesRoutes(app, ctx);
+  installEngine(app, ctx);
   installStream(app, ctx);
 
   if (opts.webDist && existsSync(opts.webDist)) {

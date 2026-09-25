@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { evaluateCondition, evaluateRule, matchesEvent, renderTemplate, type Condition, type EngineEvent, type Rule, type RuleContext, type RuleEvent } from "../index";
+import { escapeMarkdown, evaluateCondition, evaluateRule, matchesEvent, renderTemplate, type Condition, type EngineEvent, type Rule, type RuleContext, type RuleEvent } from "../index";
 
 const ctx = (over: Partial<RuleContext> = {}): RuleContext => ({
   ticket: {
@@ -61,6 +61,11 @@ describe("matchesEvent", () => {
     [{ type: "ticket.updated", changed: "epicId" }, { type: "ticket.updated", payload: { changed: ["title"] } }, false],
     [{ type: "ticket.updated" }, { type: "ticket.updated", payload: { changed: [] } }, true],
     [{ type: "comment.added" }, { type: "comment.added", payload: { id: "c1" } }, true],
+    [{ type: "timer.started" }, { type: "timer.started", payload: { ticketId: "t1", actorId: "a1" } }, true],
+    [{ type: "timer.stopped" }, { type: "timer.started", payload: { ticketId: "t1", actorId: "a1" } }, false],
+    [{ type: "cost.added" }, { type: "cost.added", payload: { ticketId: "t1", model: "m" } }, true],
+    [{ type: "ticket.due_passed" }, { type: "ticket.due_passed", payload: { ticketId: "t1", dueDate: "2026-10-01" } }, true],
+    [{ type: "ticket.due_passed" }, { type: "ticket.updated", payload: { changed: ["dueDate"] } }, false],
     [{ type: "schedule", cron: "* * * * *", timezone: "UTC" }, { type: "trigger.fired", payload: { ruleId: "r1" } }, true],
     [{ type: "schedule", cron: "* * * * *", timezone: "UTC" }, { type: "trigger.fired", payload: { ruleId: "r2" } }, false],
   ];
@@ -249,11 +254,23 @@ describe("evaluateRule", () => {
       { type: "add_comment", body: "Eval failed twice on BOOM-7" },
     ]);
   });
-  it("renders comment templates with the four placeholders and escapes them as plain text", () => {
+  it("renders comment templates with the four placeholders and escapes markdown in the values", () => {
     const r = rule({ actions: [{ type: "add_comment", body: "{{ticket.key}} {{ticket.title}} entered {{lane.name}} on {{event.type}} {{unknown}} {{ ticket.key }}" }] });
     expect(evaluateRule(r, moved, ctx())).toEqual([
-      { type: "add_comment", body: "BOOM-7 Fix the &lt;b&gt;login&lt;/b&gt; bug entered Eval on ticket.moved {{unknown}} BOOM-7" },
+      { type: "add_comment", body: "BOOM-7 Fix the \\<b\\>login\\</b\\> bug entered Eval on ticket.moved {{unknown}} BOOM-7" },
     ]);
+  });
+  it("renders the title template of create_ticket the same way", () => {
+    const r = rule({ actions: [{ type: "create_ticket", title: "Retest {{ticket.key}}: {{ticket.title}}", laneId: "l_ready", tagIds: ["tag_bug"] }] });
+    expect(evaluateRule(r, moved, ctx({ ticket: { ...ctx().ticket, title: "*bold* move" } }))).toEqual([
+      { type: "create_ticket", title: "Retest BOOM-7: \\*bold\\* move", laneId: "l_ready", tagIds: ["tag_bug"] },
+    ]);
+  });
+  it("refuses a condition nested deeper than the cap rather than evaluating it", () => {
+    const nest = (n: number): Condition => (n === 1 ? { kind: "lane", op: "is", value: "l_eval" } : { kind: "not", condition: nest(n - 1) });
+    expect(evaluateCondition(nest(8), ctx())).toBe(false);
+    expect(() => evaluateCondition(nest(9), ctx())).toThrow(RangeError);
+    expect(() => evaluateRule(rule({ conditions: [nest(9)] }), moved, ctx())).toThrow(RangeError);
   });
   it("does not mutate the rule", () => {
     const r = rule({ actions: [{ type: "add_comment", body: "{{ticket.key}}", when: [] }] });
@@ -264,8 +281,12 @@ describe("evaluateRule", () => {
 });
 
 describe("renderTemplate", () => {
-  it("escapes ampersands, angle brackets and quotes in substituted values only", () => {
+  it("backslash-escapes markdown specials in substituted values only, leaving the template alone", () => {
     const out = renderTemplate("<b>{{ticket.title}}</b> & {{lane.name}}", { ticket: { key: "K", title: `Tom & "Jerry" <'x'>` }, lane: { name: "A<B" }, event: { type: "e" } });
-    expect(out).toBe("<b>Tom &amp; &quot;Jerry&quot; &lt;&#39;x&#39;&gt;</b> & A&lt;B");
+    expect(out).toBe("<b>Tom & \"Jerry\" \\<'x'\\></b> & A\\<B");
+  });
+  it("escapes every special the renderer could read as structure", () => {
+    expect(escapeMarkdown("*bold* _it_ `code` # h [l](u) a|b \\ <b>")).toBe("\\*bold\\* \\_it\\_ \\`code\\` \\# h \\[l\\](u) a\\|b \\\\ \\<b\\>");
+    expect(escapeMarkdown("- item\n+ plus\n12. twelve\n1.5 also\nmid - dash 2.")).toBe("\\- item\n\\+ plus\n12\\. twelve\n1\\.5 also\nmid - dash 2.");
   });
 });

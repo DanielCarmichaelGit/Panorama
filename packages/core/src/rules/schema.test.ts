@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ActionSchema, CanvasDocSchema, ConditionSchema, RuleActionSchema, RuleEventSchema, RuleSchema } from "../index";
+import { ACTION_TYPES, ActionSchema, CanvasDocSchema, type Condition, ConditionSchema, conditionDepth, MAX_CONDITION_DEPTH, RULE_EVENT_TYPES, RuleActionSchema, RuleEventSchema, RuleSchema } from "../index";
 
 describe("RuleEventSchema", () => {
   it("parses every event kind", () => {
@@ -11,7 +11,16 @@ describe("RuleEventSchema", () => {
     expect(RuleEventSchema.safeParse({ type: "ticket.flag_cleared", flag: "blocked" }).success).toBe(true);
     expect(RuleEventSchema.safeParse({ type: "ticket.updated", changed: "title" }).success).toBe(true);
     expect(RuleEventSchema.safeParse({ type: "comment.added" }).success).toBe(true);
+    expect(RuleEventSchema.safeParse({ type: "timer.started" }).success).toBe(true);
+    expect(RuleEventSchema.safeParse({ type: "timer.stopped" }).success).toBe(true);
+    expect(RuleEventSchema.safeParse({ type: "cost.added" }).success).toBe(true);
+    expect(RuleEventSchema.safeParse({ type: "ticket.due_passed" }).success).toBe(true);
     expect(RuleEventSchema.safeParse({ type: "schedule", cron: "0 9 * * 1-5", timezone: "Europe/London" }).success).toBe(true);
+  });
+  it("lists exactly the spec's events", () => {
+    expect([...RULE_EVENT_TYPES].sort()).toEqual(
+      ["ticket.created", "ticket.moved", "ticket.updated", "ticket.flag_set", "ticket.flag_cleared", "evidence.added", "comment.added", "timer.started", "timer.stopped", "cost.added", "ticket.due_passed", "schedule"].sort()
+    );
   });
   it("rejects an unknown type, an extra key, a bad cron and a bad timezone", () => {
     expect(RuleEventSchema.safeParse({ type: "ticket.deleted" }).success).toBe(false);
@@ -73,6 +82,22 @@ describe("ConditionSchema", () => {
     ok({ kind: "any", conditions: [] });
     bad({ kind: "not", condition: { kind: "lane", op: "nope" } });
   });
+  it("accepts nesting eight deep and refuses nine", () => {
+    const nest = (n: number): unknown => (n === 1 ? { kind: "lane", op: "is", value: "l1" } : { kind: "not", condition: nest(n - 1) });
+    expect(MAX_CONDITION_DEPTH).toBe(8);
+    expect(conditionDepth(nest(8) as Condition)).toBe(8);
+    ok(nest(8));
+    bad(nest(9));
+    bad({ kind: "all", conditions: [nest(1), nest(8)] });
+  });
+  it("bounds ids at 128 and text at 2000", () => {
+    ok({ kind: "lane", op: "is", value: "x".repeat(128) });
+    bad({ kind: "lane", op: "is", value: "x".repeat(129) });
+    ok({ kind: "title", op: "contains", value: "x".repeat(2000) });
+    bad({ kind: "title", op: "contains", value: "x".repeat(2001) });
+    bad({ kind: "field", key: "notes", fieldKind: "text", op: "is", value: "x".repeat(2001) });
+    bad({ kind: "field", key: "severity", fieldKind: "select", op: "in", values: ["x".repeat(2001)] });
+  });
 });
 
 describe("ActionSchema", () => {
@@ -90,12 +115,22 @@ describe("ActionSchema", () => {
       [{ type: "emit_webhook", destinationId: "d1" }, { type: "emit_webhook", destinationId: "d1", url: "https://x" }],
       [{ type: "set_epic", epicId: "e1" }, { type: "set_epic", epicId: "" }],
       [{ type: "set_epic", epicId: null }, { type: "set_epic" }],
+      [{ type: "create_ticket", title: "Follow up on {{ticket.key}}", laneId: "l1" }, { type: "create_ticket", title: "", laneId: "l1" }],
+      [{ type: "create_ticket", title: "Retest", laneId: "l1", boardId: "b1", epicId: "e1", tagIds: ["t1"] }, { type: "create_ticket", title: "Retest", laneId: "l1", assigneeId: "a1" }],
+      [{ type: "move_to_board", boardId: "b2" }, { type: "move_to_board", boardId: "" }],
+      [{ type: "start_timer" }, { type: "start_timer", actorId: "a1" }],
+      [{ type: "stop_timer" }, { type: "stop_timer", ticketId: "t1" }],
     ];
     for (const [good, bad] of cases) {
       expect(ActionSchema.safeParse(good).success, JSON.stringify(good)).toBe(true);
       expect(ActionSchema.safeParse(bad).success, JSON.stringify(bad)).toBe(false);
     }
     expect(ActionSchema.safeParse({ type: "delete_ticket" }).success).toBe(false);
+  });
+  it("lists exactly the spec's actions", () => {
+    expect([...ACTION_TYPES].sort()).toEqual(
+      ["move_to_lane", "set_flag", "clear_flag", "assign", "add_tag", "remove_tag", "set_field", "set_epic", "add_comment", "emit_webhook", "create_ticket", "start_timer", "stop_timer", "move_to_board"].sort()
+    );
   });
   it("a rule action may carry its own when list and nothing else extra", () => {
     expect(RuleActionSchema.safeParse({ type: "move_to_lane", laneId: "l1", when: [{ kind: "flag", op: "is_not", value: "blocked" }] }).success).toBe(true);

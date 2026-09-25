@@ -2,7 +2,7 @@ import type { Evidence } from "../evidence";
 import type { FieldValue } from "../fields";
 import { isFileValue } from "../fields";
 import type { Ticket } from "../schemas";
-import type { Action, Condition, Rule, RuleEvent } from "./schema";
+import { conditionDepth, MAX_CONDITION_DEPTH, type Action, type Condition, type Rule, type RuleEvent } from "./schema";
 
 /** One link in a causal chain: the rule fire that produced the event now being evaluated. */
 export interface CausedBy {
@@ -44,6 +44,10 @@ export function matchesEvent(re: RuleEvent, ev: EngineEvent, ruleId: string): bo
       return ev.type === re.type && (re.changed === undefined || (Array.isArray(p.changed) && p.changed.includes(re.changed)));
     case "ticket.created":
     case "comment.added":
+    case "timer.started":
+    case "timer.stopped":
+    case "cost.added":
+    case "ticket.due_passed":
       return ev.type === re.type;
     default: {
       const unreachable: never = re;
@@ -98,15 +102,22 @@ function fieldTest(c: Extract<Condition, { kind: "field" }>, raw: FieldValue | u
   }
 }
 
+/** The same nesting guard the schema applies; a stored rule passed the schema, so hitting
+ *  this means a caller built a condition by hand, and a loud error beats a silent false. */
 export function evaluateCondition(c: Condition, ctx: RuleContext): boolean {
+  if (conditionDepth(c) > MAX_CONDITION_DEPTH) throw new RangeError(`conditions nest deeper than ${MAX_CONDITION_DEPTH}`);
+  return evaluate(c, ctx);
+}
+
+function evaluate(c: Condition, ctx: RuleContext): boolean {
   const t = ctx.ticket;
   switch (c.kind) {
     case "all":
-      return c.conditions.every((x) => evaluateCondition(x, ctx));
+      return c.conditions.every((x) => evaluate(x, ctx));
     case "any":
-      return c.conditions.some((x) => evaluateCondition(x, ctx));
+      return c.conditions.some((x) => evaluate(x, ctx));
     case "not":
-      return !evaluateCondition(c.condition, ctx);
+      return !evaluate(c.condition, ctx);
     case "lane":
       return idTest(c.op, t.laneId, "value" in c ? c.value : undefined, "values" in c ? c.values : undefined);
     case "board":
@@ -142,8 +153,15 @@ export function evaluateCondition(c: Condition, ctx: RuleContext): boolean {
   }
 }
 
-const ESCAPES: Record<string, string> = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
-export const escapePlainText = (s: string): string => s.replace(/[&<>"']/g, (ch) => ESCAPES[ch]);
+/** Backslash-escapes what a markdown renderer could read as structure: the inline specials
+ *  everywhere, and at the start of a line a list marker (`-`, `+`, or digits then a dot).
+ *  Comments are markdown (base spec section 11), so a substituted title renders as the
+ *  literal text it is, including inside a code span. */
+export const escapeMarkdown = (s: string): string =>
+  s
+    .replace(/[\\*_`#[\]<>|]/g, (ch) => `\\${ch}`)
+    .replace(/(^|\n)([-+])/g, (_, nl: string, mark: string) => `${nl}\\${mark}`)
+    .replace(/(^|\n)(\d+)\./g, (_, nl: string, digits: string) => `${nl}${digits}\\.`);
 
 export interface TemplateScope {
   ticket: { key: string; title: string };
@@ -153,11 +171,11 @@ export interface TemplateScope {
 
 /** Fills `{{ticket.key}}`, `{{ticket.title}}`, `{{lane.name}}` and `{{event.type}}`; any
  *  other placeholder is left as written. Substituted values are escaped so a title cannot
- *  smuggle markup into a system comment. */
+ *  smuggle markdown structure into a system comment or a created ticket's title. */
 export function renderTemplate(body: string, scope: TemplateScope): string {
   return body.replace(/\{\{\s*(ticket\.key|ticket\.title|lane\.name|event\.type)\s*\}\}/g, (_, path: string) => {
     const value = path === "ticket.key" ? scope.ticket.key : path === "ticket.title" ? scope.ticket.title : path === "lane.name" ? scope.lane.name : scope.event.type;
-    return escapePlainText(value);
+    return escapeMarkdown(value);
   });
 }
 
@@ -174,7 +192,9 @@ export function evaluateRule(rule: Rule, event: EngineEvent, ctx: RuleContext): 
   const out: Action[] = [];
   for (const { when, ...action } of rule.actions) {
     if (when && !when.every((c) => evaluateCondition(c, ctx))) continue;
-    out.push(action.type === "add_comment" ? { ...action, body: renderTemplate(action.body, scope) } : action);
+    if (action.type === "add_comment") out.push({ ...action, body: renderTemplate(action.body, scope) });
+    else if (action.type === "create_ticket") out.push({ ...action, title: renderTemplate(action.title, scope) });
+    else out.push(action);
   }
   return out;
 }

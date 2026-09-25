@@ -1,9 +1,11 @@
 import type { FastifyInstance } from "fastify";
-import { AddCommentInput, AddEvidenceInput, checkGate, evaluateEvidence, LaneRequirementsInput } from "@panorama/core";
+import { AddCommentInput, AddEvidenceInput, checkGate, CreateEvidenceTypeInput, evaluateEvidence, LaneRequirementsInput } from "@panorama/core";
 import {
   addComment,
   addEvidence,
   appendEvent,
+  createEvidenceType,
+  deleteEvidenceType,
   getActor,
   getAttachment,
   getEvidenceType,
@@ -33,6 +35,42 @@ export function threadRoutes(app: FastifyInstance, ctx: Ctx): void {
   };
 
   app.get("/api/v1/evidence-types", async (req) => { requireCan(req, "read"); return listEvidenceTypes(getDb(ctx)); });
+
+  // Evidence types are global (every project shares them), so these events carry no
+  // projectId and the stream sends them to every listener (see visibleTo in bus.ts).
+
+  app.post("/api/v1/evidence-types", async (req) => {
+    requireCan(req, "evidence.edit");
+    const db = getDb(ctx); const input = CreateEvidenceTypeInput.parse(req.body);
+    return db.transaction(() => {
+      let type;
+      try {
+        type = createEvidenceType(db, input, iso());
+      } catch (e) {
+        if ((e as Error).message === "duplicate_evidence_type") throw new HttpError(409, "duplicate_evidence_type", "That evidence type name is already used");
+        throw e;
+      }
+      log(db, req, "evidence_type.created", { id: type.id, name: type.name, kind: type.kind, params: type.params, humanOnly: type.humanOnly, needsAttachment: type.needsAttachment });
+      return type;
+    })();
+  });
+
+  app.delete("/api/v1/evidence-types/:id", async (req: any) => {
+    const db = getDb(ctx); const type = getEvidenceType(db, req.params.id);
+    if (!type) throw new HttpError(404, "not_found", "No such evidence type");
+    requireCan(req, "evidence.edit");
+    return db.transaction(() => {
+      const { deleted, lanes, evidenceCount } = deleteEvidenceType(db, type.id);
+      if (!deleted) {
+        const message = lanes.length > 0
+          ? `Remove it from ${lanes.map((l) => l.name).join(", ")} first`
+          : `It is recorded on ${evidenceCount} evidence ${evidenceCount === 1 ? "row" : "rows"}`;
+        throw new HttpError(409, "evidence_type_in_use", message, { lanes, evidenceCount });
+      }
+      log(db, req, "evidence_type.deleted", { id: type.id, name: type.name });
+      return { ok: true };
+    })();
+  });
 
   app.put("/api/v1/lanes/:id/requirements", async (req: any) => {
     const db = getDb(ctx); const lane = getLane(db, req.params.id);

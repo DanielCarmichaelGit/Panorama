@@ -33,6 +33,27 @@ describe("stream", () => {
     await expect(h.next()).rejects.toThrow("closed");
     await s.app.close();
   });
+  it("sends evidence type events to every listener, agents included, since types are global", async () => {
+    const s = await setupApp();
+    const { project } = (await s.human("POST", "/api/v1/projects", { name: "P", key: "PP" })).json;
+    const ak = await deriveKeys("agent-secret-" + randomHex(4), "11".repeat(16), ARGON_FAST);
+    const id = (await s.app.inject({ method: "POST", url: "/api/v1/agents/register", payload: { name: "listener", publicKey: ak.publicKeyHex } })).json().id;
+    await s.human("POST", `/api/v1/agents/${id}/approve`, { scopes: { projects: [project.id], actions: ["read"] } });
+    const h = await open(s.app, s.keys.seed, "human");
+    const a = await open(s.app, ak.seed, id, h.base);
+    // Opening the agent's stream puts an agent.seen frame on the human's; skip presence frames.
+    const nextEvent = async (st: { next: () => Promise<{ type: string; data: any }> }) => {
+      for (;;) { const e = await st.next(); if (e.type !== "agent.seen") return e; }
+    };
+
+    const et = (await s.human("POST", "/api/v1/evidence-types", { name: "Lint", kind: "custom" })).json;
+    expect(await nextEvent(h)).toMatchObject({ type: "evidence_type.created", data: { id: et.id, name: "Lint" } });
+    expect(await nextEvent(a)).toMatchObject({ type: "evidence_type.created", data: { id: et.id, name: "Lint" } });
+    await s.human("DELETE", `/api/v1/evidence-types/${et.id}`);
+    expect(await nextEvent(h)).toMatchObject({ type: "evidence_type.deleted", data: { id: et.id } });
+    expect(await nextEvent(a)).toMatchObject({ type: "evidence_type.deleted", data: { id: et.id } });
+    h.close(); a.close(); await s.app.close();
+  });
   it("does not publish events from a request that failed", async () => {
     const s = await setupApp();
     const { project, lanes } = (await s.human("POST", "/api/v1/projects", { name: "P", key: "PP" })).json;

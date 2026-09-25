@@ -56,6 +56,176 @@ describe("epics and tags", () => {
   });
 });
 
+describe("colour on epics and tags", () => {
+  it("stores a lower-cased colour on create, carries it in the events, and lets a patch clear it", async () => {
+    const w = await world();
+    const epic = (await w.human("POST", "/api/v1/epics", { projectId: w.project.id, name: "Launch", color: "#A1B2C3" })).json;
+    expect(epic.color).toBe("#a1b2c3");
+    const tag = (await w.human("POST", "/api/v1/tags", { projectId: w.project.id, name: "backend", family: "sky", color: "#F6C1B4" })).json;
+    expect(tag.color).toBe("#f6c1b4");
+
+    const cleared = (await w.human("PATCH", `/api/v1/epics/${epic.id}`, { color: null })).json;
+    expect(cleared.color).toBeNull();
+    expect((await w.human("POST", "/api/v1/epics", { projectId: w.project.id, name: "Bad", color: "red" })).status).toBe(400);
+
+    const events = listEvents(w.app.ctx.db!);
+    expect(events.find((e) => e.type === "epic.created")!.payload).toMatchObject({ id: epic.id, projectId: w.project.id, name: "Launch", family: "stone", color: "#a1b2c3" });
+    expect(events.find((e) => e.type === "tag.created")!.payload).toMatchObject({ id: tag.id, projectId: w.project.id, name: "backend", family: "sky", color: "#f6c1b4" });
+    expect(events.find((e) => e.type === "epic.updated")!.payload).toMatchObject({ id: epic.id, patch: { color: null } });
+  });
+
+  it("lets a human rename and recolour a tag through PATCH, logging tag.updated with changed[], and refuses an agent", async () => {
+    const w = await world();
+    const tag = (await w.human("POST", "/api/v1/tags", { projectId: w.project.id, name: "backend" })).json;
+    const other = (await w.human("POST", "/api/v1/tags", { projectId: w.project.id, name: "frontend" })).json;
+
+    const updated = (await w.human("PATCH", `/api/v1/tags/${tag.id}`, { name: "server", color: "#B9DDF5" })).json;
+    expect(updated).toMatchObject({ id: tag.id, name: "server", color: "#b9ddf5" });
+    expect((await w.agent("PATCH", `/api/v1/tags/${tag.id}`, { name: "nope" })).status).toBe(403);
+    expect((await w.human("PATCH", `/api/v1/tags/${tag.id}`, {})).status).toBe(400);
+    expect((await w.human("PATCH", "/api/v1/tags/missing", { name: "x" })).status).toBe(404);
+
+    const dup = await w.human("PATCH", `/api/v1/tags/${other.id}`, { name: "Server" });
+    expect(dup.status).toBe(409);
+    expect(dup.json.error.code).toBe("duplicate_tag");
+
+    const ev = listEvents(w.app.ctx.db!).find((e) => e.type === "tag.updated");
+    expect(ev!.payload).toMatchObject({ id: tag.id, projectId: w.project.id, changed: ["name", "color"], patch: { name: "server", color: "#b9ddf5" } });
+  });
+});
+
+describe("lane lifecycle", () => {
+  it("adds a lane before the done lanes, logs lane.created, and refuses a duplicate name and an agent", async () => {
+    const w = await world();
+    const res = await w.human("POST", `/api/v1/projects/${w.project.id}/lanes`, { name: "Review", family: "lilac", setsNeedsHuman: true, isDone: false });
+    expect(res.status).toBe(200);
+    expect(res.json).toMatchObject({ projectId: w.project.id, name: "Review", family: "lilac", setsNeedsHuman: true, isDone: false, position: 5 });
+    const lanes = (await w.human("GET", `/api/v1/projects/${w.project.id}/lanes`)).json;
+    expect(lanes.map((l: any) => l.name)).toEqual(["Backlog", "Ready", "In Progress", "Eval", "Ready for Production", "Review", "Done"]);
+
+    const dup = await w.human("POST", `/api/v1/projects/${w.project.id}/lanes`, { name: "review" });
+    expect(dup.status).toBe(400);
+    expect(dup.json.error.code).toBe("validation");
+    expect(dup.json.error.message).toBe("A lane named review already exists in this project");
+
+    expect((await w.human("POST", "/api/v1/projects/missing/lanes", { name: "x" })).status).toBe(404);
+    expect((await w.agent("POST", `/api/v1/projects/${w.project.id}/lanes`, { name: "Nope" })).status).toBe(403);
+
+    const ev = listEvents(w.app.ctx.db!).find((e) => e.type === "lane.created");
+    expect(ev!.payload).toMatchObject({ id: res.json.id, projectId: w.project.id, name: "Review", family: "lilac", setsNeedsHuman: true, isDone: false, position: 5 });
+  });
+
+  it("patches a lane's flags and family with changed[], never its name, and refuses an agent", async () => {
+    const w = await world();
+    const lane = w.lanes[1];
+    const res = await w.human("PATCH", `/api/v1/lanes/${lane.id}`, { family: "coral", isDone: true });
+    expect(res.status).toBe(200);
+    expect(res.json).toMatchObject({ id: lane.id, name: "Ready", family: "coral", isDone: true });
+    expect((await w.human("PATCH", `/api/v1/lanes/${lane.id}`, { name: "Renamed" })).status).toBe(400);
+    expect((await w.human("PATCH", "/api/v1/lanes/missing", { isDone: true })).status).toBe(404);
+    expect((await w.agent("PATCH", `/api/v1/lanes/${lane.id}`, { isDone: false })).status).toBe(403);
+
+    const ev = listEvents(w.app.ctx.db!).find((e) => e.type === "lane.updated");
+    expect(ev!.payload).toEqual({ id: lane.id, projectId: w.project.id, changed: ["family", "isDone"], patch: { family: "coral", isDone: true } });
+  });
+
+  it("reorders lanes from the full id list, refusing a partial list and an agent", async () => {
+    const w = await world();
+    const ids = w.lanes.map((l: any) => l.id);
+    const reversed = [...ids].reverse();
+    const res = await w.human("PUT", `/api/v1/projects/${w.project.id}/lanes/order`, { ids: reversed });
+    expect(res.status).toBe(200);
+    expect(res.json.map((l: any) => l.id)).toEqual(reversed);
+
+    const partial = await w.human("PUT", `/api/v1/projects/${w.project.id}/lanes/order`, { ids: ids.slice(1) });
+    expect(partial.status).toBe(400);
+    expect(partial.json.error.code).toBe("validation");
+    expect((await w.agent("PUT", `/api/v1/projects/${w.project.id}/lanes/order`, { ids })).status).toBe(403);
+
+    const ev = listEvents(w.app.ctx.db!).find((e) => e.type === "lane.reordered");
+    expect(ev!.payload).toEqual({ projectId: w.project.id, ids: reversed });
+  });
+
+  it("refuses to delete a lane with tickets (archived included) or the last lane, and deletes an empty one", async () => {
+    const w = await world();
+    const backlog = w.lanes[0];
+    const t1 = (await w.human("POST", "/api/v1/tickets", { projectId: w.project.id, title: "a" })).json;
+    await w.human("POST", "/api/v1/tickets", { projectId: w.project.id, title: "b" });
+    await w.human("POST", `/api/v1/tickets/${t1.id}/archive`);
+
+    const inUse = await w.human("DELETE", `/api/v1/lanes/${backlog.id}`);
+    expect(inUse.status).toBe(409);
+    expect(inUse.json.error.code).toBe("lane_in_use");
+    expect(inUse.json.error.message).toBe("Move its 2 tickets first");
+    expect(inUse.json.error.details).toEqual({ ticketCount: 2 });
+
+    expect((await w.agent("DELETE", `/api/v1/lanes/${w.lanes[1].id}`)).status).toBe(403);
+    expect((await w.human("DELETE", "/api/v1/lanes/missing")).status).toBe(404);
+
+    for (const lane of w.lanes.slice(1)) expect((await w.human("DELETE", `/api/v1/lanes/${lane.id}`)).status).toBe(200);
+    expect((await w.human("GET", `/api/v1/projects/${w.project.id}/lanes`)).json.map((l: any) => l.id)).toEqual([backlog.id]);
+
+    const other = (await w.human("POST", "/api/v1/projects", { name: "Other", key: "OTH" })).json;
+    for (const lane of other.lanes.slice(1)) await w.human("DELETE", `/api/v1/lanes/${lane.id}`);
+    const last = await w.human("DELETE", `/api/v1/lanes/${other.lanes[0].id}`);
+    expect(last.status).toBe(409);
+    expect(last.json.error.code).toBe("last_lane");
+
+    const deleted = listEvents(w.app.ctx.db!).filter((e) => e.type === "lane.deleted");
+    expect(deleted).toHaveLength(10);
+    expect(deleted[0].payload).toEqual({ id: w.lanes[1].id, projectId: w.project.id, name: "Ready" });
+  });
+});
+
+describe("evidence type lifecycle", () => {
+  it("adds a type with a threshold for eval_score only, refuses a duplicate name and an agent, and logs evidence_type.created", async () => {
+    const w = await world();
+    const res = await w.human("POST", "/api/v1/evidence-types", { name: "Strict score", kind: "eval_score", params: { threshold: 0.95 }, humanOnly: true });
+    expect(res.status).toBe(200);
+    expect(res.json).toMatchObject({ name: "Strict score", kind: "eval_score", params: { threshold: 0.95 }, humanOnly: true, needsAttachment: false });
+    expect((await w.human("GET", "/api/v1/evidence-types")).json.map((t: any) => t.id)).toContain(res.json.id);
+
+    const badThreshold = await w.human("POST", "/api/v1/evidence-types", { name: "Lint", kind: "custom", params: { threshold: 0.5 } });
+    expect(badThreshold.status).toBe(400);
+    const dup = await w.human("POST", "/api/v1/evidence-types", { name: "eval score", kind: "custom" });
+    expect(dup.status).toBe(409);
+    expect(dup.json.error.code).toBe("duplicate_evidence_type");
+    expect((await w.agent("POST", "/api/v1/evidence-types", { name: "Nope", kind: "custom" })).status).toBe(403);
+
+    const ev = listEvents(w.app.ctx.db!).find((e) => e.type === "evidence_type.created");
+    expect(ev!.payload).toEqual({ id: res.json.id, name: "Strict score", kind: "eval_score", params: { threshold: 0.95 }, humanOnly: true, needsAttachment: false });
+  });
+
+  it("refuses to delete a type a lane requires, naming the lanes, or one with evidence rows, counting them", async () => {
+    const w = await world();
+    const byLane = await w.human("DELETE", "/api/v1/evidence-types/et_eval_score");
+    expect(byLane.status).toBe(409);
+    expect(byLane.json.error.code).toBe("evidence_type_in_use");
+    expect(byLane.json.error.message).toBe("Remove it from Ready for Production first");
+    expect(byLane.json.error.details).toMatchObject({ lanes: [{ name: "Ready for Production", projectId: w.project.id }], evidenceCount: 0 });
+
+    const t = (await w.human("POST", "/api/v1/tickets", { projectId: w.project.id, title: "a" })).json;
+    await w.human("POST", "/api/v1/evidence", { ticketId: t.id, typeId: "et_test_run", payload: { passed: 1, failed: 0 } });
+    const byEvidence = await w.human("DELETE", "/api/v1/evidence-types/et_test_run");
+    expect(byEvidence.status).toBe(409);
+    expect(byEvidence.json.error.code).toBe("evidence_type_in_use");
+    expect(byEvidence.json.error.message).toBe("It is recorded on 1 evidence row");
+    expect(byEvidence.json.error.details).toEqual({ lanes: [], evidenceCount: 1 });
+  });
+
+  it("deletes an unused type, human only, logging evidence_type.deleted", async () => {
+    const w = await world();
+    const created = (await w.human("POST", "/api/v1/evidence-types", { name: "Lint", kind: "custom" })).json;
+    expect((await w.agent("DELETE", `/api/v1/evidence-types/${created.id}`)).status).toBe(403);
+    expect((await w.human("DELETE", "/api/v1/evidence-types/missing")).status).toBe(404);
+    const res = await w.human("DELETE", `/api/v1/evidence-types/${created.id}`);
+    expect(res.status).toBe(200);
+    expect((await w.human("GET", "/api/v1/evidence-types")).json.map((t: any) => t.id)).not.toContain(created.id);
+    const ev = listEvents(w.app.ctx.db!).find((e) => e.type === "evidence_type.deleted");
+    expect(ev!.payload).toEqual({ id: created.id, name: "Lint" });
+  });
+});
+
 describe("ticket create and patch with the extended model", () => {
   it("lets an agent create a ticket with an epic, tags, and field values in scope", async () => {
     const w = await world();
@@ -290,13 +460,30 @@ describe("event provenance", () => {
     const b = (await w.human("POST", "/api/v1/tickets", { projectId: w.project.id, title: "B" })).json;
     const link = (await w.human("POST", `/api/v1/tickets/${a.id}/links`, { toId: b.id, kind: "relates" })).json;
     await w.human("DELETE", `/api/v1/tickets/${a.id}/links/${link.id}`);
+    await w.human("PATCH", `/api/v1/tags/${tag.id}`, { color: "#f6c1b4" });
+    const lane = (await w.human("POST", `/api/v1/projects/${w.project.id}/lanes`, { name: "Review" })).json;
+    await w.human("PATCH", `/api/v1/lanes/${lane.id}`, { family: "coral" });
+    await w.human("PUT", `/api/v1/projects/${w.project.id}/lanes/order`, { ids: [lane.id, ...w.lanes.map((l: any) => l.id)] });
+    await w.human("DELETE", `/api/v1/lanes/${lane.id}`);
+    const et = (await w.human("POST", "/api/v1/evidence-types", { name: "Lint", kind: "custom" })).json;
+    await w.human("DELETE", `/api/v1/evidence-types/${et.id}`);
 
     const events = listEvents(w.app.ctx.db!);
-    const newTypes = ["epic.created", "epic.updated", "tag.created", "tag.archived", "field.created", "field.updated", "field.archived", "ticket.linked", "ticket.unlinked"];
+    const newTypes = [
+      "epic.created", "epic.updated", "tag.created", "tag.updated", "tag.archived", "field.created", "field.updated", "field.archived", "ticket.linked", "ticket.unlinked",
+      "lane.created", "lane.updated", "lane.reordered", "lane.deleted",
+    ];
     for (const ev of events) {
       if (newTypes.includes(ev.type)) expect((ev.payload as any).projectId).toBe(w.project.id);
     }
     expect(newTypes.every((t) => events.some((e) => e.type === t))).toBe(true);
+    // Evidence types are global, so their events carry no projectId.
+    const globalTypes = ["evidence_type.created", "evidence_type.deleted"];
+    for (const t of globalTypes) {
+      const ev = events.find((e) => e.type === t);
+      expect(ev).toBeDefined();
+      expect((ev!.payload as any).projectId).toBeUndefined();
+    }
     expect(verifyChain(events).ok).toBe(true);
   });
 });

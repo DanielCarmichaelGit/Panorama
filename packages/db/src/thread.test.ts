@@ -25,6 +25,38 @@ describe("evidence types and lanes", () => {
     expect(d.getLane(db, lanes[1].id)!.evidenceRequirements).toEqual([{ typeId: "et_test_run", count: 2 }]);
   });
 });
+describe("evidence type lifecycle", () => {
+  it("creates a type with its params and flags, refusing a duplicate name case-insensitively", () => {
+    const { db } = world();
+    const et = d.createEvidenceType(db, { name: "Lint", kind: "custom", humanOnly: false, needsAttachment: false }, NOW);
+    expect(et).toMatchObject({ name: "Lint", kind: "custom", params: {}, humanOnly: false, needsAttachment: false, createdAt: NOW });
+    expect(d.getEvidenceType(db, et.id)).toEqual(et);
+    const scored = d.createEvidenceType(db, { name: "Strict score", kind: "eval_score", params: { threshold: 0.95 }, humanOnly: true, needsAttachment: true }, NOW);
+    expect(scored).toMatchObject({ params: { threshold: 0.95 }, humanOnly: true, needsAttachment: true });
+    expect(() => d.createEvidenceType(db, { name: "lint", kind: "custom", humanOnly: false, needsAttachment: false }, NOW)).toThrow("duplicate_evidence_type");
+    expect(() => d.createEvidenceType(db, { name: "eval SCORE", kind: "custom", humanOnly: false, needsAttachment: false }, NOW)).toThrow("duplicate_evidence_type");
+  });
+
+  it("refuses to delete a type a lane requires, naming the lane", () => {
+    const { db, lanes } = world();
+    const et = d.createEvidenceType(db, { name: "Lint", kind: "custom", humanOnly: false, needsAttachment: false }, NOW);
+    d.setLaneRequirements(db, lanes[3].id, [{ typeId: et.id, count: 1 }]);
+    expect(d.deleteEvidenceType(db, et.id)).toEqual({ deleted: false, lanes: [{ id: lanes[3].id, projectId: lanes[3].projectId, name: "Eval" }], evidenceCount: 0 });
+    expect(d.getEvidenceType(db, et.id)).toBeDefined();
+  });
+
+  it("refuses to delete a type an evidence row references, counting the rows, and deletes an unused one", () => {
+    const { db, t } = world();
+    const et = d.createEvidenceType(db, { name: "Lint", kind: "custom", humanOnly: false, needsAttachment: false }, NOW);
+    d.addEvidence(db, { ticketId: t.id, typeId: et.id, commentId: null, attachmentId: null, actorId: "human", payload: { result: "pass" }, result: "pass", now: NOW });
+    d.addEvidence(db, { ticketId: t.id, typeId: et.id, commentId: null, attachmentId: null, actorId: "human", payload: { result: "pass" }, result: "pass", now: NOW });
+    expect(d.deleteEvidenceType(db, et.id)).toEqual({ deleted: false, lanes: [], evidenceCount: 2 });
+
+    const unused = d.createEvidenceType(db, { name: "Unused", kind: "file", humanOnly: false, needsAttachment: true }, NOW);
+    expect(d.deleteEvidenceType(db, unused.id)).toEqual({ deleted: true, lanes: [], evidenceCount: 0 });
+    expect(d.getEvidenceType(db, unused.id)).toBeUndefined();
+  });
+});
 describe("thread", () => {
   it("stores comments, links attachments, and lists evidence in order", () => {
     const { db, t } = world();

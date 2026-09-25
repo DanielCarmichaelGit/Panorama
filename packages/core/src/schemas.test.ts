@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CheckpointInput, CreateEpicInput, CreateProjectInput, CreateTagInput, CreateTicketInput, DEFAULT_LANES, UpdateEpicInput, UpdateTicketInput } from "./index";
+import { CheckpointInput, CreateEpicInput, CreateEvidenceTypeInput, CreateLaneInput, CreateProjectInput, CreateTagInput, CreateTicketInput, DEFAULT_LANES, LaneOrderInput, normalizeColor, UpdateEpicInput, UpdateLaneInput, UpdateTagInput, UpdateTicketInput } from "./index";
 
 describe("CreateProjectInput", () => {
   it("accepts an uppercase project key and rejects a lowercase one", () => {
@@ -124,5 +124,59 @@ describe("DEFAULT_LANES", () => {
     for (const l of DEFAULT_LANES.filter((l) => l.name !== "Ready for Production" && l.name !== "Done")) {
       expect(l.evidenceRequirements).toEqual([]);
     }
+  });
+});
+
+describe("colour on epics and tags", () => {
+  it("accepts a six-digit hex colour and normalises it to lower-case", () => {
+    const epic = CreateEpicInput.parse({ projectId: "p1", name: "Launch", color: "#A1B2C3" });
+    expect(epic.color).toBe("#a1b2c3");
+    const tag = CreateTagInput.parse({ projectId: "p1", name: "backend", color: "#F6C1B4" });
+    expect(tag.color).toBe("#f6c1b4");
+    expect(normalizeColor("#ABCDEF")).toBe("#abcdef");
+  });
+  it("rejects a short hex, a missing hash, and a colour name", () => {
+    expect(CreateEpicInput.safeParse({ projectId: "p1", name: "Launch", color: "#abc" }).success).toBe(false);
+    expect(CreateEpicInput.safeParse({ projectId: "p1", name: "Launch", color: "a1b2c3" }).success).toBe(false);
+    expect(CreateTagInput.safeParse({ projectId: "p1", name: "backend", color: "coral" }).success).toBe(false);
+  });
+  it("lets an update clear the colour with null", () => {
+    expect(UpdateEpicInput.parse({ color: null }).color).toBeNull();
+    expect(UpdateTagInput.parse({ color: null }).color).toBeNull();
+    expect(UpdateTagInput.parse({ name: "Backend", color: "#ABCDEF" })).toEqual({ name: "Backend", color: "#abcdef" });
+    expect(UpdateTagInput.safeParse({}).success).toBe(false);
+    expect(UpdateTagInput.safeParse({ archived: true }).success).toBe(false);
+  });
+});
+
+describe("CreateLaneInput", () => {
+  it("requires a name of 1 to 40 characters and defaults the flags", () => {
+    expect(CreateLaneInput.parse({ name: "Review" })).toEqual({ name: "Review", family: "stone", setsNeedsHuman: false, isDone: false });
+    expect(CreateLaneInput.parse({ name: "x".repeat(40), family: "mint", setsNeedsHuman: true, isDone: true })).toMatchObject({ family: "mint", setsNeedsHuman: true, isDone: true });
+    expect(CreateLaneInput.safeParse({ name: "" }).success).toBe(false);
+    expect(CreateLaneInput.safeParse({ name: "x".repeat(41) }).success).toBe(false);
+    expect(CreateLaneInput.safeParse({ name: "Review", position: 2 }).success).toBe(false);
+  });
+});
+
+describe("UpdateLaneInput and LaneOrderInput", () => {
+  it("refuses a rename, an empty patch, and an empty order", () => {
+    expect(UpdateLaneInput.safeParse({ name: "Renamed" }).success).toBe(false);
+    expect(UpdateLaneInput.safeParse({}).success).toBe(false);
+    expect(UpdateLaneInput.safeParse({ isDone: true, setsNeedsHuman: false, family: "coral" }).success).toBe(true);
+    expect(LaneOrderInput.safeParse({ ids: [] }).success).toBe(false);
+    expect(LaneOrderInput.safeParse({ ids: ["a", "b"] }).success).toBe(true);
+  });
+});
+
+describe("CreateEvidenceTypeInput", () => {
+  it("allows a threshold only for eval_score and defaults the flags", () => {
+    expect(CreateEvidenceTypeInput.parse({ name: "Lint", kind: "custom" })).toEqual({ name: "Lint", kind: "custom", humanOnly: false, needsAttachment: false });
+    expect(CreateEvidenceTypeInput.parse({ name: "Score", kind: "eval_score", params: { threshold: 0.8 } }).params).toEqual({ threshold: 0.8 });
+    expect(CreateEvidenceTypeInput.safeParse({ name: "Lint", kind: "custom", params: { threshold: 0.8 } }).success).toBe(false);
+    expect(CreateEvidenceTypeInput.safeParse({ name: "Score", kind: "eval_score", params: { threshold: 1.5 } }).success).toBe(false);
+    expect(CreateEvidenceTypeInput.safeParse({ name: "Score", kind: "bogus" }).success).toBe(false);
+    expect(CreateEvidenceTypeInput.safeParse({ name: "", kind: "custom" }).success).toBe(false);
+    expect(CreateEvidenceTypeInput.safeParse({ name: "x".repeat(61), kind: "custom" }).success).toBe(false);
   });
 });

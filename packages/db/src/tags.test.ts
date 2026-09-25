@@ -41,6 +41,23 @@ describe("tags", () => {
     expect(d.listTags(db, project.id, { includeArchived: true }).map((t) => t.id)).toEqual([tag.id]);
   });
 
+  it("stores a colour on create and lets an update rename, recolour, and clear the colour", () => {
+    const { db, project } = world();
+    const tag = d.createTag(db, { projectId: project.id, name: "Bug", color: "#f6c1b4" }, NOW);
+    expect(tag).toMatchObject({ name: "Bug", family: "stone", color: "#f6c1b4" });
+    const renamed = d.updateTag(db, tag.id, { name: "Defect", family: "coral", color: "#b9ddf5" });
+    expect(renamed).toMatchObject({ name: "Defect", family: "coral", color: "#b9ddf5" });
+    expect(d.getTag(db, tag.id)).toEqual(renamed);
+    expect(d.updateTag(db, tag.id, { color: null }).color).toBeNull();
+  });
+
+  it("refuses an update that renames a tag onto another tag's name", () => {
+    const { db, project } = world();
+    d.createTag(db, { projectId: project.id, name: "Bug" }, NOW);
+    const other = d.createTag(db, { projectId: project.id, name: "Urgent" }, NOW);
+    expect(() => d.updateTag(db, other.id, { name: "bug" })).toThrow("duplicate_tag");
+  });
+
   it("replaces a ticket's tag set", () => {
     const { db, project, t } = world();
     const bug = d.createTag(db, { projectId: project.id, name: "Bug" }, NOW);

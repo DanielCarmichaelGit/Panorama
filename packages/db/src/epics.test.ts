@@ -31,6 +31,17 @@ describe("epics", () => {
     expect(d.getEpic(db, e.id)).toEqual(updated);
   });
 
+  it("stores a colour, defaults it to null, and lets an update clear it", () => {
+    const { db, project } = world();
+    const plain = d.createEpic(db, { projectId: project.id, name: "Onboarding" }, NOW);
+    expect(plain.color).toBeNull();
+    const coloured = d.createEpic(db, { projectId: project.id, name: "Billing", color: "#d3c8f4" }, NOW);
+    expect(coloured.color).toBe("#d3c8f4");
+    expect(d.updateEpic(db, coloured.id, { color: "#bfe8cf" }, NOW).color).toBe("#bfe8cf");
+    expect(d.updateEpic(db, coloured.id, { color: null }, NOW).color).toBeNull();
+    expect(d.getEpic(db, coloured.id)!.color).toBeNull();
+  });
+
   it("hides archived epics unless includeArchived is set", () => {
     const { db, project } = world();
     const e1 = d.createEpic(db, { projectId: project.id, name: "Onboarding" }, NOW);

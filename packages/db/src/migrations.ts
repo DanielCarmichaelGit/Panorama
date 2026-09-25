@@ -103,8 +103,14 @@ create table ticket_field_values(ticket_id text not null references tickets(id),
 alter table tickets add column epic_id text references epics(id);
 alter table tickets add column success_criteria text not null default '';
 `;
+// The settings refresh (2c): an arc (epic) or a tag may carry its own `#rrggbb` colour, which
+// wins over its family when set. Nullable, so every existing row simply keeps its family.
+const M7 = `
+alter table epics add column color text;
+alter table tags add column color text;
+`;
 type Migration = string | ((db: DB) => void);
-const MIGRATIONS: Migration[] = [M1, M2, M3, M4, M5, M6];
+const MIGRATIONS: Migration[] = [M1, M2, M3, M4, M5, M6, M7];
 
 /** Applies migrations up to (not including index) `version`. Exported so a test can stop a
  *  fresh database at M4, seed pre-boards data, then call `migrate` to exercise the M5 backfill

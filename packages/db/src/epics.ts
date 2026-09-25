@@ -3,7 +3,7 @@ import type { Epic, Family } from "@panorama/core";
 import type { DB } from "./open";
 
 const toEpic = (r: any): Epic => ({
-  id: r.id, projectId: r.project_id, name: r.name, description: r.description, family: r.family,
+  id: r.id, projectId: r.project_id, name: r.name, description: r.description, family: r.family, color: r.color ?? null,
   position: r.position, archived: !!r.archived, createdAt: r.created_at,
 });
 
@@ -17,18 +17,18 @@ export const getEpic = (db: DB, id: string): Epic | undefined => {
   return r ? toEpic(r) : undefined;
 };
 
-export function createEpic(db: DB, input: { projectId: string; name: string; description?: string | null; family?: Family }, now: string): Epic {
+export function createEpic(db: DB, input: { projectId: string; name: string; description?: string | null; family?: Family; color?: string | null }, now: string): Epic {
   const id = randomUUID();
   const position = ((db.prepare("select max(position) m from epics where project_id = ?").get(input.projectId) as { m: number | null }).m ?? 0) + 1;
-  db.prepare("insert into epics(id, project_id, name, description, family, position, created_at) values(?,?,?,?,?,?,?)")
-    .run(id, input.projectId, input.name, input.description ?? null, input.family ?? "stone", position, now);
+  db.prepare("insert into epics(id, project_id, name, description, family, color, position, created_at) values(?,?,?,?,?,?,?,?)")
+    .run(id, input.projectId, input.name, input.description ?? null, input.family ?? "stone", input.color ?? null, position, now);
   return getEpic(db, id)!;
 }
 
 export function updateEpic(
   db: DB,
   id: string,
-  patch: { name?: string; description?: string | null; family?: Family; archived?: boolean; position?: number },
+  patch: { name?: string; description?: string | null; family?: Family; color?: string | null; archived?: boolean; position?: number },
   now: string
 ): Epic {
   void now; // epics have no updated_at column: kept for interface symmetry with other update* functions
@@ -36,6 +36,7 @@ export function updateEpic(
   if (patch.name !== undefined) cols.name = patch.name;
   if (patch.description !== undefined) cols.description = patch.description;
   if (patch.family !== undefined) cols.family = patch.family;
+  if (patch.color !== undefined) cols.color = patch.color;
   if (patch.archived !== undefined) cols.archived = patch.archived ? 1 : 0;
   if (patch.position !== undefined) cols.position = patch.position;
   const keys = Object.keys(cols);

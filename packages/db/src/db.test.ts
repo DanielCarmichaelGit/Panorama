@@ -116,6 +116,84 @@ describe("M6 migration", () => {
   });
 });
 
+describe("M7 migration", () => {
+  it("upgrades a database at version 6 so existing epics and tags read back with a null colour", () => {
+    const dir = mkdtempSync(join(tmpdir(), "pan-"));
+    const db = d.openDatabase(join(dir, "p.db"), null);
+    d.migrateTo(db, 6); // stop right after M6: epics and tags exist but have no color column yet
+
+    db.prepare("insert into projects(id, key, name, next_number, created_at) values(?,?,?,?,?)").run("proj1", "PAN", "Panorama", 1, NOW);
+    db.prepare("insert into epics(id, project_id, name, family, position, created_at) values(?,?,?,?,?,?)").run("epic1", "proj1", "Launch", "coral", 1, NOW);
+    db.prepare("insert into tags(id, project_id, name, family, created_at) values(?,?,?,?,?)").run("tag1", "proj1", "backend", "sky", NOW);
+
+    d.migrate(db); // completes the upgrade to M7
+
+    expect(db.pragma("user_version", { simple: true })).toBe(7);
+    expect(d.getEpic(db, "epic1")).toMatchObject({ name: "Launch", family: "coral", color: null });
+    expect(d.getTag(db, "tag1")).toMatchObject({ name: "backend", family: "sky", color: null });
+    db.close();
+  });
+});
+
+describe("lane lifecycle", () => {
+  it("appends a new lane after the last non-done lane, before the done lanes", () => {
+    const { db } = fresh();
+    const { project } = d.createProject(db, { name: "Panorama", key: "PAN" }, NOW);
+    const lane = d.createLane(db, { projectId: project.id, name: "Review", family: "lilac", setsNeedsHuman: true, isDone: false }, NOW);
+    expect(lane).toMatchObject({ projectId: project.id, name: "Review", family: "lilac", setsNeedsHuman: true, isDone: false, position: 5, evidenceRequirements: [] });
+    const names = d.listLanes(db, project.id).map((l) => l.name);
+    expect(names).toEqual(["Backlog", "Ready", "In Progress", "Eval", "Ready for Production", "Review", "Done"]);
+    expect(d.listLanes(db, project.id).map((l) => l.position)).toEqual([0, 1, 2, 3, 4, 5, 6]);
+  });
+
+  it("appends at the end when every lane is a done lane", () => {
+    const { db } = fresh();
+    const { project, lanes } = d.createProject(db, { name: "Panorama", key: "PAN" }, NOW);
+    for (const l of lanes) d.updateLane(db, l.id, { isDone: true });
+    const lane = d.createLane(db, { projectId: project.id, name: "Archive", family: "stone", setsNeedsHuman: false, isDone: true }, NOW);
+    expect(lane.position).toBe(6);
+    expect(d.listLanes(db, project.id).at(-1)!.id).toBe(lane.id);
+  });
+
+  it("updates a lane's family and flags but never its name", () => {
+    const { db } = fresh();
+    const { lanes } = d.createProject(db, { name: "Panorama", key: "PAN" }, NOW);
+    const out = d.updateLane(db, lanes[0].id, { family: "coral", setsNeedsHuman: true, isDone: true });
+    expect(out).toMatchObject({ name: "Backlog", family: "coral", setsNeedsHuman: true, isDone: true });
+    expect(d.getLane(db, lanes[0].id)).toEqual(out);
+  });
+
+  it("reorders lanes to the given id list and rejects a list that is not exactly the project's lanes", () => {
+    const { db } = fresh();
+    const { project, lanes } = d.createProject(db, { name: "Panorama", key: "PAN" }, NOW);
+    const ids = lanes.map((l) => l.id);
+    const reversed = [...ids].reverse();
+    d.reorderLanes(db, project.id, reversed);
+    expect(d.listLanes(db, project.id).map((l) => l.id)).toEqual(reversed);
+    expect(d.listLanes(db, project.id).map((l) => l.position)).toEqual([0, 1, 2, 3, 4, 5]);
+
+    expect(() => d.reorderLanes(db, project.id, ids.slice(1))).toThrow("lane_set_mismatch");
+    expect(() => d.reorderLanes(db, project.id, [...ids, "stranger"])).toThrow("lane_set_mismatch");
+    expect(() => d.reorderLanes(db, project.id, [ids[0], ids[0], ...ids.slice(2)])).toThrow("lane_set_mismatch");
+    expect(d.listLanes(db, project.id).map((l) => l.id)).toEqual(reversed);
+  });
+
+  it("refuses to delete a lane holding tickets, archived ones included, and deletes an empty one", () => {
+    const { db } = fresh();
+    const { project, lanes } = d.createProject(db, { name: "Panorama", key: "PAN" }, NOW);
+    const t1 = d.createTicket(db, { projectId: project.id, title: "a" }, NOW);
+    d.createTicket(db, { projectId: project.id, title: "b" }, NOW);
+    d.archiveTicket(db, t1.id, NOW);
+
+    expect(d.deleteLane(db, lanes[0].id)).toEqual({ deleted: false, ticketCount: 2 });
+    expect(d.getLane(db, lanes[0].id)).toBeDefined();
+
+    expect(d.deleteLane(db, lanes[1].id)).toEqual({ deleted: true, ticketCount: 0 });
+    expect(d.getLane(db, lanes[1].id)).toBeUndefined();
+    expect(d.listLanes(db, project.id)).toHaveLength(5);
+  });
+});
+
 describe("projects and tickets", () => {
   it("creates a project with the six default lanes", () => {
     const { db } = fresh();

@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { CreateEpicInput, CreateTagInput, FieldDefinitionInput, LinkInput, UpdateEpicInput, UpdateFieldInput } from "@panorama/core";
+import { CreateEpicInput, CreateTagInput, FieldDefinitionInput, LinkInput, UpdateEpicInput, UpdateFieldInput, UpdateTagInput } from "@panorama/core";
 import {
   addLink,
   appendEvent,
@@ -19,6 +19,7 @@ import {
   removeLink,
   updateEpic,
   updateField,
+  updateTag,
   type DB,
 } from "@panorama/db";
 import { getDb, requireCan } from "../auth";
@@ -57,7 +58,7 @@ export function modelRoutes(app: FastifyInstance, ctx: Ctx): void {
     requireCan(req, "epic.edit", input.projectId);
     return db.transaction(() => {
       const epic = createEpic(db, input, iso());
-      log(db, req, "epic.created", { id: epic.id, projectId: epic.projectId, name: epic.name });
+      log(db, req, "epic.created", { id: epic.id, projectId: epic.projectId, name: epic.name, family: epic.family, color: epic.color });
       return epic;
     })();
   });
@@ -95,8 +96,26 @@ export function modelRoutes(app: FastifyInstance, ctx: Ctx): void {
         if ((e as Error).message === "duplicate_tag") throw new HttpError(409, "duplicate_tag", "That tag name is already used in this project");
         throw e;
       }
-      log(db, req, "tag.created", { id: tag.id, projectId: tag.projectId, name: tag.name });
+      log(db, req, "tag.created", { id: tag.id, projectId: tag.projectId, name: tag.name, family: tag.family, color: tag.color });
       return tag;
+    })();
+  });
+
+  app.patch("/api/v1/tags/:id", async (req: any) => {
+    const db = getDb(ctx); const tag = getTag(db, req.params.id);
+    if (!tag) throw new HttpError(404, "not_found", "No such tag");
+    requireCan(req, "tag.edit", tag.projectId);
+    const patch = UpdateTagInput.parse(req.body);
+    return db.transaction(() => {
+      let out;
+      try {
+        out = updateTag(db, tag.id, patch);
+      } catch (e) {
+        if ((e as Error).message === "duplicate_tag") throw new HttpError(409, "duplicate_tag", "That tag name is already used in this project");
+        throw e;
+      }
+      log(db, req, "tag.updated", { id: tag.id, projectId: tag.projectId, changed: Object.keys(patch), patch });
+      return out;
     })();
   });
 

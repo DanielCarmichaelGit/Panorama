@@ -1,0 +1,33 @@
+{
+  "sessionId": "s_20260924T222354_a2401b",
+  "actor": "Daniel Carmichael",
+  "tool": "claude-code",
+  "intent": "unstated",
+  "head": "0022be19c32ca927b0cd29d3e3f045b2108985147fa148bd280d7ff7364638b5",
+  "count": 1182,
+  "diffHash": "97463b2fe4ebb9636f91f04a4546611117605519584174e680d38284c17eaaf7",
+  "files": [
+    "apps/server/src/bus.ts",
+    "apps/server/src/model.test.ts",
+    "apps/server/src/routes/model.ts",
+    "apps/server/src/routes/projects.ts",
+    "apps/server/src/routes/thread.ts",
+    "apps/server/src/stream.test.ts",
+    "docs/superpowers/specs/2026-09-21-panorama-design.md",
+    "packages/core/src/permissions.test.ts",
+    "packages/core/src/permissions.ts",
+    "packages/core/src/schemas.test.ts",
+    "packages/core/src/schemas.ts",
+    "packages/db/src/db.test.ts",
+    "packages/db/src/epics.test.ts",
+    "packages/db/src/epics.ts",
+    "packages/db/src/migrations.ts",
+    "packages/db/src/projects.ts",
+    "packages/db/src/tags.test.ts",
+    "packages/db/src/tags.ts",
+    "packages/db/src/thread.test.ts",
+    "packages/db/src/thread.ts"
+  ],
+  "base": "a0aca78df4d6d2741a310942f0f0cc8efa4c5eb8",
+  "ts": "2026-09-25T01:20:43.414Z"
+}

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { DEFAULT_LANES, type Board, type Lane, type LaneRequirement, type Project } from "@panorama/core";
+import { DEFAULT_LANES, type Board, type Family, type Lane, type LaneRequirement, type Project } from "@panorama/core";
 import type { DB } from "./open";
 const toProject = (r: any): Project => ({ id: r.id, key: r.key, name: r.name, createdAt: r.created_at });
 const toLane = (r: any): Lane => ({ id: r.id, projectId: r.project_id, name: r.name, position: r.position, family: r.family, setsNeedsHuman: !!r.sets_needs_human, isDone: !!r.is_done, evidenceRequirements: JSON.parse(r.evidence_requirements) });
@@ -28,4 +28,48 @@ export function createBoard(db: DB, input: { projectId: string; name: string; de
 export function setLaneRequirements(db: DB, laneId: string, requirements: LaneRequirement[]): Lane {
   db.prepare("update lanes set evidence_requirements = ? where id = ?").run(JSON.stringify(requirements), laneId);
   return getLane(db, laneId)!;
+}
+
+/** A new lane lands after the last lane that is not a done lane (so the done lanes stay at
+ *  the end of the board), or at the end when every lane is a done lane. Rows after it shift
+ *  down one position. Name uniqueness is the route's job: it has the message to give. */
+export function createLane(db: DB, input: { projectId: string; name: string; family: Family; setsNeedsHuman: boolean; isDone: boolean }, now: string): Lane {
+  void now; // lanes have no created_at column: kept for symmetry with the other create* functions
+  const id = randomUUID();
+  const lastActive = db.prepare("select max(position) m from lanes where project_id = ? and is_done = 0").get(input.projectId) as { m: number | null };
+  const count = (db.prepare("select count(*) n from lanes where project_id = ?").get(input.projectId) as { n: number }).n;
+  const position = lastActive.m === null ? count : lastActive.m + 1;
+  db.prepare("update lanes set position = position + 1 where project_id = ? and position >= ?").run(input.projectId, position);
+  db.prepare("insert into lanes(id, project_id, name, position, family, sets_needs_human, is_done, evidence_requirements) values(?,?,?,?,?,?,?,'[]')")
+    .run(id, input.projectId, input.name, position, input.family, input.setsNeedsHuman ? 1 : 0, input.isDone ? 1 : 0);
+  return getLane(db, id)!;
+}
+
+export function updateLane(db: DB, id: string, patch: { family?: Family; setsNeedsHuman?: boolean; isDone?: boolean }): Lane {
+  const cols: Record<string, unknown> = {};
+  if (patch.family !== undefined) cols.family = patch.family;
+  if (patch.setsNeedsHuman !== undefined) cols.sets_needs_human = patch.setsNeedsHuman ? 1 : 0;
+  if (patch.isDone !== undefined) cols.is_done = patch.isDone ? 1 : 0;
+  const keys = Object.keys(cols);
+  if (keys.length > 0) db.prepare(`update lanes set ${keys.map((k) => `${k} = ?`).join(", ")} where id = ?`).run(...keys.map((k) => cols[k]), id);
+  return getLane(db, id)!;
+}
+
+/** `ids` must be exactly the project's lanes, each once, or nothing changes ("lane_set_mismatch"). */
+export function reorderLanes(db: DB, projectId: string, ids: string[]): Lane[] {
+  const current = listLanes(db, projectId).map((l) => l.id);
+  const wanted = new Set(ids);
+  if (ids.length !== current.length || wanted.size !== ids.length || current.some((id) => !wanted.has(id))) throw new Error("lane_set_mismatch");
+  const set = db.prepare("update lanes set position = ? where id = ?");
+  ids.forEach((id, i) => set.run(i, id));
+  return listLanes(db, projectId);
+}
+
+/** Counts every ticket in the lane, archived ones included: an archived ticket still points at
+ *  its lane and the foreign key would refuse the delete anyway. Deletes only when the count is 0. */
+export function deleteLane(db: DB, id: string): { deleted: boolean; ticketCount: number } {
+  const ticketCount = (db.prepare("select count(*) n from tickets where lane_id = ?").get(id) as { n: number }).n;
+  if (ticketCount > 0) return { deleted: false, ticketCount };
+  db.prepare("delete from lanes where id = ?").run(id);
+  return { deleted: true, ticketCount };
 }

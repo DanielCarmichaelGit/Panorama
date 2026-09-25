@@ -8,8 +8,8 @@ import { nextRunAfter, Scheduler } from "./scheduler";
 // only the clock the scheduler reads.
 const T = (s: string) => new Date(s);
 const CANVAS: CanvasDoc = { nodes: [{ id: "n1", kind: "schedule", position: { x: 0, y: 0 }, data: { cron: "*/5 * * * *", timezone: "UTC" } }], edges: [] };
-const EVERY_FIVE: RuleEvent = { type: "schedule", cron: "*/5 * * * *", timezone: "UTC" };
-const EVERY_MINUTE: RuleEvent = { type: "schedule", cron: "* * * * *", timezone: "UTC" };
+const EVERY_FIVE: RuleEvent = { type: "schedule", cron: "*/5 * * * *", timezone: "UTC", missed: "run_once" };
+const EVERY_MINUTE: RuleEvent = { type: "schedule", cron: "* * * * *", timezone: "UTC", missed: "run_once" };
 
 async function world(encryption = false) {
   const s = await setupApp(encryption);
@@ -57,7 +57,7 @@ describe("scheduler", () => {
 
   it("applies the missed policy: skip fires nothing for the past, run_once fires once, run_all fires each occurrence", async () => {
     const w = await world();
-    const mk = (policy: d.MissedPolicy) => d.createTrigger(w.db(), { ruleId: w.rule(EVERY_FIVE).id, cron: "*/5 * * * *", timezone: "UTC", nextRunAt: "2026-09-25T09:00:00.000Z", missedPolicy: policy });
+    const mk = (policy: d.MissedPolicy) => d.createTrigger(w.db(), { ruleId: w.rule({ ...EVERY_FIVE, missed: policy }).id, cron: "*/5 * * * *", timezone: "UTC", nextRunAt: "2026-09-25T09:00:00.000Z", missedPolicy: policy });
     const skip = mk("skip"); const once = mk("run_once"); const all = mk("run_all");
     w.sched.tick();
     const by = (id: string) => w.fired().filter((e) => (e.payload as any).triggerId === id);
@@ -70,11 +70,14 @@ describe("scheduler", () => {
     for (const id of [skip.id, once.id, all.id]) expect(d.getTrigger(w.db(), id)!.nextRunAt).toBe("2026-09-25T10:05:00.000Z");
   });
 
-  it("caps run_all at 100 fires and notes it", async () => {
+  it("caps run_all at the newest 100 occurrences and notes it", async () => {
     const w = await world();
-    const t = d.createTrigger(w.db(), { ruleId: w.rule(EVERY_MINUTE).id, cron: "* * * * *", timezone: "UTC", nextRunAt: "2026-09-25T07:00:00.000Z", missedPolicy: "run_all" });
+    const t = d.createTrigger(w.db(), { ruleId: w.rule({ ...EVERY_MINUTE, missed: "run_all" }).id, cron: "* * * * *", timezone: "UTC", nextRunAt: "2026-09-25T07:00:00.000Z", missedPolicy: "run_all" });
     w.sched.tick();
     expect(w.fired()).toHaveLength(100);
+    const times = w.fired().map((e) => (e.payload as any).scheduledFor);
+    expect(times[0]).toBe("2026-09-25T08:23:00.000Z");
+    expect(times[99]).toBe("2026-09-25T10:02:00.000Z");
     expect(w.notes.join("\n")).toMatch(/100/);
     expect(w.notes.join("\n")).toContain(t.id);
     expect(d.getTrigger(w.db(), t.id)!.nextRunAt).toBe("2026-09-25T10:03:00.000Z");
@@ -105,6 +108,38 @@ describe("scheduler", () => {
     d.updateRule(w.db(), r.id, { event: { type: "ticket.moved" } }, w.clock.now.toISOString());
     w.sched.tick();
     expect(d.listTriggers(w.db(), { ruleId: r.id })).toHaveLength(0);
+  });
+
+  it("copies the rule's missed policy onto its trigger, run_once when the rule does not say", async () => {
+    const w = await world();
+    const r = w.rule({ ...EVERY_FIVE, missed: "skip" });
+    const bare = w.rule({ type: "schedule", cron: "*/5 * * * *", timezone: "UTC" } as RuleEvent);
+    w.sched.tick();
+    expect(d.listTriggers(w.db(), { ruleId: r.id })[0].missedPolicy).toBe("skip");
+    expect(d.listTriggers(w.db(), { ruleId: bare.id })[0].missedPolicy).toBe("run_once");
+    d.updateRule(w.db(), r.id, { event: { ...EVERY_FIVE, missed: "run_all" } }, w.clock.now.toISOString());
+    w.sched.tick();
+    const t = d.listTriggers(w.db(), { ruleId: r.id })[0];
+    expect(t.missedPolicy).toBe("run_all");
+    expect(t.nextRunAt).toBe("2026-09-25T10:05:00.000Z");
+  });
+
+  it("notes a schedule croner rejects once per change, not every tick", async () => {
+    const w = await world();
+    const r = w.rule({ type: "schedule", cron: "every monday", timezone: "UTC", missed: "run_once" } as RuleEvent);
+    w.sched.tick(); w.sched.tick(); w.sched.tick();
+    const rejected = () => w.notes.filter((n) => n.includes(r.id) && /rejects/.test(n));
+    expect(rejected()).toHaveLength(1);
+    expect(d.listTriggers(w.db(), { ruleId: r.id })).toHaveLength(0);
+    d.updateRule(w.db(), r.id, { event: { type: "schedule", cron: "nope", timezone: "UTC", missed: "run_once" } as RuleEvent }, w.clock.now.toISOString());
+    w.sched.tick(); w.sched.tick();
+    expect(rejected()).toHaveLength(2);
+    d.updateRule(w.db(), r.id, { event: EVERY_FIVE }, w.clock.now.toISOString());
+    w.sched.tick();
+    expect(d.listTriggers(w.db(), { ruleId: r.id })).toHaveLength(1);
+    d.updateRule(w.db(), r.id, { event: { type: "schedule", cron: "nope", timezone: "UTC", missed: "run_once" } as RuleEvent }, w.clock.now.toISOString());
+    w.sched.tick();
+    expect(rejected()).toHaveLength(3);
   });
 
   it("does nothing while locked and catches up on unlock", async () => {

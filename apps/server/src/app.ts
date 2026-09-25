@@ -70,8 +70,8 @@ export async function buildApp(opts: { dataDir: string; now?: () => Date; webDis
   threadRoutes(app, ctx);
   chainRoutes(app, ctx);
   attachmentRoutes(app, ctx);
-  metricsRoutes(app, ctx);
   destinationRoutes(app, ctx);
+  metricsRoutes(app, ctx);
   rulesRoutes(app, ctx);
   installEngine(app, ctx);
   installStream(app, ctx);

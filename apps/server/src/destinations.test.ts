@@ -53,6 +53,28 @@ describe("destinations", () => {
     expect(JSON.stringify(d.listEvents(w.db()))).not.toContain(created.json.secret);
   });
 
+  it("keeps names unique per project among live destinations, and refuses urls that carry credentials", async () => {
+    const w = await world();
+    const first = await w.s.human("POST", "/api/v1/destinations", { projectId: w.project.id, name: "Slack", url: "https://example.com/a" });
+    expect(first.status).toBe(200);
+    const dup = await w.s.human("POST", "/api/v1/destinations", { projectId: w.project.id, name: "Slack", url: "https://example.com/b" });
+    expect(dup.status).toBe(400);
+    expect(dup.json.error.code).toBe("duplicate_name");
+    const second = (await w.s.human("POST", "/api/v1/destinations", { projectId: w.project.id, name: "Other", url: "https://example.com/c" })).json;
+    const renamed = await w.s.human("PATCH", `/api/v1/destinations/${second.id}`, { name: "Slack" });
+    expect(renamed.status).toBe(400);
+    expect(renamed.json.error.code).toBe("duplicate_name");
+    expect((await w.s.human("PATCH", `/api/v1/destinations/${second.id}`, { name: "Other" })).status).toBe(200);
+    const other = (await w.s.human("POST", "/api/v1/projects", { name: "O", key: "OO" })).json;
+    expect((await w.s.human("POST", "/api/v1/destinations", { projectId: other.project.id, name: "Slack", url: "https://example.com/d" })).status).toBe(200);
+    expect((await w.s.human("PATCH", `/api/v1/destinations/${first.json.id}`, { archived: true })).status).toBe(200);
+    expect((await w.s.human("POST", "/api/v1/destinations", { projectId: w.project.id, name: "Slack", url: "https://example.com/e" })).status).toBe(200);
+    expect((await w.s.human("PATCH", `/api/v1/destinations/${first.json.id}`, { archived: false })).json.error.code).toBe("duplicate_name");
+    const creds = await w.s.human("POST", "/api/v1/destinations", { projectId: w.project.id, name: "Creds", url: "https://user:pw@example.com/x" });
+    expect(creds.status).toBe(400);
+    expect((await w.s.human("PATCH", `/api/v1/destinations/${second.id}`, { url: "https://user@example.com/x" })).status).toBe(400);
+  });
+
   it("accepts only http and https urls and requires a project that exists", async () => {
     const w = await world();
     expect((await w.s.human("POST", "/api/v1/destinations", { projectId: w.project.id, name: "x", url: "ftp://example.com/x" })).status).toBe(400);

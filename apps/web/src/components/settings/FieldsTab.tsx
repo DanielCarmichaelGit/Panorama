@@ -6,8 +6,9 @@ import { useArchiveField, useCreateField, useFields, useUpdateField } from "../.
 import { swapNeighbour } from "../../lib/reorder";
 import { Chip } from "../Chip";
 import { Picker } from "../Picker";
-import { EmptyRow, RowAction, RowConfirm, RowError, RowForm, SettingsList, SettingsRow, SettingsSection, errorMessage } from "./primitives";
-import { TabState } from "./TabState";
+import { EmptyRow, RowAction, RowConfirm, RowError, RowForm, SettingsList, SettingsRow, SettingsSection } from "./primitives";
+import { errorMessage } from "../../lib/errors";
+import { tabState } from "./tabState";
 
 const KIND_LABELS: Record<FieldKind, string> = {
   text: "Text",
@@ -273,7 +274,7 @@ export function FieldsTab({ projectId }: { projectId: string }) {
     }
   }
 
-  const state = TabState({ query: fields, label: "fields" });
+  const state = tabState({ query: fields, label: "fields" });
   if (state) return state;
 
   const close = () => setExpandedId(null);

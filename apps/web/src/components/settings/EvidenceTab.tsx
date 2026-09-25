@@ -4,8 +4,9 @@ import { EVIDENCE_KINDS, type EvidenceKind, type EvidenceType } from "@boomerang
 import { useCreateEvidenceType, useDeleteEvidenceType, useEvidenceTypes, useLanes } from "../../lib/hooks";
 import { Chip } from "../Chip";
 import { Picker } from "../Picker";
-import { EmptyRow, RowAction, RowConfirm, RowError, RowForm, SettingsList, SettingsRow, SettingsSection, errorMessage } from "./primitives";
-import { TabState } from "./TabState";
+import { EmptyRow, RowAction, RowConfirm, RowError, RowForm, SettingsList, SettingsRow, SettingsSection } from "./primitives";
+import { errorMessage } from "../../lib/errors";
+import { tabState } from "./tabState";
 
 const NEW = "new";
 
@@ -127,7 +128,7 @@ export function EvidenceTab({ projectId }: { projectId: string }) {
     return out;
   }, [lanes.data]);
 
-  const state = TabState({ query: types, label: "evidence types" });
+  const state = tabState({ query: types, label: "evidence types" });
   if (state) return state;
 
   const list = types.data ?? [];

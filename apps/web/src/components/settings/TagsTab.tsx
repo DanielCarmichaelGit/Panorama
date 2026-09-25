@@ -4,8 +4,9 @@ import type { Tag } from "@boomerang/core";
 import { useArchiveTag, useCreateTag, useTags, useTickets, useUpdateTag } from "../../lib/hooks";
 import { Chip } from "../Chip";
 import { ColorField, type ColorValue } from "../ColorField";
-import { Count, EmptyRow, RowAction, RowConfirm, RowError, RowForm, SettingsList, SettingsRow, SettingsSection, errorMessage } from "./primitives";
-import { TabState } from "./TabState";
+import { Count, EmptyRow, RowAction, RowConfirm, RowError, RowForm, SettingsList, SettingsRow, SettingsSection } from "./primitives";
+import { errorMessage } from "../../lib/errors";
+import { tabState } from "./tabState";
 
 const NEW = "new";
 
@@ -116,7 +117,7 @@ export function TagsTab({ projectId }: { projectId: string }) {
     return out;
   }, [tickets.data]);
 
-  const state = TabState({ query: tags, label: "tags" });
+  const state = tabState({ query: tags, label: "tags" });
   if (state) return state;
 
   const close = () => setExpandedId(null);

@@ -23,7 +23,10 @@ describe("ProjectSwitcher", () => {
     const btn = screen.getByRole("button", { name: /switch project/i });
     fireEvent.keyDown(btn, { key: "ArrowDown" });
     expect(screen.getByRole("listbox")).toBeTruthy();
+    expect(document.activeElement).toBe(btn);
     fireEvent.keyDown(btn, { key: "ArrowDown" });
+    expect(btn.getAttribute("aria-activedescendant")).toBe(screen.getByRole("option", { name: /Beacon/ }).id);
+    expect(screen.getByRole("listbox").hasAttribute("aria-activedescendant")).toBe(false);
     fireEvent.keyDown(btn, { key: "Enter" });
     expect(onChange).toHaveBeenCalledWith("p2");
     expect(screen.queryByRole("listbox")).toBeNull();

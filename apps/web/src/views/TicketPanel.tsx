@@ -28,6 +28,7 @@ import { GateList, laneOptionLabel, nextLane } from "../components/GateList";
 import { Picker, type PickerOption } from "../components/Picker";
 import { Thread } from "../components/Thread";
 import { toggleTaskItem } from "../lib/criteria";
+import { errorMessage } from "../lib/errors";
 import { isPickerOpen } from "../lib/keys";
 import { Markdown } from "../lib/markdown";
 
@@ -39,10 +40,6 @@ function metaValue(v: unknown): string {
   if (v === null || v === undefined) return "none";
   if (typeof v === "object") return JSON.stringify(v);
   return String(v);
-}
-
-function errorMessage(e: unknown, fallback: string): string {
-  return e instanceof Error ? e.message : fallback;
 }
 
 /** What a `?notice=` on the ticket route means, in the panel's own words. */
@@ -252,6 +249,9 @@ export function TicketPanel({ id, onClose }: { id: string; onClose: () => void }
   // this, two quick ticks would each rewrite the same original line index against the same
   // original text, and whichever PATCH resolved last would silently win, losing the other's change.
   const latestCriteriaRef = useRef("");
+  // The tail of the PATCH chain: each toggle's request starts only after the previous one settled,
+  // so the server never sees two rewrites of the same document racing each other.
+  const criteriaQueueRef = useRef<Promise<void>>(Promise.resolve());
 
   useEffect(() => {
     if (ticket.data) setTitle(ticket.data.title);
@@ -289,9 +289,12 @@ export function TicketPanel({ id, onClose }: { id: string; onClose: () => void }
     const container = criteriaRef.current;
     if (!container || !ticket.data) return;
     latestCriteriaRef.current = ticket.data.successCriteria;
-    const boxes = Array.from(container.querySelectorAll('input[type="checkbox"]')) as HTMLInputElement[];
+    // Only the checkboxes the markdown renderer stamped count (lib/markdown.tsx strips every other
+    // input), and each names its own item: the DOM order is never trusted for the index.
+    const boxes = Array.from(container.querySelectorAll("input[data-task-index]")) as HTMLInputElement[];
     const cleanups: (() => void)[] = [];
-    boxes.forEach((box, index) => {
+    boxes.forEach((box) => {
+      const index = Number(box.dataset.taskIndex);
       box.disabled = false;
       const onChange = (e: Event) => {
         const checked = (e.target as HTMLInputElement).checked;
@@ -302,17 +305,17 @@ export function TicketPanel({ id, onClose }: { id: string; onClose: () => void }
         // the nth task item.
         const next = toggleTaskItem(latestCriteriaRef.current, index, checked);
         latestCriteriaRef.current = next;
-        criteriaToggle.mutate(
-          { id, patch: { successCriteria: next } },
-          {
-            onError: (err) => {
+        criteriaQueueRef.current = criteriaQueueRef.current.then(() =>
+          criteriaToggle.mutateAsync({ id, patch: { successCriteria: next } }).then(
+            () => undefined,
+            (err) => {
               box.checked = !checked;
               // Discard this failed optimistic step and fall back to the last known server value,
               // rather than leaving the ref pointing at markdown that was never actually saved.
               latestCriteriaRef.current = ticket.data!.successCriteria;
               setCriteriaError(errorMessage(err, "Could not save success criteria."));
             },
-          },
+          ),
         );
       };
       box.addEventListener("change", onChange);

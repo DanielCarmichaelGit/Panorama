@@ -111,8 +111,10 @@ export function Board() {
   const boardsQuery = useBoards(project.id);
   const agents = useAgents().data ?? [];
   const evidenceTypes = useEvidenceTypes().data ?? [];
-  const epics = useEpics(project.id).data ?? [];
-  const tags = useTags(project.id).data ?? [];
+  const epicsQuery = useEpics(project.id);
+  const tagsQuery = useTags(project.id);
+  const epics = epicsQuery.data ?? [];
+  const tags = tagsQuery.data ?? [];
   const move = useMoveTicket();
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -139,6 +141,9 @@ export function Board() {
   const epicId = urlEpicId && epics.some((e) => e.id === urlEpicId) ? urlEpicId : null;
   const tagIds = searchParams.getAll("tag").filter((id) => tags.some((t) => t.id === id));
   const hasFilters = !!epicId || tagIds.length > 0;
+  // A deep link with a filter waits for the list that validates it; otherwise the board would
+  // flash unfiltered until the arcs or tags arrive.
+  const filtersLoading = (!!urlEpicId && epicsQuery.isPending) || (searchParams.has("tag") && tagsQuery.isPending);
   const allTickets = board.data ?? [];
   const boardTickets = allTickets.filter((t) => t.boardId === selectedBoardId);
   const tickets = filterTickets(boardTickets, { epicId, tagIds });
@@ -212,7 +217,7 @@ export function Board() {
     );
   }
 
-  if (board.isPending || boardsQuery.isPending) {
+  if (board.isPending || boardsQuery.isPending || filtersLoading) {
     return (
       <div className="view">
         <h1>Board</h1>

@@ -77,7 +77,7 @@ test("a ticket through the full dialog: required field, arc, tags, dependency, p
   // arrow steps past the Clear row onto the match, Enter chooses it and returns focus.
   const epicTrigger = dialog.getByRole("button", { name: "Arc", exact: true });
   await openPicker(page, epicTrigger);
-  const epicSearch = page.getByRole("textbox", { name: "Search Arc" });
+  const epicSearch = page.getByRole("combobox", { name: "Search Arc" });
   await expect(epicSearch).toBeFocused();
   await epicSearch.pressSequentially("Laun");
   await expectHighlighted(page.getByRole("option", { name: "Clear" }));
@@ -91,7 +91,7 @@ test("a ticket through the full dialog: required field, arc, tags, dependency, p
   const tagsTrigger = dialog.getByRole("button", { name: "Tags", exact: true });
   for (const name of ["frontend", "urgent"]) {
     await openPicker(page, tagsTrigger);
-    await page.getByRole("textbox", { name: "Search Tags" }).pressSequentially(name);
+    await page.getByRole("combobox", { name: "Search Tags" }).pressSequentially(name);
     await expectHighlighted(page.getByRole("option", { name: `Create '${name}'` }));
     await page.keyboard.press("Enter");
     await expect(tagsTrigger).toContainText(name);
@@ -101,7 +101,7 @@ test("a ticket through the full dialog: required field, arc, tags, dependency, p
   // The dependency: search by key, Enter picks it, Escape closes the multi Picker.
   const blockedByTrigger = dialog.getByRole("button", { name: "Blocked by", exact: true });
   await openPicker(page, blockedByTrigger);
-  await page.getByRole("textbox", { name: "Search Blocked by" }).pressSequentially("MODELLER-1");
+  await page.getByRole("combobox", { name: "Search Blocked by" }).pressSequentially("MODELLER-1");
   const helperOption = page.getByRole("option", { name: /MODELLER-1/ });
   await expectHighlighted(helperOption);
   await page.keyboard.press("Enter");

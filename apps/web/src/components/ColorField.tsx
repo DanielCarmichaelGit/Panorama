@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { FAMILIES } from "@boomerang/core";
 import type { Family } from "@boomerang/core";
 import { PRESET_COLORS, chipTokens, parseHex, toHex } from "../lib/color";
-import { FAMILY } from "../lib/families";
+import { FAMILY, FAMILY_LABEL } from "../lib/families";
 
 export interface ColorValue {
   family: Family;
@@ -24,7 +24,6 @@ export interface ColorFieldProps {
 
 type Swatch = { kind: "family"; key: string; family: Family } | { kind: "preset"; key: string; hex: string } | { kind: "custom"; key: string };
 
-const FAMILY_LABEL: Record<Family, string> = { coral: "Coral", sky: "Sky", lilac: "Lilac", mint: "Mint", stone: "Stone" };
 const HEX_ERROR = "A colour is six hex digits, like #f6c1b4";
 const CUSTOM_KEY = "custom";
 

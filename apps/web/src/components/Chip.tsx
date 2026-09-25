@@ -30,6 +30,7 @@ export function TagChips({ tags }: { tags: Tag[] }) {
       {overflow.length > 0 && (
         <span
           className="chip chip-overflow"
+          role="img"
           title={overflow.map((tag) => tag.name).join(", ")}
           aria-label={overflow.map((tag) => tag.name).join(", ")}
         >

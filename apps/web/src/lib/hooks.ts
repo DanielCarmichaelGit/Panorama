@@ -46,7 +46,7 @@ export const useBoards = (projectId: string | undefined) =>
 export const useQueue = (projectId: string | undefined) =>
   useQuery({
     queryKey: ["queue", projectId],
-    queryFn: () => api<{ needsHuman: Ticket[]; active: Ticket[] }>("GET", `/api/v1/queue?projectId=${projectId}`),
+    queryFn: () => api<{ needsHuman: Ticket[]; active: Ticket[] }>("GET", `/api/v1/queue?projectId=${encodeURIComponent(projectId ?? "")}`),
     enabled: !!projectId,
   });
 
@@ -57,7 +57,7 @@ export const useTicket = (id: string | undefined) =>
   useQuery({ queryKey: ["ticket", id], queryFn: () => api<Ticket>("GET", `/api/v1/tickets/${id}`), enabled: !!id });
 
 export const useTickets = (projectId: string | undefined) =>
-  useQuery({ queryKey: ["tickets", projectId], queryFn: () => api<Ticket[]>("GET", `/api/v1/tickets?projectId=${projectId}`), enabled: !!projectId });
+  useQuery({ queryKey: ["tickets", projectId], queryFn: () => api<Ticket[]>("GET", `/api/v1/tickets?projectId=${encodeURIComponent(projectId ?? "")}`), enabled: !!projectId });
 
 /** The Board's tickets: the same query as `useTickets`, so the two views share one cache entry. */
 export const useBoard = (projectId: string | undefined) => useTickets(projectId);
@@ -68,17 +68,17 @@ export const useEvidenceTypes = () =>
 export const useEpics = (projectId: string | undefined) =>
   useQuery({
     queryKey: ["epics", projectId],
-    queryFn: () => api<Epic[]>("GET", `/api/v1/epics?projectId=${projectId}`),
+    queryFn: () => api<Epic[]>("GET", `/api/v1/epics?projectId=${encodeURIComponent(projectId ?? "")}`),
     enabled: !!projectId,
   });
 
 export const useTags = (projectId: string | undefined) =>
-  useQuery({ queryKey: ["tags", projectId], queryFn: () => api<Tag[]>("GET", `/api/v1/tags?projectId=${projectId}`), enabled: !!projectId });
+  useQuery({ queryKey: ["tags", projectId], queryFn: () => api<Tag[]>("GET", `/api/v1/tags?projectId=${encodeURIComponent(projectId ?? "")}`), enabled: !!projectId });
 
 export const useFields = (projectId: string | undefined) =>
   useQuery({
     queryKey: ["fields", projectId],
-    queryFn: () => api<FieldDefinition[]>("GET", `/api/v1/fields?projectId=${projectId}`),
+    queryFn: () => api<FieldDefinition[]>("GET", `/api/v1/fields?projectId=${encodeURIComponent(projectId ?? "")}`),
     enabled: !!projectId,
   });
 

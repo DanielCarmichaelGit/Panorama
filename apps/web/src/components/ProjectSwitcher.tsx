@@ -45,6 +45,7 @@ export function ProjectSwitcher({
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
   const rootRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
   const listId = useId();
   const many = list.length > 1;
 
@@ -54,6 +55,8 @@ export function ProjectSwitcher({
       if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
     }
     document.addEventListener("mousedown", onDown);
+    // The button owns the keyboard and aria-activedescendant while the list is open.
+    buttonRef.current?.focus();
     return () => document.removeEventListener("mousedown", onDown);
   }, [open]);
 
@@ -109,17 +112,19 @@ export function ProjectSwitcher({
       <button
         type="button"
         id={id}
+        ref={buttonRef}
         className="proj-row proj-btn"
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-controls={listId}
+        aria-activedescendant={open ? `${listId}-${active}` : undefined}
         aria-label={`Project: ${current.name}. Switch project`}
         onClick={() => (open ? setOpen(false) : openMenu())}
       >
         {body}
       </button>
       {open && (
-        <ul className="proj-menu" role="listbox" id={listId} aria-label="Projects" aria-activedescendant={`${listId}-${active}`}>
+        <ul className="proj-menu" role="listbox" id={listId} aria-label="Projects">
           {list.map((p, i) => (
             <li
               key={p.id}

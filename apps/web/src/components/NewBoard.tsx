@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { FAMILIES, type Board, type Family } from "@boomerang/core";
+import { FAMILY_LABEL } from "../lib/families";
 import { useCreateBoard } from "../lib/hooks";
 import { useFocusTrap } from "../lib/useFocusTrap";
 
-const FAMILY_LABELS: Record<Family, string> = { coral: "Coral", sky: "Sky", lilac: "Lilac", mint: "Mint", stone: "Stone" };
 
 /**
  * Dialog to create a board inside a project (human only, `board.create`). A board groups
@@ -48,7 +48,7 @@ export function NewBoard({ projectId, onClose }: { projectId: string; onClose: (
                 <label key={f} className="swatch-option">
                   <input type="radio" name="nb-family" value={f} checked={family === f} onChange={() => setFamily(f)} />
                   <span className="swatch" style={{ background: `var(--${f}-top)` }} aria-hidden="true" />
-                  {FAMILY_LABELS[f]}
+                  {FAMILY_LABEL[f]}
                 </label>
               ))}
             </div>

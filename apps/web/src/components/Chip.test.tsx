@@ -15,6 +15,14 @@ const tag = (over: Partial<Tag> = {}): Tag => ({
   id: "tg1", projectId: "p1", name: "Bug", family: "coral", color: null, archived: false, createdAt: "", ...over,
 });
 
+describe("TagChips", () => {
+  it("collapses the tags past the third into a +n image named by their names", () => {
+    render(<TagChips tags={[tag(), tag({ id: "t2", name: "Web" }), tag({ id: "t3", name: "API" }), tag({ id: "t4", name: "Docs" }), tag({ id: "t5", name: "Ops" })]} />);
+    const more = screen.getByRole("img", { name: "Docs, Ops" });
+    expect(more.textContent).toBe("+2");
+  });
+});
+
 describe("Chip", () => {
   it("styles through the family tokens when there is no colour", () => {
     render(<Chip family="mint">Ready</Chip>);

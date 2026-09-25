@@ -79,11 +79,33 @@ describe("renderBlocks", () => {
     // that make it a checkbox marker. A smuggled-in text field (a real form control, however
     // harmless-looking) must not survive at all.
     const [b] = renderBlocks('- [ ] Todo one\n- [x] Todo two <input type="text" onfocus="steal()" id="x">\n');
-    expect(b.html).toContain('<input disabled="" type="checkbox">');
-    expect(b.html).toContain('<input checked="" disabled="" type="checkbox">');
-    expect(b.html).not.toContain('type="text"');
+    const inputs = Array.from(new DOMParser().parseFromString(b.html, "text/html").querySelectorAll("input"));
+    expect(inputs.map((i) => [i.type, i.disabled, i.checked, i.dataset.taskIndex])).toEqual([["checkbox", true, false, "0"], ["checkbox", true, true, "1"]]);
+    expect(inputs.every((i) => i.attributes.length === 3 + (i.checked ? 1 : 0))).toBe(true);
     expect(b.html).not.toContain("onfocus");
     expect(b.html).not.toContain('id="x"');
+  });
+
+  it("strips a literal checkbox written inline, so a comment never shows a tickable box", () => {
+    const [b] = renderBlocks('Tick <input type="checkbox"> here, or <input type="checkbox" checked disabled> there\n');
+    const parsed = new DOMParser().parseFromString(b.html, "text/html");
+    expect(parsed.querySelector("input")).toBeNull();
+    expect(parsed.body.textContent).toContain("Tick  here");
+  });
+
+  it("keeps each task item's own index when an inline input sits among them", () => {
+    const [b] = renderBlocks('- [ ] One <input type="checkbox">\n- [x] Two\n\n> - [ ] Three\n');
+    const parsed = new DOMParser().parseFromString(b.html, "text/html");
+    const boxes = Array.from(parsed.querySelectorAll("input"));
+    expect(boxes.map((i) => i.dataset.taskIndex)).toEqual(["0", "1", "2"]);
+    expect(boxes.map((i) => i.checked)).toEqual([false, true, false]);
+  });
+
+  it("does not honour an authored data-task-index", () => {
+    const [b] = renderBlocks('- [ ] One\n\nFake <input type="checkbox" data-task-index="0"> and <span data-task-index="0">x</span>\n');
+    const parsed = new DOMParser().parseFromString(b.html, "text/html");
+    expect(parsed.querySelectorAll("[data-task-index]")).toHaveLength(1);
+    expect(parsed.querySelectorAll("input")).toHaveLength(1);
   });
 
   it("does not turn a plain list item into a checkbox", () => {

@@ -6,8 +6,9 @@ import type { Epic } from "@boomerang/core";
 import { useCreateEpic, useEpics, useTickets, useUpdateEpic } from "../../lib/hooks";
 import { Chip } from "../Chip";
 import { ColorField, type ColorValue } from "../ColorField";
-import { Count, EmptyRow, RowAction, RowConfirm, RowError, RowForm, SettingsList, SettingsRow, SettingsSection, errorMessage } from "./primitives";
-import { TabState } from "./TabState";
+import { Count, EmptyRow, RowAction, RowConfirm, RowError, RowForm, SettingsList, SettingsRow, SettingsSection } from "./primitives";
+import { errorMessage } from "../../lib/errors";
+import { tabState } from "./tabState";
 
 const NEW = "new";
 
@@ -142,7 +143,7 @@ export function EpicsTab({ projectId }: { projectId: string }) {
     return out;
   }, [tickets.data]);
 
-  const state = TabState({ query: epics, label: "arcs" });
+  const state = tabState({ query: epics, label: "arcs" });
   if (state) return state;
 
   const close = () => setExpandedId(null);

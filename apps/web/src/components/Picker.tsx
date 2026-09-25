@@ -152,11 +152,13 @@ export function Picker(props: PickerProps): JSX.Element {
     if (open) setCreateError(null);
   }, [open]);
 
-  // Focus the search field once the popover mounts; otherwise the trigger keeps focus and
-  // captures the keyboard itself (type-ahead, arrows).
+  // Focus moves into the popover once it mounts: the search field when there is one, else the
+  // listbox itself, which is what carries aria-activedescendant (a role="button" trigger cannot).
+  // Keys still reach handleKeyDown, since the portal bubbles through the React tree.
   useEffect(() => {
-    if (!open || !searchable) return;
-    searchInputRef.current?.focus();
+    if (!open) return;
+    if (searchable) searchInputRef.current?.focus();
+    else popoverRef.current?.focus({ preventScroll: true });
   }, [open, searchable]);
 
   function updatePosition() {
@@ -419,7 +421,6 @@ export function Picker(props: PickerProps): JSX.Element {
         aria-labelledby={`${id}-label`}
         aria-describedby={describedBy}
         aria-disabled={disabled || undefined}
-        aria-activedescendant={!searchable && open ? activeDescendantId : undefined}
         onClick={onTriggerClick}
       >
         {!props.multi && (
@@ -489,6 +490,8 @@ export function Picker(props: PickerProps): JSX.Element {
             ref={popoverRef}
             id={`${id}-listbox`}
             role="listbox"
+            tabIndex={searchable ? undefined : -1}
+            aria-activedescendant={searchable ? undefined : activeDescendantId}
             aria-multiselectable={props.multi ? true : undefined}
             aria-labelledby={`${id}-label`}
             data-placement={position?.placement ?? "below"}
@@ -514,6 +517,10 @@ export function Picker(props: PickerProps): JSX.Element {
                   setHighlightedKey(null);
                   setCreateError(null);
                 }}
+                role="combobox"
+                aria-controls={`${id}-listbox`}
+                aria-expanded={true}
+                aria-autocomplete="list"
                 aria-activedescendant={activeDescendantId}
                 aria-label={`Search ${label}`}
               />

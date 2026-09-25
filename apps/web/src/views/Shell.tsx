@@ -152,7 +152,7 @@ export function Shell({ status, chainOk }: { status: Status; chainOk: boolean })
           <GearSix size={22} weight="regular" aria-hidden="true" />
           <span className="label">Settings</span>
         </NavLink>
-        <button type="button" className="nav-item menu-item" onClick={() => setMenuOpen(true)} aria-haspopup="dialog" aria-expanded={menuOpen}>
+        <button type="button" className="nav-item menu-item" onClick={() => setMenuOpen(true)} aria-haspopup="dialog" aria-expanded={menuOpen} aria-label="Menu" title="Menu">
           <List size={22} weight="regular" aria-hidden="true" />
           <span className="label">Menu</span>
         </button>

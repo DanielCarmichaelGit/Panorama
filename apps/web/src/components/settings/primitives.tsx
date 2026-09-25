@@ -10,12 +10,6 @@ import { BoomerangScene } from "../../lib/iso";
  * form is open at a time; these components carry no state of their own beyond focus.
  */
 
-/** The message to show for a failed write: the server's own sentence for an ApiError, else the fallback. */
-export function errorMessage(e: unknown, fallback: string): string {
-  if (e instanceof ApiError) return e.message;
-  return e instanceof Error && e.message ? e.message : fallback;
-}
-
 /** Header line (muted one-sentence description left, the primary action right) above the list surface. */
 export function SettingsSection({ description, action, children }: { description: string; action?: React.ReactNode; children: React.ReactNode }) {
   return (

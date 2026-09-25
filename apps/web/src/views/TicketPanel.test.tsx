@@ -245,6 +245,42 @@ describe("TicketPanel success criteria", () => {
       expect(patchCalls[patchCalls.length - 1][2]).toEqual({ successCriteria: "- [x] One\n- [x] Two\n" });
     });
   });
+
+  it("sends the second tick's PATCH only after the first one resolves", async () => {
+    renderPanel({ ticket: { ...ticket, successCriteria: "- [ ] One\n- [ ] Two\n" } });
+    const boxes = await screen.findAllByRole("checkbox");
+    const base = vi.mocked(api).getMockImplementation()!;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const patches: unknown[] = [];
+    vi.mocked(api).mockImplementation((async (method: string, path: string, body?: unknown) => {
+      if (method === "PATCH" && path === "/api/v1/tickets/t1") {
+        patches.push(body);
+        if (patches.length === 1) await gate;
+      }
+      return base(method, path, body);
+    }) as any);
+
+    fireEvent.click(boxes[0]);
+    fireEvent.click(boxes[1]);
+    await waitFor(() => expect(patches).toHaveLength(1));
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(patches).toHaveLength(1);
+
+    release();
+    await waitFor(() => expect(patches).toHaveLength(2));
+    expect(patches[1]).toEqual({ successCriteria: "- [x] One\n- [x] Two\n" });
+  });
+
+  it("ignores a checkbox that the renderer did not stamp, and reads each index from its attribute", async () => {
+    renderPanel({ ticket: { ...ticket, successCriteria: "- [ ] One <input type=\"checkbox\">\n- [ ] Two\n" } });
+    const boxes = await screen.findAllByRole("checkbox");
+    expect(boxes).toHaveLength(2);
+    fireEvent.click(boxes[1]);
+    await waitFor(() =>
+      expect(api).toHaveBeenCalledWith("PATCH", "/api/v1/tickets/t1", { successCriteria: "- [ ] One <input type=\"checkbox\">\n- [x] Two\n" }),
+    );
+  });
 });
 
 describe("TicketPanel dependencies", () => {

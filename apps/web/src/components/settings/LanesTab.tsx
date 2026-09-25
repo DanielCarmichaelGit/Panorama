@@ -5,8 +5,9 @@ import { useCreateLane, useDeleteLane, useEvidenceTypes, useLanes, useReorderLan
 import { Chip } from "../Chip";
 import { ColorField, type ColorValue } from "../ColorField";
 import { merge, RequirementRows, toRequirements, type RequirementRow } from "../RequirementRows";
-import { Count, EmptyRow, RowAction, RowConfirm, RowError, RowForm, SettingsList, SettingsRow, SettingsSection, errorMessage } from "./primitives";
-import { TabState } from "./TabState";
+import { Count, EmptyRow, RowAction, RowConfirm, RowError, RowForm, SettingsList, SettingsRow, SettingsSection } from "./primitives";
+import { errorMessage } from "../../lib/errors";
+import { tabState } from "./tabState";
 
 const NEW = "new";
 
@@ -258,7 +259,7 @@ export function LanesTab({ projectId }: { projectId: string }) {
     }
   }
 
-  const state = TabState({ query: lanes, label: "lanes" }) ?? TabState({ query: evidenceTypes, label: "evidence types" });
+  const state = tabState({ query: lanes, label: "lanes" }) ?? tabState({ query: evidenceTypes, label: "evidence types" });
   if (state) return state;
 
   const types = evidenceTypes.data ?? [];

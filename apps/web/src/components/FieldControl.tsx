@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { File as FileIcon, X } from "@phosphor-icons/react";
 import { isFileValue, type FieldDefinition, type FieldValue } from "@boomerang/core";
 import { uploadFile, useAttachmentMeta } from "../lib/attachments";
+import { errorMessage } from "../lib/errors";
 import { AttachmentImage, AttachmentLink } from "../lib/markdown";
 import { Picker } from "./Picker";
 
@@ -15,10 +16,6 @@ export function isFieldEmpty(def: FieldDefinition, value: FieldValue | undefined
   if (def.kind === "checkbox") return false;
   if (value === undefined || value === null) return true;
   return def.kind === "text" && value === "";
-}
-
-function errorText(e: unknown, fallback: string): string {
-  return e instanceof Error && e.message ? e.message : fallback;
 }
 
 /**
@@ -64,7 +61,7 @@ function FileField({
       const attachment = await uploadFile(ticketId, file);
       settle({ attachmentId: attachment.id });
     } catch (e) {
-      setError(errorText(e, "Could not upload the file."));
+      setError(errorMessage(e, "Could not upload the file."));
     } finally {
       setBusy(false);
     }

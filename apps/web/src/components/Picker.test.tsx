@@ -99,7 +99,7 @@ describe("Picker", () => {
     const onSelect = vi.fn();
     render(<SingleHarness options={BOARD_OPTIONS} onSelect={onSelect} searchable />);
     fireEvent.click(screen.getByRole("button", { name: "Board" }));
-    const search = screen.getByRole("textbox");
+    const search = screen.getByRole("combobox");
     fireEvent.change(search, { target: { value: "r" } });
     // "Research" and "Growth" both contain "r"; "Research" comes first in option order after "Growth"... use a
     // query that narrows to a single leading match instead of relying on option order ambiguity.
@@ -126,7 +126,7 @@ describe("Picker", () => {
     const onCreate = vi.fn().mockResolvedValue(created);
     render(<SingleHarness options={BOARD_OPTIONS} onSelect={onSelect} searchable onCreate={onCreate} />);
     fireEvent.click(screen.getByRole("button", { name: "Board" }));
-    fireEvent.change(screen.getByRole("textbox"), { target: { value: "Launch" } });
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "Launch" } });
     fireEvent.click(screen.getByRole("option", { name: "Create 'Launch'" }));
     expect(onCreate).toHaveBeenCalledWith("Launch");
     await waitFor(() => expect(onSelect).toHaveBeenCalledWith("b4"));
@@ -149,13 +149,37 @@ describe("Picker", () => {
     expect(onSelect).not.toHaveBeenCalledWith("b2");
   });
 
+  it("the open listbox takes focus and the trigger carries no aria-activedescendant", () => {
+    render(<SingleHarness options={BOARD_OPTIONS} />);
+    const trigger = screen.getByRole("button", { name: "Board" });
+    trigger.focus();
+    fireEvent.keyDown(trigger, { key: "ArrowDown" });
+    const listbox = screen.getByRole("listbox");
+    expect(document.activeElement).toBe(listbox);
+    expect(trigger.hasAttribute("aria-activedescendant")).toBe(false);
+    fireEvent.keyDown(listbox, { key: "Escape" });
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  it("the searchable popover's search field is the combobox that controls the listbox", () => {
+    render(<SingleHarness options={BOARD_OPTIONS} searchable />);
+    fireEvent.click(screen.getByRole("button", { name: "Board" }));
+    const search = screen.getByRole("combobox", { name: "Search Board" });
+    expect(document.activeElement).toBe(search);
+    expect(search.getAttribute("aria-controls")).toBe("board-picker-listbox");
+    expect(search.getAttribute("aria-expanded")).toBe("true");
+    expect(search.getAttribute("aria-activedescendant")).toBe("board-picker-option-b1");
+    fireEvent.keyDown(search, { key: "ArrowDown" });
+    expect(search.getAttribute("aria-activedescendant")).toBe("board-picker-option-b2");
+  });
+
   it("aria-activedescendant matches the highlighted option id", () => {
     render(<SingleHarness options={BOARD_OPTIONS} />);
     const trigger = screen.getByRole("button", { name: "Board" });
     trigger.focus();
     fireEvent.keyDown(trigger, { key: "ArrowDown" });
     fireEvent.keyDown(trigger, { key: "ArrowDown" });
-    const active = trigger.getAttribute("aria-activedescendant");
+    const active = screen.getByRole("listbox").getAttribute("aria-activedescendant");
     expect(active).toBe("board-picker-option-b2");
     expect(screen.getByRole("option", { name: "Platform" }).id).toBe(active);
   });
@@ -204,7 +228,7 @@ describe("Picker", () => {
     const onSelect = vi.fn();
     render(<SingleHarness options={BOARD_OPTIONS} onSelect={onSelect} searchable onCreate={onCreate} />);
     fireEvent.click(screen.getByRole("button", { name: "Board" }));
-    fireEvent.change(screen.getByRole("textbox"), { target: { value: "Launch" } });
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "Launch" } });
     fireEvent.click(screen.getByRole("option", { name: "Create 'Launch'" }));
     await waitFor(() => expect(screen.getByRole("alert").textContent).toBe("Name already exists"));
     expect(screen.getByRole("listbox")).toBeTruthy();
@@ -218,7 +242,7 @@ describe("Picker", () => {
     render(<SingleHarness options={BOARD_OPTIONS} searchable />);
     const trigger = screen.getByRole("button", { name: "Board" });
     fireEvent.click(trigger);
-    const search = screen.getByRole("textbox");
+    const search = screen.getByRole("combobox");
     fireEvent.keyDown(search, { key: "Tab" });
     expect(screen.queryByRole("listbox")).toBeNull();
     expect(document.activeElement).toBe(trigger);
@@ -228,7 +252,7 @@ describe("Picker", () => {
     render(<SingleHarness options={BOARD_OPTIONS} searchable />);
     const trigger = screen.getByRole("button", { name: "Board" });
     fireEvent.click(trigger);
-    fireEvent.keyDown(screen.getByRole("textbox"), { key: "Tab", shiftKey: true });
+    fireEvent.keyDown(screen.getByRole("combobox"), { key: "Tab", shiftKey: true });
     expect(screen.queryByRole("listbox")).toBeNull();
     expect(document.activeElement).toBe(trigger);
   });
@@ -244,7 +268,7 @@ describe("Picker", () => {
     fireEvent.keyDown(trigger, { key: "ArrowDown" });
     const option = screen.getByRole("option", { name: "Weird" });
     expect(option.id).toMatch(/^[A-Za-z0-9_-]+$/);
-    expect(trigger.getAttribute("aria-activedescendant")).toBe(option.id);
+    expect(screen.getByRole("listbox").getAttribute("aria-activedescendant")).toBe(option.id);
   });
 
   it("autoOpen shows the popover as soon as it mounts, with no click or key needed", () => {
@@ -280,10 +304,10 @@ describe("Picker", () => {
     trigger.focus();
     fireEvent.keyDown(trigger, { key: "ArrowDown" });
     fireEvent.keyDown(trigger, { key: "ArrowDown" });
-    expect(trigger.getAttribute("aria-activedescendant")).toBe("swap-picker-option-x2");
+    expect(screen.getByRole("listbox").getAttribute("aria-activedescendant")).toBe("swap-picker-option-x2");
 
     fireEvent.click(screen.getByRole("button", { name: "Replace options" }));
-    expect(trigger.getAttribute("aria-activedescendant")).toBe("swap-picker-option-y1");
+    expect(screen.getByRole("listbox").getAttribute("aria-activedescendant")).toBe("swap-picker-option-y1");
   });
   it("swatches render the option's own colour when it has one, and the family otherwise", () => {
     const options: PickerOption[] = [
@@ -303,7 +327,7 @@ describe("Picker", () => {
     const onSelect = vi.fn();
     render(<SingleHarness options={BOARD_OPTIONS} onSelect={onSelect} searchable />);
     fireEvent.click(screen.getByRole("button", { name: "Board" }));
-    const search = screen.getByRole("textbox");
+    const search = screen.getByRole("combobox");
     // Every label contains an "r", so the moved highlight (Platform) would survive the filter
     // if the query did not reset it.
     fireEvent.keyDown(search, { key: "ArrowDown" });
@@ -321,10 +345,10 @@ describe("Picker", () => {
     fireEvent.keyDown(trigger, { key: "ArrowDown" });
     fireEvent.keyDown(trigger, { key: "ArrowDown" });
     fireEvent.keyDown(trigger, { key: "ArrowDown" });
-    expect(trigger.getAttribute("aria-activedescendant")).toBe("board-picker-option-b3");
+    expect(screen.getByRole("listbox").getAttribute("aria-activedescendant")).toBe("board-picker-option-b3");
     fireEvent.keyDown(trigger, { key: "Escape" });
     fireEvent.keyDown(trigger, { key: "ArrowDown" });
-    expect(trigger.getAttribute("aria-activedescendant")).toBe("board-picker-option-b1");
+    expect(screen.getByRole("listbox").getAttribute("aria-activedescendant")).toBe("board-picker-option-b1");
   });
 });
 

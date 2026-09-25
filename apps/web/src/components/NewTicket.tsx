@@ -211,6 +211,8 @@ export function NewTicket({
   }
 
   function setFieldFile(key: string, file: File | null) {
+    // Whatever was uploaded for this key before (after a partial failure) no longer stands for it.
+    delete fieldFileIdsRef.current[key];
     setFieldFiles((v) => {
       const next = { ...v };
       if (file) next[key] = file;

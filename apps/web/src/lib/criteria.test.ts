@@ -40,4 +40,25 @@ describe("toggleTaskItem", () => {
     const md = "Just a paragraph.\n\n- a plain list item";
     expect(toggleTaskItem(md, 0, true)).toBe(md);
   });
+
+  it("does not count a checkbox-looking line inside a fenced code block", () => {
+    // "- [ ] fake" renders as literal text inside the fence, not a checkbox, so it must not
+    // consume an index: index 0 is the one real task item, after the fence.
+    const md = "```\n- [ ] fake\n```\n\n- [ ] real\n";
+    expect(toggleTaskItem(md, 0, true)).toBe("```\n- [ ] fake\n```\n\n- [x] real\n");
+  });
+
+  it("counts and toggles a task item inside a blockquote", () => {
+    const md = "> - [ ] quoted\n";
+    expect(toggleTaskItem(md, 0, true)).toBe("> - [x] quoted\n");
+  });
+
+  it("does not let a parent item's line swallow a nested child's identical-looking text", () => {
+    // Regression guard for the parent/child raw-overlap hazard: marked's list_item.raw for a
+    // parent item includes its nested content verbatim, so a naive search using that full raw
+    // would jump the cursor past the child's own line entirely. Duplicate wording on parent and
+    // child makes that failure mode visible if it regresses.
+    const md = "- [ ] Todo\n  - [ ] Todo\n";
+    expect(toggleTaskItem(md, 1, true)).toBe("- [ ] Todo\n  - [x] Todo\n");
+  });
 });

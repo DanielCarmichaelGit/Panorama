@@ -85,8 +85,8 @@ export function GateList({ lane, missing, types, actions }: { lane: Lane | null;
               </div>
             );
           })}
-          {blockers.map((b, i) => (
-            <div className="unmet" key={`blocked_by-${i}`}>
+          {blockers.map((b) => (
+            <div className="unmet" key={`blocked_by-${b.name}`}>
               <Circle size={16} weight="regular" aria-hidden="true" />
               <span>{b.name}</span>
             </div>

@@ -198,6 +198,10 @@ function FieldRow({ ticket, def }: { ticket: Ticket; def: FieldDefinition }) {
   }, [ticket.id, def.key, committed]);
 
   function save(value: FieldValue) {
+    // FieldControl already normalises before calling onCommit (blank text to null, for one), so
+    // comparing against `committed` here catches every "nothing actually changed" case: text and
+    // number fields commit on blur even when untouched, and this is what stops that from PATCHing.
+    if (value === committed) return;
     setError("");
     update.mutate(
       { id: ticket.id, patch: { fields: { [def.key]: value } } },
@@ -309,6 +313,12 @@ export function TicketPanel({ id, onClose }: { id: string; onClose: () => void }
   const [criteriaError, setCriteriaError] = useState("");
   const titleRef = useRef<HTMLInputElement>(null);
   const criteriaRef = useRef<HTMLDivElement>(null);
+  // The base every checkbox toggle builds on. Kept as a ref, not a plain closed-over variable, so
+  // a second tick fired before the first tick's PATCH resolves reads the *first* tick's already-
+  // toggled markdown rather than the stale snapshot from when the listeners were attached: without
+  // this, two quick ticks would each rewrite the same original line index against the same
+  // original text, and whichever PATCH resolved last would silently win, losing the other's change.
+  const latestCriteriaRef = useRef("");
 
   useEffect(() => {
     if (ticket.data) setTitle(ticket.data.title);
@@ -345,7 +355,7 @@ export function TicketPanel({ id, onClose }: { id: string; onClose: () => void }
     if (editingCriteria) return;
     const container = criteriaRef.current;
     if (!container || !ticket.data) return;
-    const criteria = ticket.data.successCriteria;
+    latestCriteriaRef.current = ticket.data.successCriteria;
     const boxes = Array.from(container.querySelectorAll('input[type="checkbox"]')) as HTMLInputElement[];
     const cleanups: (() => void)[] = [];
     boxes.forEach((box, index) => {
@@ -353,11 +363,20 @@ export function TicketPanel({ id, onClose }: { id: string; onClose: () => void }
       const onChange = (e: Event) => {
         const checked = (e.target as HTMLInputElement).checked;
         setCriteriaError("");
+        // Read and update the shared ref, not the `ticket.data.successCriteria` this effect
+        // closed over: a second tick must build on the first tick's already-toggled text. The
+        // index itself stays valid across that: toggling a marker never changes which line is
+        // the nth task item.
+        const next = toggleTaskItem(latestCriteriaRef.current, index, checked);
+        latestCriteriaRef.current = next;
         criteriaToggle.mutate(
-          { id, patch: { successCriteria: toggleTaskItem(criteria, index, checked) } },
+          { id, patch: { successCriteria: next } },
           {
             onError: (err) => {
               box.checked = !checked;
+              // Discard this failed optimistic step and fall back to the last known server value,
+              // rather than leaving the ref pointing at markdown that was never actually saved.
+              latestCriteriaRef.current = ticket.data!.successCriteria;
               setCriteriaError(errorMessage(err, "Could not save success criteria."));
             },
           },

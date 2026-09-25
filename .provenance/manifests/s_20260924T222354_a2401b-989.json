@@ -1,0 +1,18 @@
+{
+  "sessionId": "s_20260924T222354_a2401b",
+  "actor": "Daniel Carmichael",
+  "tool": "claude-code",
+  "intent": "unstated",
+  "head": "a4ada4f5382ef8d4e312dcd1e68a2ae313ca8b233b4c51adf6d1edc53ef66f2c",
+  "count": 989,
+  "diffHash": "68e1e426033d037a1102db483f8b9d92a6c2c0b7fc24592c482e76cdc5a47a85",
+  "files": [
+    "apps/web/src/components/GateList.tsx",
+    "apps/web/src/lib/criteria.test.ts",
+    "apps/web/src/lib/criteria.ts",
+    "apps/web/src/views/TicketPanel.test.tsx",
+    "apps/web/src/views/TicketPanel.tsx"
+  ],
+  "base": "b19e345baec0ed7dc3b5bd50d6b5585be671cba7",
+  "ts": "2026-09-25T00:56:23.394Z"
+}

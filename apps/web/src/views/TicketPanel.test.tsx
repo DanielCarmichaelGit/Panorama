@@ -177,6 +177,21 @@ describe("TicketPanel Needs fields chip", () => {
     await screen.findByRole("textbox", { name: "Severity" });
     expect(screen.queryByText("Needs fields")).toBeNull();
   });
+
+  it("issues no PATCH when a text field is blurred without being changed", async () => {
+    renderPanel({ fields: [fieldDef()] });
+    const input = await screen.findByRole("textbox", { name: "Severity" });
+
+    fireEvent.blur(input);
+    // Let react-query's mutate() dispatch machinery run its course (it calls the mutationFn a
+    // tick or two after mutate() itself returns) before asserting nothing was called.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const fieldPatches = vi
+      .mocked(api)
+      .mock.calls.filter(([method, , body]) => method === "PATCH" && !!body && typeof body === "object" && "fields" in (body as object));
+    expect(fieldPatches).toHaveLength(0);
+  });
 });
 
 describe("TicketPanel success criteria", () => {
@@ -195,6 +210,26 @@ describe("TicketPanel success criteria", () => {
     await waitFor(() =>
       expect(api).toHaveBeenCalledWith("PATCH", "/api/v1/tickets/t1", { successCriteria: "- [x] Ship it\n" }),
     );
+  });
+
+  it("two ticks fired before the first PATCH resolves both land: the second PATCH carries both changes", async () => {
+    renderPanel({ ticket: { ...ticket, successCriteria: "- [ ] One\n- [ ] Two\n" } });
+    const boxes = await screen.findAllByRole("checkbox");
+    expect(boxes).toHaveLength(2);
+
+    // Neither fireEvent.click awaits anything, so the second fires before the first tick's PATCH
+    // (an async mock call) has a chance to resolve: the listener must read the *other* tick's
+    // already-toggled markdown, not the stale snapshot from when the listeners were attached.
+    fireEvent.click(boxes[0]);
+    fireEvent.click(boxes[1]);
+
+    // A successful PATCH invalidates and refetches the ticket, so the *last* call overall may be
+    // that GET, not the second PATCH; look at the last PATCH specifically.
+    await waitFor(() => {
+      const patchCalls = vi.mocked(api).mock.calls.filter(([method, path]) => method === "PATCH" && path === "/api/v1/tickets/t1");
+      expect(patchCalls.length).toBeGreaterThanOrEqual(2);
+      expect(patchCalls[patchCalls.length - 1][2]).toEqual({ successCriteria: "- [x] One\n- [x] Two\n" });
+    });
   });
 });
 

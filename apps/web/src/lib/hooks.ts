@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
+  Action,
   Actor,
   Attachment,
   Board,
+  CanvasDoc,
   Comment,
   CreateEvidenceTypeInput,
   CreateLaneInput,
@@ -18,6 +20,7 @@ import type {
   LaneRequirement,
   Project,
   LinkKind,
+  Rule,
   Scopes,
   Tag,
   Ticket,
@@ -452,6 +455,85 @@ export const useRevokeAgent = () => {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["agents"] }),
   });
 };
+
+/** A rule as the list shows it: the server may add its last fire and run count (task 4). */
+export type RuleSummary = Rule & { lastFiredAt?: string | null; runCount?: number };
+
+export interface RuleRun {
+  id: string;
+  ruleId: string;
+  ticketId: string;
+  eventId: string;
+  firedAt: string;
+  outcome: "applied" | "skipped" | "refused" | "error";
+  detail?: unknown;
+  /** The ticket's key when the server joins it; the log falls back to the id. */
+  ticketKey?: string;
+}
+
+export interface RuleTestResult {
+  matched: boolean;
+  nodeIds: string[];
+  actions: Action[];
+  refusals: string[];
+}
+
+/** A webhook destination (task 5); the emit_webhook action's Picker reads this list. */
+export interface Destination { id: string; projectId: string; name: string; url: string }
+
+export const useRules = (projectId: string | undefined) =>
+  useQuery({
+    queryKey: ["rules", projectId],
+    queryFn: () => api<RuleSummary[]>("GET", `/api/v1/rules?projectId=${encodeURIComponent(projectId ?? "")}`),
+    enabled: !!projectId,
+  });
+
+export const useRuleRuns = (ruleId: string | undefined, limit = 20) =>
+  useQuery({
+    queryKey: ["rule-runs", ruleId],
+    queryFn: () => api<RuleRun[]>("GET", `/api/v1/rules/${ruleId}/runs?limit=${limit}`),
+    enabled: !!ruleId,
+  });
+
+/** Human only: creates a rule from its drawing; the server runs canvasToRule and answers 400 canvas_invalid with the offending nodes. */
+export const useCreateRule = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { projectId: string; name: string; enabled: boolean; canvas: CanvasDoc }) => api<Rule>("POST", "/api/v1/rules", v),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["rules"] }),
+  });
+};
+
+/** Human only: renames, enables or disables a rule, or replaces its drawing (same validation as create). */
+export const useUpdateRule = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { id: string; patch: { name?: string; enabled?: boolean; canvas?: CanvasDoc } }) => api<Rule>("PATCH", `/api/v1/rules/${v.id}`, v.patch),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["rules"] }),
+  });
+};
+
+export const useDeleteRule = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api<{ ok: boolean }>("DELETE", `/api/v1/rules/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["rules"] }),
+  });
+};
+
+/** Dry run: which nodes match a ticket and what would happen. Nothing is written. */
+export const useTestRule = () =>
+  useMutation({
+    mutationFn: (v: { id: string; ticketId: string }) => api<RuleTestResult>("POST", `/api/v1/rules/${v.id}/test`, { ticketId: v.ticketId }),
+  });
+
+export const useDestinations = (projectId: string | undefined) =>
+  useQuery({
+    queryKey: ["destinations", projectId],
+    queryFn: () => api<Destination[]>("GET", `/api/v1/destinations?projectId=${encodeURIComponent(projectId ?? "")}`),
+    enabled: !!projectId,
+    retry: false,
+  });
 
 /**
  * Keeps a live SSE connection open while a session seed exists (reconnecting after unlock,

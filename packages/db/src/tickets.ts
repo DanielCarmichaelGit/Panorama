@@ -58,11 +58,12 @@ export function updateTicket(
   db: DB,
   id: string,
   patch: { title?: string; startDate?: string | null; dueDate?: string | null; assigneeId?: string | null; metadata?: Record<string, unknown>;
-    epicId?: string | null; tagIds?: string[]; successCriteria?: string; fields?: Record<string, FieldValue> },
+    epicId?: string | null; boardId?: string; tagIds?: string[]; successCriteria?: string; fields?: Record<string, FieldValue> },
   now: string
 ): Ticket {
   const cols: Record<string, unknown> = {};
   if (patch.title !== undefined) cols.title = patch.title;
+  if (patch.boardId !== undefined) cols.board_id = patch.boardId;
   if (patch.startDate !== undefined) cols.start_date = patch.startDate;
   if (patch.dueDate !== undefined) cols.due_date = patch.dueDate;
   if (patch.assigneeId !== undefined) cols.assignee_id = patch.assigneeId;

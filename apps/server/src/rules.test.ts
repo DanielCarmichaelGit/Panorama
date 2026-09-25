@@ -1,8 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { verifyChain } from "@boomerang/core";
-import { dueOutbox, listEvents, listTriggers } from "@boomerang/db";
-import { runRules } from "./engine/runRules";
-import { agentIn, setupApp } from "./test/helpers";
+import { dueOutbox, getActor, listEvents, listTriggers } from "@boomerang/db";
+import { MAX_CREATED, runRules } from "./engine/runRules";
+import { agentIn, client, setupApp } from "./test/helpers";
 import { Scheduler } from "./workers/scheduler";
 
 // The rule engine and the rules routes (milestone 3, task 4). Rules are created through the
@@ -26,6 +26,13 @@ function canvas(event: Record<string, unknown>, conditions: Record<string, unkno
   });
   return { nodes, edges };
 }
+const scheduled = (cron: string, action: Record<string, unknown>) => ({
+  nodes: [
+    { id: "s", kind: "schedule", position: at, data: { cron, timezone: "UTC" } },
+    { id: "a0", kind: "action", position: at, data: action },
+  ],
+  edges: [{ id: "s-a0", source: "s", target: "a0" }],
+});
 
 async function world() {
   const s = await setupApp();
@@ -137,14 +144,14 @@ describe("rule engine", () => {
     const engineMove = w.events().find((e) => e.type === "ticket.moved" && e.actorId === "engine")!;
     expect(engineMove.payload).toMatchObject({ id: t.id, projectId: w.project.id, from: done.id, to: evalLane.id, causedBy: { ruleId: r1.id, runId: r1Runs[0].id, eventSeq: humanMove.seq } });
 
-    // First fail: rule 3's event matches but its condition does not hold yet.
+    // First fail: rule 3's event matches but its condition does not hold yet, which leaves no trace.
     expect((await w.agent("POST", "/api/v1/evidence", { ticketId: t.id, typeId: "et_eval_score", payload: { score: 0.2 } })).json.result).toBe("fail");
     expect((await w.ticket(t.id))).toMatchObject({ laneId: evalLane.id, flags: [] });
-    expect((await w.runs(r3.id)).map((x: any) => x.outcome)).toEqual(["skipped"]);
+    expect(await w.runs(r3.id)).toEqual([]);
     // Second fail: back to In Progress and flagged for the human.
     await w.agent("POST", "/api/v1/evidence", { ticketId: t.id, typeId: "et_eval_score", payload: { score: 0.3 } });
     expect((await w.ticket(t.id))).toMatchObject({ laneId: inProgress.id, flags: ["needs_human"] });
-    expect((await w.runs(r3.id)).map((x: any) => x.outcome)).toEqual(["applied", "skipped"]);
+    expect((await w.runs(r3.id)).map((x: any) => x.outcome)).toEqual(["applied"]);
 
     // The human clears the flag and sends it round again; this time the eval passes.
     await w.human("POST", `/api/v1/tickets/${t.id}/flags`, { flag: "needs_human", on: false });
@@ -154,7 +161,7 @@ describe("rule engine", () => {
     expect((await w.runs(r2.id)).map((x: any) => x.outcome)).toEqual(["applied"]);
 
     const fired = w.events().filter((e) => e.type === "rule.fired");
-    expect(fired.map((e) => [e.payload as any].map((p) => [p.ruleId, p.outcome])[0])).toEqual([[r1.id, "applied"], [r3.id, "skipped"], [r3.id, "applied"], [r2.id, "applied"]]);
+    expect(fired.map((e) => [(e.payload as any).ruleId, (e.payload as any).outcome])).toEqual([[r1.id, "applied"], [r3.id, "applied"], [r2.id, "applied"]]);
     for (const e of fired) expect(e.payload).toMatchObject({ projectId: w.project.id, ticketId: t.id, runId: expect.any(String), eventSeq: expect.any(Number) });
     expect(fired.every((e) => e.actorId === "engine")).toBe(true);
     expect(verifyChain(w.events()).ok).toBe(true);
@@ -177,6 +184,37 @@ describe("rule engine", () => {
     expect(moves.map((e) => e.actorId)).toEqual(["human", "engine", "engine"]);
     const flagged = w.events().find((e) => e.type === "ticket.flag_set")!;
     expect(flagged.payload).toMatchObject({ id: t.id, flag: "needs_human", cause: "rule", causedBy: { ruleId: a.id } });
+  });
+
+  it("refuses the ninth link of a causal chain: depth 8 is a skipped run that flags needs_human", async () => {
+    const w = await world();
+    // Step i sets f(i+1) when f(i) is set; the human sets f0 and the chain runs out at depth 8.
+    const steps = [];
+    for (let i = 0; i < 9; i++) steps.push(await w.rule(`Step ${i}`, { type: "ticket.flag_set", flag: `f${i}` }, [], [{ type: "set_flag", flag: `f${i + 1}` }]));
+    const t = (await w.human("POST", "/api/v1/tickets", { projectId: w.project.id, title: "Deep" })).json;
+    await w.human("POST", `/api/v1/tickets/${t.id}/flags`, { flag: "f0", on: true });
+    expect((await w.ticket(t.id)).flags).toEqual(["f0", "f1", "f2", "f3", "f4", "f5", "f6", "f7", "f8", "needs_human"]);
+    expect((await w.runs(steps[7].id)).map((x: any) => x.outcome)).toEqual(["applied"]);
+    expect((await w.runs(steps[8].id)).map((x: any) => [x.outcome, x.detail.reason])).toEqual([["skipped", "depth"]]);
+    expect(verifyChain(w.events()).ok).toBe(true);
+  });
+
+  it("stops a rule that fans out through create_ticket at the budget: a skipped run, needs_human on the root ticket", async () => {
+    const w = await world();
+    const ready = w.lane("Ready").id;
+    const r = await w.rule("Breed", { type: "ticket.created" }, [], [{ type: "create_ticket", title: "Child of {{ticket.key}}", laneId: ready }, { type: "create_ticket", title: "Twin of {{ticket.key}}", laneId: ready }]);
+    const root = (await w.human("POST", "/api/v1/tickets", { projectId: w.project.id, title: "Root" })).json;
+    const tickets = (await w.human("GET", `/api/v1/tickets?projectId=${w.project.id}`)).json;
+    expect(tickets).toHaveLength(1 + MAX_CREATED);
+    const runs = await w.runs(r.id);
+    expect(runs.filter((x: any) => x.outcome === "applied")).toHaveLength(MAX_CREATED / 2);
+    const stopped = runs.filter((x: any) => x.outcome === "skipped");
+    expect(stopped).toHaveLength(1);
+    expect(stopped[0].detail.reason).toBe("budget");
+    expect((await w.ticket(root.id)).flags).toEqual(["needs_human"]);
+    const last = w.events().filter((e) => e.type === "rule.fired").at(-1)!;
+    expect(last.payload).toMatchObject({ ruleId: r.id, outcome: "skipped", reason: "budget" });
+    expect(verifyChain(w.events()).ok).toBe(true);
   });
 
   it("does not move a ticket past a gate: the run is refused, the ticket is blocked, and a system comment says why", async () => {
@@ -208,6 +246,34 @@ describe("rule engine", () => {
     expect(verifyChain(w.events()).ok).toBe(true);
   });
 
+  it("records an error run and keeps earlier fires on the stream when the engine itself fails mid-run", async () => {
+    const w = await world();
+    const rfp = w.lane("Ready for Production");
+    const a = await w.rule("Flag first", { type: "ticket.created" }, [], [{ type: "set_flag", flag: "urgent" }]);
+    const b = await w.rule("Ship on arrival", { type: "ticket.created" }, [], [{ type: "move_to_lane", laneId: rfp.id }]);
+    // b is refused at the gate, and then the refusal's own comment cannot be written: that is
+    // the engine failing, not an action being refused.
+    w.app.ctx.db!.exec("create trigger boom before insert on comments begin select raise(abort, 'disk full'); end");
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    const seen: string[] = [];
+    const unsubscribe = w.app.ctx.bus.subscribe((e: any) => seen.push(e.type));
+    const res = await w.human("POST", "/api/v1/tickets", { projectId: w.project.id, title: "Trouble" });
+    unsubscribe();
+    const reported = errors.mock.calls.length;
+    errors.mockRestore();
+    w.app.ctx.db!.exec("drop trigger boom");
+
+    expect(res.status).toBe(200);
+    expect(reported).toBeGreaterThan(0);
+    expect(seen).toEqual(["ticket.created", "ticket.flag_set", "rule.fired", "rule.fired"]);
+    expect((await w.runs(a.id)).map((x: any) => x.outcome)).toEqual(["applied"]);
+    const [run] = await w.runs(b.id);
+    expect(run).toMatchObject({ outcome: "error", ticketId: res.json.id, detail: { code: "internal" } });
+    expect(run.detail.message).toContain("disk full");
+    expect(await w.ticket(res.json.id)).toMatchObject({ laneId: w.lane("Backlog").id, flags: ["urgent"] });
+    expect(verifyChain(w.events()).ok).toBe(true);
+  });
+
   it("applies the other actions through the routes' rules: comment, tag, epic, field, assign, and a created ticket", async () => {
     const w = await world();
     const tag = (await w.human("POST", "/api/v1/tags", { projectId: w.project.id, name: "auto", family: "sky" })).json;
@@ -229,12 +295,87 @@ describe("rule engine", () => {
     const follow = all.find((x: any) => x.key === "PAN-2");
     expect(follow).toMatchObject({ title: "Follow up on PAN-1", laneId: w.lane("Ready").id, tagIds: [tag.id], assigneeId: null });
     // The created ticket is itself a ticket.created event; the rule's title condition kept it
-    // from dressing the follow-up too, and that shows as a skipped run in the same chain.
-    expect((await w.runs(r.id)).map((x: any) => [x.outcome, x.ticketId])).toEqual([["skipped", follow.id], ["applied", t.id]]);
+    // from dressing the follow-up too, and a conditions miss leaves no run.
+    expect((await w.runs(r.id)).map((x: any) => [x.outcome, x.ticketId])).toEqual([["applied", t.id]]);
     const followCreated = w.events().find((e) => e.type === "ticket.created" && (e.payload as any).id === follow.id)!;
     expect(followCreated.actorId).toBe("engine");
     expect((followCreated.payload as any).causedBy.ruleId).toBe(r.id);
     expect(verifyChain(w.events()).ok).toBe(true);
+  });
+
+  it("starts and stops the engine's own timer on a ticket through the timer service", async () => {
+    const w = await world();
+    const inProgress = w.lane("In Progress"), evalLane = w.lane("Eval");
+    await w.rule("Clock in", { type: "ticket.moved", toLaneId: inProgress.id }, [], [{ type: "start_timer" }]);
+    const stop = await w.rule("Clock out", { type: "ticket.moved", toLaneId: evalLane.id }, [], [{ type: "stop_timer" }]);
+    const t = (await w.human("POST", "/api/v1/tickets", { projectId: w.project.id, title: "Timed" })).json;
+    await w.human("POST", `/api/v1/tickets/${t.id}/move`, { laneId: inProgress.id });
+    expect((await w.human("GET", `/api/v1/tickets/${t.id}/metrics`)).json).toMatchObject({ openTimers: 1, byActor: [{ actorId: "engine", name: "Engine" }] });
+    await w.human("POST", `/api/v1/tickets/${t.id}/move`, { laneId: evalLane.id });
+    expect((await w.human("GET", `/api/v1/tickets/${t.id}/metrics`)).json.openTimers).toBe(0);
+    const timerEvents = w.events().filter((e) => e.type.startsWith("timer."));
+    expect(timerEvents.map((e) => [e.type, e.actorId, (e.payload as any).actorId])).toEqual([["timer.started", "engine", "engine"], ["timer.stopped", "engine", "engine"]]);
+    expect((timerEvents[1].payload as any).seconds).toEqual(expect.any(Number));
+    // A second stop has nothing to stop: an error run, the routes' own 404 code.
+    await w.human("POST", `/api/v1/tickets/${t.id}/move`, { laneId: inProgress.id });
+    await w.human("POST", `/api/v1/tickets/${t.id}/move`, { laneId: evalLane.id });
+    await w.human("POST", `/api/v1/tickets/${t.id}/move`, { laneId: w.lane("Backlog").id });
+    await w.human("POST", `/api/v1/tickets/${t.id}/move`, { laneId: evalLane.id });
+    expect((await w.runs(stop.id)).map((x: any) => [x.outcome, x.detail.code])).toEqual([["error", "timer_not_open"], ["applied", undefined], ["applied", undefined]]);
+  });
+
+  it("moves a ticket between boards through the update path, refusing another project's board", async () => {
+    const w = await world();
+    const growth = (await w.human("POST", "/api/v1/boards", { projectId: w.project.id, name: "Growth", family: "sky" })).json;
+    const other = (await w.human("POST", "/api/v1/projects", { name: "Other", key: "OTH" })).json;
+    const otherBoard = (await w.human("GET", `/api/v1/projects/${other.project.id}/boards`)).json[0];
+    await w.rule("To growth", { type: "ticket.created" }, [{ kind: "title", op: "contains", value: "growth" }], [{ type: "move_to_board", boardId: growth.id }]);
+    const bad = await w.rule("Elsewhere", { type: "ticket.created" }, [{ kind: "title", op: "contains", value: "away" }], [{ type: "move_to_board", boardId: otherBoard.id }]);
+    const t = (await w.human("POST", "/api/v1/tickets", { projectId: w.project.id, title: "For growth" })).json;
+    expect((await w.ticket(t.id)).boardId).toBe(growth.id);
+    const updated = w.events().find((e) => e.type === "ticket.updated" && e.actorId === "engine")!;
+    expect(updated.payload).toMatchObject({ id: t.id, changed: ["boardId"] });
+    const away = (await w.human("POST", "/api/v1/tickets", { projectId: w.project.id, title: "Send away" })).json;
+    expect((await w.ticket(away.id)).boardId).not.toBe(otherBoard.id);
+    expect((await w.runs(bad.id)).map((x: any) => [x.outcome, x.detail.code])).toEqual([["error", "wrong_project"]]);
+    // The same path a request takes.
+    expect((await w.human("PATCH", `/api/v1/tickets/${away.id}`, { boardId: growth.id })).json.boardId).toBe(growth.id);
+    expect((await w.human("PATCH", `/api/v1/tickets/${away.id}`, { boardId: otherBoard.id })).json.error.code).toBe("wrong_project");
+  });
+
+  it("refuses assigning the engine or a revoked agent, for a rule and a request alike", async () => {
+    const w = await world();
+    expect((await w.human("POST", `/api/v1/agents/${w.agentId}/revoke`)).status).toBe(200);
+    const r = await w.rule("Hand over", { type: "ticket.created" }, [], [{ type: "assign", actorId: w.agentId }]);
+    const t = (await w.human("POST", "/api/v1/tickets", { projectId: w.project.id, title: "Orphan" })).json;
+    expect((await w.ticket(t.id)).assigneeId).toBe(null);
+    expect((await w.runs(r.id)).map((x: any) => [x.outcome, x.detail.code, x.detail.message])).toEqual([["error", "validation", "That agent's key was revoked"]]);
+    expect((await w.human("PATCH", `/api/v1/tickets/${t.id}`, { assigneeId: "engine" })).json.error).toMatchObject({ code: "validation", message: "The engine cannot be assigned a ticket" });
+    expect((await w.human("PATCH", `/api/v1/tickets/${t.id}`, { assigneeId: w.agentId })).json.error.message).toBe("That agent's key was revoked");
+  });
+
+  it("treats an archived ticket as no ticket", async () => {
+    const w = await world();
+    const r = await w.rule("Flag on comment", { type: "comment.added" }, [], [{ type: "set_flag", flag: "blocked" }]);
+    const t = (await w.human("POST", "/api/v1/tickets", { projectId: w.project.id, title: "Gone" })).json;
+    await w.human("POST", `/api/v1/tickets/${t.id}/archive`);
+    // No route raises an event about an archived ticket, so hand the engine one directly.
+    const archived = w.events().find((e) => e.type === "ticket.archived")!;
+    runRules(w.app.ctx, [{ ...archived, type: "comment.added", payload: { id: "c", ticketId: t.id, projectId: w.project.id } }]);
+    expect((await w.runs(r.id)).map((x: any) => [x.outcome, x.ticketId, x.detail.code])).toEqual([["error", t.id, "no_ticket"]]);
+    expect(listEvents(w.app.ctx.db!).filter((e) => e.type === "ticket.flag_set")).toHaveLength(0);
+  });
+
+  it("keeps the engine out of the agents list, unapprovable, unrevokable, and unable to sign a request", async () => {
+    const w = await world();
+    await w.rule("Flag", { type: "ticket.created" }, [], [{ type: "set_flag", flag: "blocked" }]);
+    await w.human("POST", "/api/v1/tickets", { projectId: w.project.id, title: "Wakes the engine" });
+    expect(getActor(w.app.ctx.db!, "engine")).toMatchObject({ id: "engine", kind: "agent", status: "active" });
+    expect((await w.human("GET", "/api/v1/agents")).json.map((a: any) => a.id)).not.toContain("engine");
+    expect((await w.human("POST", "/api/v1/agents/engine/approve", { scopes: { projects: "*", actions: ["read"] } })).status).toBe(404);
+    expect((await w.human("POST", "/api/v1/agents/engine/revoke")).status).toBe(404);
+    const asEngine = client(w.app, w.keys.seed, "engine");
+    expect((await asEngine("GET", "/api/v1/projects")).status).toBe(401);
   });
 
   it("publishes what a rule did to the stream after the event that caused it, project scoped", async () => {
@@ -265,17 +406,14 @@ describe("rule engine", () => {
 
 describe("rule engine with the workers", () => {
   const FAR = "9999-01-01T00:00:00.000Z";
+  const tickAfter = (w: Awaited<ReturnType<typeof world>>, nextRunAt: string) => {
+    const clock = { now: new Date(Date.parse(nextRunAt) + 1000) };
+    new Scheduler(w.app.ctx, { now: () => clock.now, log: () => {}, onEvents: (_db, evs) => void runRules(w.app.ctx, evs) }).tick();
+  };
 
   it("picks a schedule rule up at save, runs it when the scheduler fires its trigger, and drops the trigger with the rule", async () => {
     const w = await world();
-    const doc = {
-      nodes: [
-        { id: "s", kind: "schedule", position: at, data: { cron: "* * * * *", timezone: "UTC" } },
-        { id: "a0", kind: "action", position: at, data: { type: "create_ticket", title: "Nightly check", laneId: w.lane("Ready").id } },
-      ],
-      edges: [{ id: "s-a0", source: "s", target: "a0" }],
-    };
-    const res = await w.human("POST", "/api/v1/rules", { projectId: w.project.id, name: "Nightly", enabled: true, canvas: doc });
+    const res = await w.human("POST", "/api/v1/rules", { projectId: w.project.id, name: "Nightly", enabled: true, canvas: scheduled("* * * * *", { type: "create_ticket", title: "Nightly check", laneId: w.lane("Ready").id }) });
     expect(res.status).toBe(200);
     const r = res.json;
     expect(r.event).toEqual({ type: "schedule", cron: "* * * * *", timezone: "UTC" });
@@ -283,9 +421,7 @@ describe("rule engine with the workers", () => {
     expect(triggers).toHaveLength(1);
     expect(triggers[0]).toMatchObject({ cron: "* * * * *", timezone: "UTC", nextRunAt: expect.any(String) });
 
-    const clock = { now: new Date(Date.parse(triggers[0].nextRunAt!) + 1000) };
-    const sched = new Scheduler(w.app.ctx, { now: () => clock.now, log: () => {}, onEvents: (_db, evs) => void runRules(w.app.ctx, evs) });
-    sched.tick();
+    tickAfter(w, triggers[0].nextRunAt!);
     const fired = w.events().find((e) => e.type === "trigger.fired")!;
     expect(fired.payload).toMatchObject({ ruleId: r.id, projectId: w.project.id });
     const runs = await w.runs(r.id);
@@ -298,20 +434,24 @@ describe("rule engine with the workers", () => {
     expect((created.payload as any).causedBy).toEqual({ ruleId: r.id, runId: runs[0].id, eventSeq: fired.seq });
     expect(verifyChain(w.events()).ok).toBe(true);
 
+    // A changed schedule follows at once; a deleted rule takes its trigger with it.
+    const hourly = scheduled("0 * * * *", { type: "create_ticket", title: "Hourly check", laneId: w.lane("Ready").id });
+    expect((await w.human("PATCH", `/api/v1/rules/${r.id}`, { canvas: hourly })).status).toBe(200);
+    expect(listTriggers(w.app.ctx.db!, { ruleId: r.id }).map((t) => t.cron)).toEqual(["0 * * * *"]);
     await w.human("DELETE", `/api/v1/rules/${r.id}`);
     expect(listTriggers(w.app.ctx.db!, { ruleId: r.id })).toEqual([]);
   });
 
+  it("gives a schedule rule with a ticket action an error run, since a trigger names no ticket", async () => {
+    const w = await world();
+    const r = (await w.human("POST", "/api/v1/rules", { projectId: w.project.id, name: "Nowhere", enabled: true, canvas: scheduled("* * * * *", { type: "move_to_lane", laneId: w.lane("Eval").id }) })).json;
+    tickAfter(w, listTriggers(w.app.ctx.db!, { ruleId: r.id })[0].nextRunAt!);
+    expect((await w.runs(r.id)).map((x: any) => [x.outcome, x.ticketId, x.detail.code])).toEqual([["error", null, "no_ticket"]]);
+  });
+
   it("refuses a schedule croner rejects, naming the schedule node", async () => {
     const w = await world();
-    const doc = {
-      nodes: [
-        { id: "s", kind: "schedule", position: at, data: { cron: "99 * * * *", timezone: "UTC" } },
-        { id: "a0", kind: "action", position: at, data: { type: "set_flag", flag: "blocked" } },
-      ],
-      edges: [{ id: "s-a0", source: "s", target: "a0" }],
-    };
-    const res = await w.human("POST", "/api/v1/rules", { projectId: w.project.id, name: "Never", enabled: true, canvas: doc });
+    const res = await w.human("POST", "/api/v1/rules", { projectId: w.project.id, name: "Never", enabled: true, canvas: scheduled("99 * * * *", { type: "set_flag", flag: "blocked" }) });
     expect(res.status).toBe(400);
     expect(res.json.error.code).toBe("canvas_invalid");
     expect(res.json.error.details.errors).toEqual([{ name: "invalid:s", code: "invalid", nodeId: "s" }]);

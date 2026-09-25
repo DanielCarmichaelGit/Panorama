@@ -1,30 +1,51 @@
 import { randomUUID } from "node:crypto";
 import type { Action, CausedBy, ChainEvent, EngineEvent, Rule, RuleContext, Ticket } from "@boomerang/core";
 import { evaluateRule, LoopGuard, matchesEvent } from "@boomerang/core";
-import { addRuleRun, appendEvent, getActor, getDestination, getLane, getTicket, listEvidence, listRules, startTimer, stopTimer, type DB, type RuleRunOutcome } from "@boomerang/db";
+import { addRuleRun, appendEvent, getActor, getDestination, getLane, getTicket, listEvidence, listRules, type DB, type RuleRunOutcome } from "@boomerang/db";
 import type { Ctx } from "../context";
 import { HttpError } from "../errors";
 import { addCommentAs, createTicketAs, moveTicketAs, setFlagAs, updateTicketAs, type Acting, type MissingEntry } from "../services/tickets";
+import { startTimerAs, stopOwnTimerAs } from "../services/timers";
 import { enqueueNotification } from "../workers/outbox";
 import { ENGINE_ACTOR_ID, ensureEngineActor } from "./actor";
 
 /**
  * The rule engine. After a request's transaction has committed, its events come here (the
- * onSend hook in install.ts, the same point the bus publishes from); for each event with a
- * project, that project's enabled rules are evaluated against the ticket as it stands now,
- * and the actions of a rule that matches are applied through the ticket services, the same
- * code a route runs, gate included. Every fire is one transaction: its actions, its
- * `rule_runs` row and its `rule.fired` event commit together, and a failing action rolls the
- * whole fire back before a second, smaller transaction records why (refused at a gate, or
- * error). Events a fire produces are queued and evaluated in turn, carrying the causal chain
- * the loop guard reads: at most 8 fires deep, one fire per rule per ticket per chain, and a
- * rolling per-minute cap on top. A guard refusal is a skipped run that flags `needs_human`.
+ * onSend hook in install.ts, the same point the bus publishes from; the workers hand their
+ * own events in the same way); for each event with a project, that project's enabled rules
+ * are evaluated against the ticket as it stands now, and the actions of a rule that matches
+ * are applied through the ticket services, the same code a route runs, gate included. Other
+ * requests may commit between the route's commit and this run, so every action re-checks
+ * its gate when it runs, never from the event's snapshot.
+ *
+ * Every fire is one transaction: its actions, its `rule_runs` row and its `rule.fired` event
+ * commit together, and a failing action rolls the whole fire back before a second, smaller
+ * transaction records why (refused at a gate, or error). Events a fire produces are queued
+ * and evaluated in turn, carrying the causal chain the loop guard reads: at most 8 fires deep,
+ * one fire per rule per ticket per chain, and a rolling per-minute cap on top. One call also
+ * has a budget, MAX_FIRES fires and MAX_CREATED created tickets, so a rule that fans out
+ * through create_ticket cannot run away inside the depth limit. A rule whose conditions do
+ * not hold records nothing; a guard or budget refusal records a skipped run, a rule.fired,
+ * and flags needs_human. Each fire's committed events reach the caller's sink as that fire
+ * completes, so a failure later in the queue cannot cost the stream what already happened.
  */
 
 /** What an event a rule caused carries so the chain can be followed back to the fire. */
 export interface RuleCause { ruleId: string; runId: string; eventSeq: number }
 
-interface Queued { event: ChainEvent; chain: CausedBy[] }
+/** Fires one runRules call may make before it stops its queue, and tickets it may create. */
+export const MAX_FIRES = 50;
+export const MAX_CREATED = 20;
+
+export interface RunOptions {
+  /** Receives each fire's committed events as that fire completes. */
+  sink?: (events: ChainEvent[]) => void;
+  /** Where an engine failure that is not an action's own refusal is reported. */
+  log?: (message: string, error: unknown) => void;
+}
+
+interface Queued { event: ChainEvent; chain: CausedBy[]; rootTicketId: string | undefined }
+interface Budget { fires: number; created: number }
 
 const guards = new WeakMap<Ctx, LoopGuard>();
 /** One guard per server, kept off the Ctx type so the engine adds nothing to context.ts. */
@@ -42,6 +63,13 @@ export function ticketIdOf(ev: ChainEvent): string | undefined {
   const p = payloadOf(ev);
   return str(p.ticketId) ?? (ev.type.startsWith("ticket.") ? str(p.id) : undefined);
 }
+
+/** A ticket the engine may act on. An archived one is gone as far as the API is concerned
+ *  (the routes answer 404 for it), so here it is no ticket at all. */
+const liveTicket = (db: DB, id: string | undefined): Ticket | undefined => {
+  const t = id ? getTicket(db, id) : undefined;
+  return t && !t.archived ? t : undefined;
+};
 
 const EMPTY_TICKET: RuleContext["ticket"] = { id: "", key: "", title: "", boardId: "", laneId: "", epicId: null, tagIds: [], flags: [], assigneeId: null, dueDate: null, fields: {} };
 
@@ -62,15 +90,22 @@ function actorKindOf(db: DB, actorId: string): RuleContext["actorKind"] {
 const asEngineEvent = (ev: ChainEvent, chain: CausedBy[]): EngineEvent => ({ type: ev.type, payload: payloadOf(ev), causedBy: chain });
 
 /** Runs every enabled rule of the events' projects, and of the events those fires produce,
- *  until the queue drains. Returns every event the engine appended, in order, for the caller
- *  to publish once its own events are out (a request pushes them onto `req.emitted`). */
-export function runRules(ctx: Ctx, events: ChainEvent[]): ChainEvent[] {
+ *  until the queue drains or the budget is spent. Returns every event the engine appended,
+ *  in order; a request also gets them through `sink` as each fire commits. */
+export function runRules(ctx: Ctx, events: ChainEvent[], opts: RunOptions = {}): ChainEvent[] {
   const db = ctx.db;
   if (!db) return [];
+  const log = opts.log ?? ((message, error) => console.error(message, error));
   const produced: ChainEvent[] = [];
-  const queue: Queued[] = events.map((event) => ({ event, chain: [] }));
+  const emit = (out: ChainEvent[]) => {
+    if (out.length === 0) return;
+    produced.push(...out);
+    opts.sink?.(out);
+  };
+  const budget: Budget = { fires: 0, created: 0 };
+  const queue: Queued[] = events.map((event) => ({ event, chain: [], rootTicketId: ticketIdOf(event) }));
   while (queue.length) {
-    const { event, chain } = queue.shift()!;
+    const { event, chain, rootTicketId } = queue.shift()!;
     if (event.type === "rule.fired") continue;
     const projectId = str(payloadOf(event).projectId);
     if (!projectId) continue;
@@ -79,65 +114,85 @@ export function runRules(ctx: Ctx, events: ChainEvent[]): ChainEvent[] {
     const engineEvent = asEngineEvent(event, chain);
     for (const rule of rules) {
       if (!matchesEvent(rule.event, engineEvent, rule.id)) continue;
-      const out = fire(ctx, db, rule, event, chain);
-      produced.push(...out);
+      let out: ChainEvent[];
+      let exhausted = false;
+      try {
+        ({ out, exhausted } = fire(ctx, db, rule, event, chain, budget, rootTicketId));
+      } catch (error) {
+        // Not an action's own refusal (those are the fire's to record) but the engine itself
+        // failing, say while writing a refusal's comment. Say so, record it, carry on.
+        log(`engine: rule ${rule.id} failed on event ${event.seq}`, error);
+        out = recordEngineError(ctx, db, rule, event, error, log);
+      }
+      emit(out);
       const link: CausedBy = { ruleId: rule.id, ticketId: ticketIdOf(event) ?? "" };
-      for (const e of out) queue.push({ event: e, chain: [...chain, link] });
+      for (const e of out) {
+        if (e.type === "ticket.created") budget.created += 1;
+        queue.push({ event: e, chain: [...chain, link], rootTicketId });
+      }
+      if (exhausted) return produced;
     }
   }
   return produced;
 }
 
-/** One rule against one event: the guard, the conditions, then the actions in one
- *  transaction. Returns the events it appended (none of a rolled back fire). */
-function fire(ctx: Ctx, db: DB, rule: Rule, event: ChainEvent, chain: CausedBy[]): ChainEvent[] {
+/** The engine's own log entry, signed by the causing event rather than a request. */
+function engineLog(db: DB, event: ChainEvent, cause: RuleCause, now: () => string, out: ChainEvent[]): Acting["log"] {
+  return (type, payload) => {
+    const ev = appendEvent(db, { actorId: ENGINE_ACTOR_ID, type, payload: { ...payload, causedBy: cause }, signature: `engine:${event.hash}`, now: now() });
+    out.push(ev);
+    return ev;
+  };
+}
+
+/** One rule against one event: the conditions, then the budget and the guard, then the
+ *  actions in one transaction. Returns the events it appended (none of a rolled back fire)
+ *  and whether the budget ran out here. */
+function fire(ctx: Ctx, db: DB, rule: Rule, event: ChainEvent, chain: CausedBy[], budget: Budget, rootTicketId: string | undefined): { out: ChainEvent[]; exhausted: boolean } {
   const iso = () => ctx.now().toISOString();
   const ticketId = ticketIdOf(event);
   const runId = randomUUID();
   const cause: RuleCause = { ruleId: rule.id, runId, eventSeq: event.seq };
   const out: ChainEvent[] = [];
-  const acting: Acting = {
-    db,
-    actor: ensureEngineActor(db, iso()),
-    kind: "system",
-    now: iso,
-    // Engine events carry no request signature: the signature column names the signed event
-    // that caused the fire instead, so the attribution can be followed back to a real key.
-    log: (type, payload) => {
-      const ev = appendEvent(db, { actorId: ENGINE_ACTOR_ID, type, payload: { ...payload, causedBy: cause }, signature: `engine:${event.hash}`, now: iso() });
-      out.push(ev);
-      return ev;
-    },
-  };
-  const currentTicket = () => (ticketId ? getTicket(db, ticketId) : undefined);
+  const acting: Acting = { db, actor: ensureEngineActor(db, iso()), kind: "system", now: iso, log: engineLog(db, event, cause, iso, out) };
   const fired = (outcome: RuleRunOutcome, detail: Record<string, unknown>) => {
     addRuleRun(db, { id: runId, ruleId: rule.id, ticketId: ticketId ?? null, eventSeq: event.seq, outcome, detail }, iso());
     acting.log("rule.fired", { ruleId: rule.id, projectId: rule.projectId, ticketId: ticketId ?? null, runId, eventSeq: event.seq, outcome, ...detail });
   };
+  const flagForHuman = (t: Ticket | undefined) => {
+    if (t && !t.flags.includes("needs_human")) setFlagAs(acting, t, "needs_human", true, "rule");
+  };
+
+  // Conditions first: a rule the event starts but whose conditions do not hold has nothing
+  // to say, so it leaves no run and no event.
+  const ticket = liveTicket(db, ticketId);
+  const actions = evaluateRule(rule, asEngineEvent(event, chain), ruleContext(db, ticket, actorKindOf(db, event.actorId)));
+  if (actions.length === 0) return { out, exhausted: false };
+
+  if (budget.fires >= MAX_FIRES || budget.created >= MAX_CREATED) {
+    db.transaction(() => {
+      fired("skipped", { reason: "budget", actions });
+      flagForHuman(liveTicket(db, rootTicketId));
+    })();
+    return { out, exhausted: true };
+  }
 
   const verdict = guardFor(ctx).check(rule.id, ticketId ?? "", ctx.now().getTime(), chain);
   if (!verdict.ok) {
     db.transaction(() => {
-      fired("skipped", { reason: verdict.reason, actions: [] });
-      const t = currentTicket();
-      if (t && !t.flags.includes("needs_human")) setFlagAs(acting, t, "needs_human", true, "rule");
+      fired("skipped", { reason: verdict.reason, actions });
+      flagForHuman(ticket);
     })();
-    return out;
+    return { out, exhausted: false };
   }
 
-  const ticket = currentTicket();
-  const actions = evaluateRule(rule, asEngineEvent(event, chain), ruleContext(db, ticket, actorKindOf(db, event.actorId)));
-  if (actions.length === 0) {
-    db.transaction(() => fired("skipped", { reason: "conditions", actions: [] }))();
-    return out;
-  }
-
+  budget.fires += 1;
   let failed: { action: Action; index: number; error: unknown } | undefined;
   try {
     db.transaction(() => {
       actions.forEach((action, index) => {
         try {
-          applyAction(acting, rule, action, currentTicket(), event);
+          applyAction(acting, rule, action, liveTicket(db, ticketId), event);
         } catch (error) {
           failed = { action, index, error };
           throw error;
@@ -149,10 +204,10 @@ function fire(ctx: Ctx, db: DB, rule: Rule, event: ChainEvent, chain: CausedBy[]
     // The fire rolled back: nothing it appended exists any more, only what follows does.
     out.length = 0;
     const f = failed ?? { action: actions[0], index: 0, error };
-    db.transaction(() => recordFailure(acting, rule, actions, f, currentTicket(), fired))();
+    db.transaction(() => recordFailure(acting, rule, actions, f, liveTicket(db, ticketId), fired))();
   }
   guardFor(ctx).allow(rule.id, ticketId ?? "", ctx.now().getTime(), chain);
-  return out;
+  return { out, exhausted: false };
 }
 
 /** A gate refusal is a refused run: the ticket stays put, gets `blocked`, and a system comment
@@ -174,6 +229,27 @@ function recordFailure(acting: Acting, rule: Rule, actions: Action[], f: { actio
   const code = e instanceof HttpError ? e.code : "internal";
   const message = e instanceof Error ? e.message : String(e);
   fired("error", { actions, action: f.action, index: f.index, code, message, ...(e instanceof HttpError && e.details !== undefined ? { details: e.details } : {}) });
+}
+
+/** When the fire itself failed outside its actions: an error run and its event in a fresh
+ *  transaction, or a log line when even that cannot be written. */
+function recordEngineError(ctx: Ctx, db: DB, rule: Rule, event: ChainEvent, error: unknown, log: NonNullable<RunOptions["log"]>): ChainEvent[] {
+  const iso = () => ctx.now().toISOString();
+  const runId = randomUUID();
+  const out: ChainEvent[] = [];
+  const message = error instanceof Error ? error.message : String(error);
+  try {
+    db.transaction(() => {
+      const ticketId = ticketIdOf(event) ?? null;
+      ensureEngineActor(db, iso());
+      addRuleRun(db, { id: runId, ruleId: rule.id, ticketId, eventSeq: event.seq, outcome: "error", detail: { code: "internal", message } }, iso());
+      engineLog(db, event, { ruleId: rule.id, runId, eventSeq: event.seq }, iso, out)("rule.fired", { ruleId: rule.id, projectId: rule.projectId, ticketId, runId, eventSeq: event.seq, outcome: "error", code: "internal", message });
+    })();
+  } catch (again) {
+    log(`engine: could not record the failure of rule ${rule.id} on event ${event.seq}`, again);
+    return [];
+  }
+  return out;
 }
 
 const needTicket = (t: Ticket | undefined, what: string): Ticket => {
@@ -216,6 +292,9 @@ function applyAction(a: Acting, rule: Rule, action: Action, ticket: Ticket | und
     case "set_epic":
       updateTicketAs(a, needTicket(ticket, "update"), { epicId: action.epicId });
       return;
+    case "move_to_board":
+      updateTicketAs(a, needTicket(ticket, "move"), { boardId: action.boardId });
+      return;
     case "add_comment":
       addCommentAs(a, needTicket(ticket, "comment on"), action.body, []);
       return;
@@ -231,34 +310,12 @@ function applyAction(a: Acting, rule: Rule, action: Action, ticket: Ticket | und
     case "create_ticket":
       createTicketAs(a, { projectId: rule.projectId, title: action.title, laneId: action.laneId, ...(action.boardId ? { boardId: action.boardId } : {}), ...(action.epicId ? { epicId: action.epicId } : {}), ...(action.tagIds ? { tagIds: action.tagIds } : {}) });
       return;
-    case "start_timer": {
-      const t = needTicket(ticket, "time");
-      try {
-        startTimer(db, { ticketId: t.id, actorId: ENGINE_ACTOR_ID }, a.now());
-      } catch (e) {
-        if ((e as Error).message === "timer_open") throw new HttpError(409, "timer_open", "The engine already has a timer open on this ticket");
-        throw e;
-      }
-      // The same payload shape as the timer routes (task 6) record, so the chain reads alike.
-      a.log("timer.started", { ticketId: t.id, actorId: ENGINE_ACTOR_ID, projectId: t.projectId });
+    case "start_timer":
+      startTimerAs(a, needTicket(ticket, "time"));
       return;
-    }
-    case "stop_timer": {
-      const t = needTicket(ticket, "time");
-      let timer;
-      try {
-        timer = stopTimer(db, { ticketId: t.id, actorId: ENGINE_ACTOR_ID }, a.now());
-      } catch (e) {
-        if ((e as Error).message === "no_open_timer") throw new HttpError(409, "no_open_timer", "The engine has no timer open on this ticket");
-        throw e;
-      }
-      const seconds = Math.max(0, Math.round((Date.parse(timer.stoppedAt ?? a.now()) - Date.parse(timer.startedAt)) / 1000));
-      a.log("timer.stopped", { ticketId: t.id, actorId: ENGINE_ACTOR_ID, projectId: t.projectId, seconds });
+    case "stop_timer":
+      stopOwnTimerAs(a, needTicket(ticket, "time"));
       return;
-    }
-    case "move_to_board":
-      // No route moves a ticket between boards yet, so no rule may either.
-      throw new HttpError(400, "unsupported_action", "Moving a ticket between boards is not available yet");
     default: {
       const unreachable: never = action;
       throw new HttpError(400, "unsupported_action", `Unknown action ${(unreachable as Action).type}`);

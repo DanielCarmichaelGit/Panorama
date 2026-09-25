@@ -2,6 +2,7 @@ import type { Actor, ChainEvent, Comment, CreateTicketInput, FieldDefinition, Fi
 import { checkGate, isFileValue, validateFieldValues } from "@boomerang/core";
 import { addComment, createTicket, enterLane, getActor, getAttachment, getBoard, getEpic, getEvidenceType, getLane, getProject, getTag, listEvidence, listFields, listLanes, moveTicket, setCurrentTicket, setFlag, updateTicket, type DB } from "@boomerang/db";
 import { changedKeys, sameMergedRecord, sameSet } from "../changed";
+import { ENGINE_ACTOR_ID } from "../engine/actor";
 import { HttpError } from "../errors";
 import { blockedByReasons } from "../gate";
 import { stopTicketTimers } from "./timers";
@@ -110,10 +111,15 @@ export function createTicketAs(a: Acting, input: CreateTicketInput): Ticket {
 export function updateTicketAs(a: Acting, t: Ticket, patch: UpdateTicketInput): Ticket {
   const { db } = a;
   if (patch.assigneeId !== undefined && patch.assigneeId !== null) {
+    // Whoever asks, a rule included: the engine holds no tickets, and a revoked key holds none.
+    if (patch.assigneeId === ENGINE_ACTOR_ID) throw new HttpError(400, "validation", "The engine cannot be assigned a ticket");
     if (a.kind === "agent" && patch.assigneeId !== a.actor.id) throw new HttpError(403, "forbidden", "Agents may only assign themselves");
-    if (!getActor(db, patch.assigneeId)) throw new HttpError(400, "validation", "No such actor");
+    const assignee = getActor(db, patch.assigneeId);
+    if (!assignee) throw new HttpError(400, "validation", "No such actor");
+    if (assignee.status === "revoked") throw new HttpError(400, "validation", "That agent's key was revoked");
   }
   if (patch.epicId !== undefined && patch.epicId !== null) requireEpic(db, patch.epicId, t.projectId);
+  if (patch.boardId !== undefined && getBoard(db, patch.boardId)?.projectId !== t.projectId) throw new HttpError(400, "wrong_project", "That board belongs to another project");
   if (patch.tagIds) requireTags(db, patch.tagIds, t.projectId);
   if (patch.fields !== undefined) {
     // The patch merges into the ticket's values, so it is the merged result that must hold:

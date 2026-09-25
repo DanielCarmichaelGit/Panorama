@@ -14,7 +14,12 @@ export const SOURCE = "https://models.dev/api.json";
 /** models.dev lists 200+ providers, most of them gateways reselling the same models. The bundle
  *  keeps the first-party vendors, the big clouds, and the gateways agents commonly report; the
  *  full list is six times the size for no extra models. Add a provider here when an agent reports
- *  a model the table does not know. */
+ *  a model the table does not know.
+ *
+ *  Several of these list the same bare model id. When an agent reports an id with no provider,
+ *  `findPrice` in packages/core/src/cost.ts prefers, in order: anthropic, openai, google, xai,
+ *  mistral, deepseek, meta; any other provider comes after those, alphabetically. Keep the two
+ *  lists in step. */
 export const DEFAULT_PROVIDERS = [
   "alibaba",
   "amazon-bedrock",
@@ -28,6 +33,7 @@ export const DEFAULT_PROVIDERS = [
   "google",
   "google-vertex",
   "groq",
+  "meta",
   "minimax",
   "mistral",
   "moonshotai",

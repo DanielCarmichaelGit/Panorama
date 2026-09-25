@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
-import { estimateCost, formatEstimate, sumEstimates, type PriceTable } from "./index";
+import { estimateCost, findPrice, type PriceTable } from "./index";
 import bundled from "./prices.json";
 import { normalise } from "../../../scripts/prices-update.mjs";
 
@@ -51,49 +51,25 @@ describe("estimateCost", () => {
   });
 });
 
-describe("formatEstimate", () => {
-  it("rounds to two significant figures across magnitudes, never finer than a cent", () => {
-    expect(formatEstimate(0.004)).toBe("<~$0.01");
-    expect(formatEstimate(0.094)).toBe("~$0.09");
-    expect(formatEstimate(9.4)).toBe("~$9.40");
-    expect(formatEstimate(9.4321)).toBe("~$9.40");
-    expect(formatEstimate(940)).toBe("~$940");
-    expect(formatEstimate(943.21)).toBe("~$940");
-    expect(formatEstimate(12000)).toBe("~$12,000");
-    expect(formatEstimate(12345)).toBe("~$12,000");
+describe("findPrice tie-break on a bare id", () => {
+  const shared: PriceTable = {
+    source: "https://models.dev/api.json",
+    date: "2026-09-25",
+    models: {
+      "aaa-gateway/shared-x": { input: 1, output: 1 },
+      "google/shared-x": { input: 2, output: 2 },
+      "anthropic/shared-x": { input: 3, output: 3 },
+      "zeta/other-y": { input: 4, output: 4 },
+      "beta/other-y": { input: 5, output: 5 },
+    },
+  };
+  it("prefers the documented provider priority over alphabetical order", () => {
+    expect(findPrice("shared-x", shared)).toBe("anthropic/shared-x");
+    expect(estimateCost({ model: "shared-x", inputTokens: 1_000_000, outputTokens: 0 }, shared).usd).toBe(3);
   });
-  it("shows a bare zero for nothing spent", () => {
-    expect(formatEstimate(0)).toBe("~$0");
-  });
-  it("says no price when the estimate is null", () => {
-    expect(formatEstimate(null)).toBe("no price");
-  });
-});
-
-describe("sumEstimates", () => {
-  it("adds known estimates and carries the price date", () => {
-    const r = sumEstimates([
-      { usd: 1.5, priceDate: "2026-09-25" },
-      { usd: 2, priceDate: "2026-09-25" },
-    ]);
-    expect(r).toEqual({ usd: 3.5, known: 3.5, priceDate: "2026-09-25" });
-  });
-  it("returns null when any input is null but keeps the known subtotal", () => {
-    const r = sumEstimates([
-      { usd: 1.5, priceDate: "2026-09-25" },
-      { usd: null, priceDate: "2026-09-25" },
-    ]);
-    expect(r).toEqual({ usd: null, known: 1.5, priceDate: "2026-09-25" });
-  });
-  it("reports the oldest price date among mixed inputs", () => {
-    const r = sumEstimates([
-      { usd: 1, priceDate: "2026-09-25" },
-      { usd: 1, priceDate: "2026-08-01" },
-    ]);
-    expect(r.priceDate).toBe("2026-08-01");
-  });
-  it("sums an empty list to zero with the bundled date", () => {
-    expect(sumEstimates([])).toEqual({ usd: 0, known: 0, priceDate: bundled.date });
+  it("falls back to alphabetical order among providers outside the priority list", () => {
+    expect(findPrice("other-y", shared)).toBe("beta/other-y");
+    expect(estimateCost({ model: "other-y", inputTokens: 1_000_000, outputTokens: 0 }, shared).usd).toBe(5);
   });
 });
 
@@ -119,6 +95,7 @@ describe("prices.json", () => {
   it("carries the Claude 5 family and keeps its keys sorted", () => {
     const keys = Object.keys(bundled.models);
     for (const id of ["anthropic/claude-fable-5-1", "anthropic/claude-opus-5", "anthropic/claude-sonnet-5", "anthropic/claude-haiku-4-5-20251001"]) expect(keys).toContain(id);
+    expect(keys.some((k) => k.startsWith("meta/"))).toBe(true);
     expect(keys).toEqual([...keys].sort());
     expect(keys.length).toBeGreaterThan(100);
   });

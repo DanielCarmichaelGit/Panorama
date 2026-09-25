@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { CanvasDoc } from "@boomerang/core";
 import { canonical, canvasToRule } from "@boomerang/core";
-import { HISTORY_LIMIT, buildNode, fromDoc, initialDoc, initialState, ownerOf, placeNear, reducer, toDoc, type CanvasState } from "./store";
+import { HISTORY_LIMIT, buildNode, elseId, fromDoc, initialDoc, initialState, isElseId, ownerOf, placeNear, reducer, toDoc, type CanvasState } from "./store";
 
 const threeNodes: CanvasDoc = {
   nodes: [
@@ -55,6 +55,75 @@ describe("store doc round trip", () => {
   it("maps a server error on the synthesised node back to the condition", () => {
     expect(ownerOf("c1~else")).toBe("c1");
     expect(ownerOf("a1")).toBe("a1");
+  });
+
+  it("an else edge into a condition feeds that condition's not-node from the source's not-node: B -else-> C -else-> T", () => {
+    const s = {
+      nodes: [
+        { id: "event", kind: "event" as const, position: { x: 0, y: 0 }, data: { type: "ticket.created" } },
+        { id: "b", kind: "condition" as const, position: { x: 336, y: 0 }, data: { kind: "lane", op: "is", value: "l1" } },
+        { id: "c", kind: "condition" as const, position: { x: 672, y: 0 }, data: { kind: "flag", op: "is", value: "blocked" } },
+        { id: "t", kind: "action" as const, position: { x: 1008, y: 0 }, data: { type: "set_flag", flag: "needs_human" } },
+      ],
+      edges: [
+        { id: "e1", source: "event", target: "b" },
+        { id: "e2", source: "b", target: "c", label: "else" as const },
+        { id: "e3", source: "c", target: "t", label: "else" as const },
+      ],
+    };
+    const doc = toDoc(s);
+    expect(doc.edges).toEqual([
+      { id: "e1", source: "event", target: "b" },
+      { id: "e1~else", source: "event", target: "b~else" },
+      { id: "e2", source: "b~else", target: "c" },
+      { id: "e2~else", source: "b~else", target: "c~else" },
+      { id: "e3", source: "c~else", target: "t" },
+    ]);
+    const r = canvasToRule(doc);
+    expect("rule" in r).toBe(true);
+    if ("rule" in r) {
+      expect(r.rule.conditions).toEqual([
+        { kind: "not", condition: { kind: "lane", op: "is", value: "l1" } },
+        { kind: "not", condition: { kind: "flag", op: "is", value: "blocked" } },
+      ]);
+    }
+    expect(canonical(fromDoc(doc))).toBe(canonical({ nodes: s.nodes, edges: s.edges }));
+  });
+
+  it("a condition with a normal input P and an else input from B feeds its not-node from P and from B's not-node", () => {
+    const s = {
+      nodes: [
+        { id: "event", kind: "event" as const, position: { x: 0, y: 0 }, data: { type: "ticket.created" } },
+        { id: "p", kind: "condition" as const, position: { x: 336, y: 0 }, data: { kind: "lane", op: "is", value: "l1" } },
+        { id: "b", kind: "condition" as const, position: { x: 336, y: 160 }, data: { kind: "lane", op: "is", value: "l2" } },
+        { id: "c", kind: "condition" as const, position: { x: 672, y: 0 }, data: { kind: "flag", op: "is", value: "blocked" } },
+        { id: "t", kind: "action" as const, position: { x: 1008, y: 0 }, data: { type: "set_flag", flag: "needs_human" } },
+      ],
+      edges: [
+        { id: "e1", source: "event", target: "p" },
+        { id: "e2", source: "event", target: "b" },
+        { id: "e3", source: "p", target: "c" },
+        { id: "e4", source: "b", target: "c", label: "else" as const },
+        { id: "e5", source: "c", target: "t", label: "else" as const },
+      ],
+    };
+    const doc = toDoc(s);
+    const into = (id: string) => doc.edges.filter((e) => e.target === id).map((e) => e.source).sort();
+    expect(into("c")).toEqual(["b~else", "p"]);
+    expect(into("c~else")).toEqual(["b~else", "p"]);
+    expect("rule" in canvasToRule(doc)).toBe(true);
+    expect(canonical(fromDoc(doc))).toBe(canonical({ nodes: s.nodes, edges: s.edges }));
+  });
+
+  it("keeps a synthesised id within the limit by hashing a long base id, and still maps it back", () => {
+    const long = "c".repeat(125);
+    const id = elseId(long);
+    expect(id.length).toBeLessThanOrEqual(128);
+    expect(id.endsWith("~else")).toBe(true);
+    const nodes = [{ id: long, kind: "condition" as const }];
+    expect(ownerOf(id, nodes)).toBe(long);
+    expect(isElseId(id, nodes)).toBe(true);
+    expect(elseId("c1")).toBe("c1~else");
   });
 
   it("a new rule is one event node in the middle", () => {

@@ -89,31 +89,60 @@ export function initialDoc(): CanvasDoc {
   return { nodes: [{ id: "event", kind: "event", position: { x: 0, y: 0 }, data: {} }], edges: [] };
 }
 
+/** A short stable hash (FNV-1a, base 36) for a base id too long to carry the suffix within the 128 char limit. */
+function hashId(s: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h.toString(36);
+}
+
+/** The id of the synthesised not-node for a condition: `<id>~else`, or a hash of the id when it would not fit. */
+export function elseId(conditionId: string): string {
+  const base = conditionId.length > 120 ? `h${hashId(conditionId)}` : conditionId;
+  return `${base}${ELSE_SUFFIX}`;
+}
+
+/** Synthesised node id to the condition it negates, for every condition node in the list. */
+function elseOwners(nodes: { id: string; kind: CanvasNodeKind }[]): Map<string, string> {
+  const m = new Map<string, string>();
+  for (const n of nodes) if (n.kind === "condition") m.set(elseId(n.id), n.id);
+  return m;
+}
+
 export function fromDoc(doc: CanvasDoc): Snapshot {
+  const owners = elseOwners(doc.nodes);
   const byId = new Map(doc.nodes.map((n) => [n.id, n]));
-  const elseNodes = new Map<string, string>(); // synthesised node id -> the condition it negates
+  // Synthesised node id -> the condition it negates, when the node really is that shape.
+  const elseNodes = new Map<string, string>();
   for (const n of doc.nodes) {
-    const m = ELSE_RE.exec(n.id);
-    if (!m) continue;
-    const base = byId.get(m[1]);
-    if (n.kind === "condition" && n.data.kind === "not" && base?.kind === "condition") elseNodes.set(n.id, base.id);
+    const owner = owners.get(n.id);
+    if (owner !== undefined && n.kind === "condition" && n.data.kind === "not" && byId.get(owner)?.kind === "condition") elseNodes.set(n.id, owner);
   }
   const nodes: StoreNode[] = doc.nodes
     .filter((n) => !elseNodes.has(n.id))
     .map((n) => ({ id: n.id, kind: n.kind, position: { ...n.position }, data: clone(n.data) }));
   const edges: StoreEdge[] = [];
   for (const e of doc.edges) {
-    if (elseNodes.has(e.target)) continue; // the feed into the synthesised node
+    if (elseNodes.has(e.target)) continue; // the feed into a synthesised node
     if (elseNodes.has(e.source)) edges.push({ id: e.id, source: elseNodes.get(e.source)!, target: e.target, label: "else" });
     else edges.push({ id: e.id, source: e.source, target: e.target });
   }
   return { nodes, edges };
 }
 
+/**
+ * The doc form. An else edge out of condition C becomes a synthesised not-node in C's place:
+ * it is fed by every edge into C, an else edge from B feeding it from B's own not-node, so a
+ * chain B -else-> C -else-> T runs as not B, not C, T.
+ */
 export function toDoc(s: Snapshot): CanvasDoc {
   const nodes: CanvasDoc["nodes"] = s.nodes.map((n) => ({ id: n.id, kind: n.kind, position: { x: n.position.x, y: n.position.y }, data: clone(n.data) }));
   const edges: CanvasDoc["edges"] = [];
   const made = new Set<string>();
+  const feed = (p: StoreEdge) => (p.label === "else" ? elseId(p.source) : p.source);
   for (const e of s.edges) {
     if (e.label !== "else") {
       edges.push({ id: e.id, source: e.source, target: e.target });
@@ -121,21 +150,28 @@ export function toDoc(s: Snapshot): CanvasDoc {
     }
     const cond = s.nodes.find((n) => n.id === e.source);
     if (!cond) continue;
-    const notId = `${cond.id}${ELSE_SUFFIX}`;
+    const notId = elseId(cond.id);
     if (!made.has(notId)) {
       made.add(notId);
       nodes.push({ id: notId, kind: "condition", position: { x: cond.position.x, y: cond.position.y + 40 }, data: { kind: "not", condition: clone(cond.data) } });
-      for (const p of s.edges) if (p.target === cond.id && p.label !== "else") edges.push({ id: `${p.id}${ELSE_SUFFIX}`, source: p.source, target: notId });
+      for (const p of s.edges) if (p.target === cond.id) edges.push({ id: elseId(p.id), source: feed(p), target: notId });
     }
     edges.push({ id: e.id, source: notId, target: e.target });
   }
   return { nodes, edges };
 }
 
-/** The node a server error names, folded back to the node the canvas shows. */
-export function ownerOf(nodeId: string): string {
+/** The node a server error or a dry run names, folded back to the node the canvas shows. */
+export function ownerOf(nodeId: string, nodes: { id: string; kind: CanvasNodeKind }[] = []): string {
+  const owner = elseOwners(nodes).get(nodeId);
+  if (owner !== undefined) return owner;
   const m = ELSE_RE.exec(nodeId);
   return m ? m[1] : nodeId;
+}
+
+/** True when an id names a synthesised not-node rather than a drawn node. */
+export function isElseId(nodeId: string, nodes: { id: string; kind: CanvasNodeKind }[] = []): boolean {
+  return elseOwners(nodes).has(nodeId) || ELSE_RE.test(nodeId);
 }
 
 export function initialState(doc: CanvasDoc): CanvasState {
@@ -154,7 +190,7 @@ function commit(s: CanvasState, next: Partial<Snapshot>, before: Snapshot = snap
 export function placeNear(s: Snapshot & { selectedNodes: string[] }): { position: { x: number; y: number }; from: string | undefined } {
   const anchor = s.nodes.find((n) => n.id === s.selectedNodes[0]) ?? s.nodes.find((n) => n.kind === "event" || n.kind === "schedule") ?? s.nodes[s.nodes.length - 1];
   if (!anchor) return { position: { x: 0, y: 0 }, from: undefined };
-  const position = { x: anchor.position.x + 288, y: anchor.position.y };
+  const position = { x: anchor.position.x + 336, y: anchor.position.y };
   const taken = (p: { x: number; y: number }) => s.nodes.some((n) => Math.abs(n.position.x - p.x) < 200 && Math.abs(n.position.y - p.y) < 96);
   let guard = 0;
   while (taken(position) && guard++ < 50) position.y += 120;

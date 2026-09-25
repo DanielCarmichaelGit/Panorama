@@ -525,4 +525,8 @@ a{color:var(--accent)}
   .rnode{width:236px}
   .rnode-row{grid-template-columns:1fr}
   .rule-editor-actions{margin-left:0;width:100%}
+  /* The bottom nav bar is fixed; the zoom and undo panel sits above it. */
+  .rule-controls{margin-bottom:calc(12px + 3.5rem)}
 }
+.rule-canvas .react-flow__edge.is-lit .react-flow__edge-path{stroke:var(--mint-right)}
+.rule-canvas .react-flow__edge.is-lit .react-flow__edge-text{fill:var(--mint-ink)}

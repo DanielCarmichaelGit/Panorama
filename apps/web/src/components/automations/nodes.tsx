@@ -1,4 +1,4 @@
-import { createContext, useContext, useState } from "react";
+import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { Handle, Position, type NodeProps, type Node } from "@xyflow/react";
 import type { Actor, Board, CanvasNodeKind, Epic, EvidenceType, FieldDefinition, Lane, Tag } from "@boomerang/core";
 import { Picker, type PickerOption } from "../Picker";
@@ -122,13 +122,58 @@ function Card({ id, kind, title, children }: { id: string; kind: CanvasNodeKind;
         <span className="rnode-kind">{KIND_LABEL[kind]}</span>
         <span className="rnode-title">{title}</span>
       </div>
-      <div className="rnode-body nodrag nowheel">{children}</div>
+      {/* nokey keeps React Flow's own key handling (arrows nudge, Enter selects) off the controls inside. */}
+      <div className="rnode-body nodrag nowheel nokey">{children}</div>
       {error && <p className="rnode-error">{error}</p>}
       {kind !== "event" && kind !== "schedule" && <Handle type="target" position={Position.Left} className="rnode-handle" />}
       <Handle type="source" position={Position.Right} className="rnode-handle" />
     </div>
   );
 }
+
+const COMMIT_PAUSE_MS = 400;
+
+/**
+ * A text, number or date input (or a textarea) inside a node. Typing edits a local copy; the
+ * value is committed to the drawing, as one history step, after a pause or on blur, so undo
+ * steps back a phrase rather than a keystroke. An outside change (undo, redo) replaces the
+ * local copy while the field is not being typed in.
+ */
+function Field({ label, value, onCommit, multiline, className, ...rest }: { label: string; value: string; onCommit: (v: string) => void; multiline?: boolean; className?: string } & Omit<React.InputHTMLAttributes<HTMLInputElement>, "value" | "onChange" | "onBlur" | "className">) {
+  const [text, setText] = useState(value);
+  const dirty = useRef(false);
+  const timer = useRef<number | undefined>(undefined);
+  const latest = useRef(onCommit);
+  latest.current = onCommit;
+  useEffect(() => {
+    if (!dirty.current) setText(value);
+  }, [value]);
+  useEffect(() => () => window.clearTimeout(timer.current), []);
+  const flush = (v: string) => {
+    window.clearTimeout(timer.current);
+    dirty.current = false;
+    if (v !== value) latest.current(v);
+  };
+  const change = (v: string) => {
+    setText(v);
+    dirty.current = true;
+    window.clearTimeout(timer.current);
+    timer.current = window.setTimeout(() => flush(v), COMMIT_PAUSE_MS);
+  };
+  const cls = `input ${className ?? ""}`.trim();
+  return (
+    <label className="rnode-field">
+      <span>{label}</span>
+      {multiline ? (
+        <textarea className={`${cls} rnode-textarea`} rows={3} value={text} onChange={(e) => change(e.target.value)} onBlur={() => flush(text)} placeholder={rest.placeholder} />
+      ) : (
+        <input className={cls} {...rest} value={text} onChange={(e) => change(e.target.value)} onBlur={() => flush(text)} />
+      )}
+    </label>
+  );
+}
+
+const numberOrUndefined = (v: string) => (v === "" ? undefined : Number(v));
 
 function useNode(id: string, data: RuleNodeData) {
   const ctx = useContext(CanvasContext);
@@ -241,12 +286,7 @@ export function ConditionNode({ id, data }: NodeProps<RuleNode>) {
       return <Picker id={`${id}-value`} label="Value" value={(values.value as string) ?? null} onChange={(v) => patch({ value: v ?? undefined })} options={opts} swatch={swatch} searchable={opts.length > 8} placeholder="Choose" />;
     }
     if (kind === "evidence") {
-      return (
-        <label className="rnode-field">
-          <span>Count</span>
-          <input className="input mono-input" type="number" min={0} step={1} value={typeof values.count === "number" ? values.count : ""} onChange={(e) => patch({ count: e.target.value === "" ? 0 : Math.max(0, Math.floor(Number(e.target.value))) })} />
-        </label>
-      );
+      return <Field label="Count" className="mono-input" type="number" min={0} step={1} value={typeof values.count === "number" ? String(values.count) : ""} onCommit={(v) => patch({ count: v === "" ? 0 : Math.max(0, Math.floor(Number(v))) })} />;
     }
     if (kind === "field") {
       if (fieldKind === "select" && selectDef) {
@@ -259,36 +299,16 @@ export function ConditionNode({ id, data }: NodeProps<RuleNode>) {
         return <Picker id={`${id}-value`} label="Value" value={v} onChange={(x) => patch({ value: x === null ? undefined : x === "true" })} options={[{ id: "true", label: "Checked" }, { id: "false", label: "Unchecked" }]} placeholder="Choose" />;
       }
       if (fieldKind === "number") {
-        return (
-          <label className="rnode-field">
-            <span>Value</span>
-            <input className="input mono-input" type="number" value={typeof values.value === "number" ? values.value : ""} onChange={(e) => patch({ value: e.target.value === "" ? undefined : Number(e.target.value) })} />
-          </label>
-        );
+        return <Field label="Value" className="mono-input" type="number" value={typeof values.value === "number" ? String(values.value) : ""} onCommit={(v) => patch({ value: numberOrUndefined(v) })} />;
       }
       if (fieldKind === "date") {
-        return (
-          <label className="rnode-field">
-            <span>Date</span>
-            <input className="input" type="date" value={(values.value as string) ?? ""} onChange={(e) => patch({ value: e.target.value || undefined })} />
-          </label>
-        );
+        return <Field label="Date" type="date" value={(values.value as string) ?? ""} onCommit={(v) => patch({ value: v || undefined })} />;
       }
     }
     if (kind === "due_date") {
-      return (
-        <label className="rnode-field">
-          <span>Date</span>
-          <input className="input" type="date" value={(values.value as string) ?? ""} onChange={(e) => patch({ value: e.target.value || undefined })} />
-        </label>
-      );
+      return <Field label="Date" type="date" value={(values.value as string) ?? ""} onCommit={(v) => patch({ value: v || undefined })} />;
     }
-    return (
-      <label className="rnode-field">
-        <span>Text</span>
-        <input className="input" type="text" value={(values.value as string) ?? ""} onChange={(e) => patch({ value: e.target.value })} placeholder="Type a value" />
-      </label>
-    );
+    return <Field label="Text" type="text" value={(values.value as string) ?? ""} onCommit={(v) => patch({ value: v })} placeholder="Type a value" />;
   };
 
   return (
@@ -333,26 +353,11 @@ export function ActionNode({ id, data }: NodeProps<RuleNode>) {
       case "checkbox":
         return <Picker id={`${id}-value`} label="Value" options={[{ id: "true", label: "Checked" }, { id: "false", label: "Unchecked" }]} value={values.value === true ? "true" : values.value === false ? "false" : null} onChange={(v) => patch({ value: v === null ? null : v === "true" })} placeholder="Choose" />;
       case "number":
-        return (
-          <label className="rnode-field">
-            <span>Value</span>
-            <input className="input mono-input" type="number" value={typeof values.value === "number" ? values.value : ""} onChange={(e) => patch({ value: e.target.value === "" ? null : Number(e.target.value) })} />
-          </label>
-        );
+        return <Field label="Value" className="mono-input" type="number" value={typeof values.value === "number" ? String(values.value) : ""} onCommit={(v) => patch({ value: v === "" ? null : Number(v) })} />;
       case "date":
-        return (
-          <label className="rnode-field">
-            <span>Date</span>
-            <input className="input" type="date" value={(values.value as string) ?? ""} onChange={(e) => patch({ value: e.target.value || null })} />
-          </label>
-        );
+        return <Field label="Date" type="date" value={(values.value as string) ?? ""} onCommit={(v) => patch({ value: v || null })} />;
       default:
-        return (
-          <label className="rnode-field">
-            <span>Value</span>
-            <input className="input" type="text" value={(values.value as string) ?? ""} onChange={(e) => patch({ value: e.target.value })} placeholder="Type a value" />
-          </label>
-        );
+        return <Field label="Value" type="text" value={(values.value as string) ?? ""} onCommit={(v) => patch({ value: v })} placeholder="Type a value" />;
     }
   };
 
@@ -364,10 +369,7 @@ export function ActionNode({ id, data }: NodeProps<RuleNode>) {
       )}
       {type === "create_ticket" && (
         <>
-          <label className="rnode-field">
-            <span>Title</span>
-            <input className="input" type="text" value={(values.title as string) ?? ""} onChange={(e) => patch({ title: e.target.value })} placeholder="Follow up on {{ticket.key}}" />
-          </label>
+          <Field label="Title" type="text" value={(values.title as string) ?? ""} onCommit={(v) => patch({ title: v })} placeholder="Follow up on {{ticket.key}}" />
           <div className="rnode-row">
             <Picker id={`${id}-board`} label="Board" options={boardOptions(options)} value={(values.boardId as string) ?? null} onChange={(v) => patch({ boardId: v ?? undefined })} clearable swatch placeholder="Same board" />
             <Picker id={`${id}-epic`} label="Arc" options={epicOptions(options)} value={(values.epicId as string) ?? null} onChange={(v) => patch({ epicId: v ?? undefined })} clearable swatch placeholder="No arc" />
@@ -403,12 +405,7 @@ export function ActionNode({ id, data }: NodeProps<RuleNode>) {
       {type === "set_epic" && (
         <Picker id={`${id}-epic`} label="Arc" options={[{ id: NONE, label: "No arc" }, ...epicOptions(options)]} value={values.epicId === null ? NONE : ((values.epicId as string) ?? null)} onChange={(v) => patch({ epicId: v === NONE ? null : (v ?? undefined) })} swatch placeholder="Choose an arc" />
       )}
-      {type === "add_comment" && (
-        <label className="rnode-field">
-          <span>Comment</span>
-          <textarea className="input rnode-textarea" rows={3} value={(values.body as string) ?? ""} onChange={(e) => patch({ body: e.target.value })} placeholder="Posted by the system" />
-        </label>
-      )}
+      {type === "add_comment" && <Field label="Comment" multiline value={(values.body as string) ?? ""} onCommit={(v) => patch({ body: v })} placeholder="Posted by the system" />}
       {type === "emit_webhook" && (
         <Picker id={`${id}-dest`} label="Destination" options={destinationOptions(options)} value={(values.destinationId as string) ?? null} onChange={(v) => patch({ destinationId: v ?? undefined })} placeholder={options.destinations.length ? "Choose" : "No destinations yet"} />
       )}
@@ -458,12 +455,7 @@ export function ScheduleNode({ id, data }: NodeProps<RuleNode>) {
         }}
         placeholder="Choose a schedule"
       />
-      {custom && (
-        <label className="rnode-field">
-          <span>Cron, five fields</span>
-          <input className="input mono-input" type="text" value={cron} onChange={(e) => patch({ cron: e.target.value || undefined })} placeholder="0 9 * * 1-5" spellCheck={false} />
-        </label>
-      )}
+      {custom && <Field label="Cron, five fields" className="mono-input" type="text" value={cron} onCommit={(v) => patch({ cron: v || undefined })} placeholder="0 9 * * 1-5" spellCheck={false} />}
       <Picker id={`${id}-tz`} label="Timezone" options={timezoneOptions(values.timezone as string | undefined)} value={(values.timezone as string) ?? null} onChange={(v) => patch({ timezone: v ?? undefined })} searchable placeholder="Choose a timezone" />
     </Card>
   );

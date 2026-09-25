@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useReducer, useState } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { useNavigate, useOutletContext, useParams } from "react-router-dom";
 import { Flask, Plus, Trash } from "@phosphor-icons/react";
 import type { CanvasError, Lane, Project, Rule } from "@boomerang/core";
@@ -9,8 +9,8 @@ import { RowConfirm } from "../components/settings/primitives";
 import { RuleCanvas } from "../components/automations/RuleCanvas";
 import { RunLog, ago } from "../components/automations/RunLog";
 import { EMPTY_OPTIONS, namesFrom, type CanvasOptions } from "../components/automations/nodes";
-import { initialDoc, initialState, ownerOf, reducer, toDoc } from "../components/automations/store";
-import { actionSentence, errorSentence, eventLabel, type Names } from "../components/automations/vocab";
+import { initialDoc, initialState, isElseId, ownerOf, reducer, toDoc } from "../components/automations/store";
+import { actionSentence, errorSentence, eventLabel, refusalSentence, type Names } from "../components/automations/vocab";
 import { ApiError } from "../lib/api";
 import {
   useAgents,
@@ -44,18 +44,26 @@ function eventFamily(rule: Rule): "coral" | "lilac" {
   return rule.event.type === "schedule" ? "lilac" : "coral";
 }
 
+/** The enable toggle. It flips at once and settles on what the server answers; while the PATCH is in flight it takes no second click. */
 function EnableSwitch({ rule, onChange, busy }: { rule: RuleSummary; onChange: (enabled: boolean) => void; busy?: boolean }) {
+  const [optimistic, setOptimistic] = useState<boolean | null>(null);
+  useEffect(() => {
+    if (!busy) setOptimistic(null);
+  }, [busy, rule.enabled]);
+  const checked = optimistic ?? rule.enabled;
   return (
     <button
       type="button"
       role="switch"
-      aria-checked={rule.enabled}
+      aria-checked={checked}
       aria-label={`${rule.name} enabled`}
       className="switch"
       disabled={busy}
+      aria-busy={busy || undefined}
       onClick={(e) => {
         e.stopPropagation();
-        onChange(!rule.enabled);
+        setOptimistic(!checked);
+        onChange(!checked);
       }}
     >
       <span className="switch-knob" aria-hidden="true" />
@@ -63,7 +71,7 @@ function EnableSwitch({ rule, onChange, busy }: { rule: RuleSummary; onChange: (
   );
 }
 
-function RuleList({ rules, selectedId, onSelect, onNew, onToggle }: { rules: RuleSummary[]; selectedId: string | undefined; onSelect: (id: string) => void; onNew: () => void; onToggle: (rule: RuleSummary, enabled: boolean) => void }) {
+function RuleList({ rules, selectedId, busyId, onSelect, onNew, onToggle }: { rules: RuleSummary[]; selectedId: string | undefined; busyId: string | null; onSelect: (id: string) => void; onNew: () => void; onToggle: (rule: RuleSummary, enabled: boolean) => void }) {
   return (
     <aside className="rule-list" aria-label="Rules">
       <div className="rule-list-head">
@@ -91,7 +99,7 @@ function RuleList({ rules, selectedId, onSelect, onNew, onToggle }: { rules: Rul
               {typeof rule.runCount === "number" && <span className="mono">{rule.runCount} {rule.runCount === 1 ? "run" : "runs"}</span>}
             </div>
             <div className="row-actions">
-              <EnableSwitch rule={rule} onChange={(enabled) => onToggle(rule, enabled)} />
+              <EnableSwitch rule={rule} busy={busyId === rule.id} onChange={(enabled) => onToggle(rule, enabled)} />
             </div>
           </li>
         ))}
@@ -105,11 +113,15 @@ interface Bar {
   lines: string[];
 }
 
-function mapErrors(errors: CanvasError[], describe: (id: string) => { kind: Rule["canvas"]["nodes"][number]["kind"]; data: Record<string, unknown> } | undefined, names: Names): { byNode: Map<string, string>; lines: string[] } {
+type Drawn = { id: string; kind: Rule["canvas"]["nodes"][number]["kind"]; data: Record<string, unknown> };
+
+/** Errors as bar lines and, for the ones that name a node, a ring on the drawn node (a synthesised else node maps to its condition; two_events rings nothing). */
+function mapErrors(errors: CanvasError[], nodes: Drawn[], names: Names): { byNode: Map<string, string>; lines: string[] } {
+  const describe = (id: string) => nodes.find((n) => n.id === id);
   const byNode = new Map<string, string>();
   const lines: string[] = [];
   for (const e of errors) {
-    const owner = e.nodeId ? ownerOf(e.nodeId) : undefined;
+    const owner = e.nodeId ? ownerOf(e.nodeId, nodes) : undefined;
     const sentence = errorSentence({ ...e, nodeId: owner }, describe, names);
     lines.push(sentence);
     if (owner && !byNode.has(owner)) byNode.set(owner, sentence);
@@ -117,12 +129,13 @@ function mapErrors(errors: CanvasError[], describe: (id: string) => { kind: Rule
   return { byNode, lines };
 }
 
-function RuleEditor({ rule, project, lanes, onSaved, onDeleted }: { rule: RuleSummary; project: Project; lanes: Lane[]; onSaved: (saved: Rule) => void; onDeleted: () => void }) {
+function RuleEditor({ rule, project, lanes, onSaved, onDeleted, onDirtyChange }: { rule: RuleSummary; project: Project; lanes: Lane[]; onSaved: (saved: Rule) => void; onDeleted: () => void; onDirtyChange?: (dirty: boolean) => void }) {
   const draft = rule.id === DRAFT_ID;
   const [state, dispatch] = useReducer(reducer, rule.canvas, initialState);
   const [name, setName] = useState(rule.name);
   const [errors, setErrors] = useState<Map<string, string>>(new Map());
   const [lit, setLit] = useState<Set<string>>(new Set());
+  const [litEdges, setLitEdges] = useState<Set<string>>(new Set());
   const [bar, setBar] = useState<Bar | null>(null);
   const [testing, setTesting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -160,23 +173,26 @@ function RuleEditor({ rule, project, lanes, onSaved, onDeleted }: { rule: RuleSu
 
   const doc = useMemo(() => toDoc(state), [state]);
   const dirty = draft || name.trim() !== rule.name || canonical(doc) !== canonical(rule.canvas);
+  useEffect(() => {
+    onDirtyChange?.(dirty);
+    return () => onDirtyChange?.(false);
+  }, [dirty, onDirtyChange]);
 
-  // Editing again clears what the last save or test said about the drawing.
+  // What the drawing means, positions and selection left out: editing it again clears what the
+  // last save or test said, while moving or selecting a node keeps the rings and the bar.
+  const meaning = useMemo(() => canonical({ nodes: state.nodes.map((n) => ({ id: n.id, kind: n.kind, data: n.data })), edges: state.edges }), [state.nodes, state.edges]);
   useEffect(() => {
     setErrors(new Map());
     setLit(new Set());
+    setLitEdges(new Set());
     setBar((b) => (b && b.kind !== "test" ? null : b));
-  }, [doc]);
-
-  const describe = (id: string) => {
-    const n = state.nodes.find((x) => x.id === id);
-    return n ? { kind: n.kind, data: n.data } : undefined;
-  };
+  }, [meaning]);
 
   function showErrors(list: CanvasError[]) {
-    const m = mapErrors(list, describe, names);
+    const m = mapErrors(list, state.nodes, names);
     setErrors(m.byNode);
     setLit(new Set());
+    setLitEdges(new Set());
     setBar({ kind: "error", lines: m.lines });
   }
 
@@ -211,7 +227,17 @@ function RuleEditor({ rule, project, lanes, onSaved, onDeleted }: { rule: RuleSu
     try {
       const result: RuleTestResult = await test.mutateAsync({ id: rule.id, ticketId });
       const key = tickets.data?.find((t) => t.id === ticketId)?.key ?? ticketId;
-      setLit(new Set(result.nodeIds.map(ownerOf)));
+      // A drawn node lights up; a synthesised else node lights the else edges out of its condition instead.
+      const nodesLit = new Set<string>();
+      const edgesLit = new Set<string>();
+      for (const id of result.nodeIds) {
+        if (isElseId(id, state.nodes)) {
+          const owner = ownerOf(id, state.nodes);
+          for (const e of state.edges) if (e.label === "else" && e.source === owner) edgesLit.add(e.id);
+        } else nodesLit.add(id);
+      }
+      setLit(nodesLit);
+      setLitEdges(edgesLit);
       setErrors(new Map());
       const lines: string[] = [];
       if (result.matched) {
@@ -221,7 +247,7 @@ function RuleEditor({ rule, project, lanes, onSaved, onDeleted }: { rule: RuleSu
       } else {
         lines.push(`No match on ${key}. The nodes that matched are lit; the rule stops at the first that is not.`);
       }
-      for (const r of result.refusals) lines.push(`Refused: ${r}`);
+      for (const r of result.refusals ?? []) lines.push(refusalSentence({ action: r.action as unknown as Record<string, unknown>, missing: r.missing ?? [] }, names));
       setBar({ kind: "test", lines });
     } catch (e) {
       setFailure(e instanceof Error ? e.message : "Could not test the rule.");
@@ -283,7 +309,7 @@ function RuleEditor({ rule, project, lanes, onSaved, onDeleted }: { rule: RuleSu
           </ul>
         </div>
       )}
-      <RuleCanvas state={state} dispatch={dispatch} options={options} names={names} errors={errors} lit={lit} />
+      <RuleCanvas state={state} dispatch={dispatch} options={options} names={names} errors={errors} lit={lit} litEdges={litEdges} />
       {!draft && <RunLog ruleId={rule.id} projectId={project.id} />}
     </section>
   );
@@ -297,22 +323,38 @@ export function Automations() {
   const update = useUpdateRule();
   const [draft, setDraft] = useState<RuleSummary | null>(null);
   const [toggleError, setToggleError] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const editorDirty = useRef(false);
+  const onDirtyChange = useCallback((d: boolean) => {
+    editorDirty.current = d;
+  }, []);
+
+  /** Leaving a rule with unsaved changes asks first. */
+  function leave(go: () => void) {
+    if (editorDirty.current && !window.confirm("You have unsaved changes. Leave this rule?")) return;
+    go();
+  }
 
   const list = rules.data ?? [];
   const selected: RuleSummary | undefined = ruleId === DRAFT_ID ? (draft ?? undefined) : list.find((r) => r.id === ruleId);
 
   function startDraft() {
-    const now = new Date().toISOString();
-    setDraft({ id: DRAFT_ID, projectId: project.id, name: "New rule", enabled: true, event: { type: "ticket.created" }, conditions: [], actions: [], canvas: initialDoc(), createdAt: now, updatedAt: now });
-    navigate(`/automations/${DRAFT_ID}`);
+    leave(() => {
+      const now = new Date().toISOString();
+      setDraft({ id: DRAFT_ID, projectId: project.id, name: "New rule", enabled: true, event: { type: "ticket.created" }, conditions: [], actions: [], canvas: initialDoc(), createdAt: now, updatedAt: now });
+      navigate(`/automations/${DRAFT_ID}`);
+    });
   }
 
   async function toggle(rule: RuleSummary, enabled: boolean) {
     setToggleError(null);
+    setBusyId(rule.id);
     try {
       await update.mutateAsync({ id: rule.id, patch: { enabled } });
     } catch (e) {
       setToggleError(e instanceof Error ? e.message : "Could not change the rule.");
+    } finally {
+      setBusyId(null);
     }
   }
 
@@ -330,7 +372,7 @@ export function Automations() {
             {[0, 1, 2].map((i) => <div key={i} className="skeleton" />)}
           </div>
         ) : (
-          <RuleList rules={list} selectedId={selected?.id} onSelect={(id) => navigate(`/automations/${id}`)} onNew={startDraft} onToggle={toggle} />
+          <RuleList rules={list} selectedId={selected?.id} busyId={busyId} onSelect={(id) => { if (id !== selected?.id) leave(() => navigate(`/automations/${id}`)); }} onNew={startDraft} onToggle={toggle} />
         )}
         {selected ? (
           <RuleEditor
@@ -345,6 +387,7 @@ export function Automations() {
               }
             }}
             onDeleted={() => navigate("/automations", { replace: true })}
+            onDirtyChange={onDirtyChange}
           />
         ) : (
           <div className="canvas-empty">

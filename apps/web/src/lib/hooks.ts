@@ -471,11 +471,19 @@ export interface RuleRun {
   ticketKey?: string;
 }
 
+/** An action the dry run would perform but the gate refuses: which lane, and what the ticket lacks. A blocker (a link to an unfinished ticket) arrives as a miss with no count. */
+export interface RuleRefusal {
+  action: Action;
+  laneId: string;
+  missing: { typeId: string; name: string; need: number; have: number; description?: string }[];
+}
+
 export interface RuleTestResult {
   matched: boolean;
+  /** Node ids the evaluation passed through; a synthesised else node is named as `<id>~else`. */
   nodeIds: string[];
   actions: Action[];
-  refusals: string[];
+  refusals: RuleRefusal[];
 }
 
 /** A webhook destination (task 5); the emit_webhook action's Picker reads this list. */

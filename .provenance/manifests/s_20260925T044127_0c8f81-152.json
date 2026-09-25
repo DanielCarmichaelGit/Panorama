@@ -1,0 +1,22 @@
+{
+  "sessionId": "s_20260925T044127_0c8f81",
+  "actor": "Daniel Carmichael",
+  "tool": "cli",
+  "intent": "milestone 3 task 8 canvas",
+  "head": "3932835b489442a6c9752177a35276c7bb4787c19f9e7de6e01effc7801206e8",
+  "count": 152,
+  "diffHash": "d0807e4479c6eb652be1fffddec22244daad1b31169d043326fd213da3ae40e9",
+  "files": [
+    "apps/web/src/components/automations/RuleCanvas.tsx",
+    "apps/web/src/components/automations/nodes.tsx",
+    "apps/web/src/components/automations/store.test.ts",
+    "apps/web/src/components/automations/store.ts",
+    "apps/web/src/components/automations/vocab.ts",
+    "apps/web/src/lib/hooks.ts",
+    "apps/web/src/styles/app.css",
+    "apps/web/src/views/Automations.test.tsx",
+    "apps/web/src/views/Automations.tsx"
+  ],
+  "base": "4145051e5003273120e67d59b50c9873ba181789",
+  "ts": "2026-09-25T19:21:35.253Z"
+}

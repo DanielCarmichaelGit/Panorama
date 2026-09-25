@@ -193,7 +193,23 @@ describe("Automations view", () => {
 
   it("test mode lights the matched nodes and reports the actions without writing", async () => {
     const calls = mockApi([rule({})], (c) => {
-      if (c.method === "POST" && c.path === "/api/v1/rules/r1/test") return { matched: true, nodeIds: ["event", "c1", "a1"], actions: [{ type: "move_to_lane", laneId: "l3" }], refusals: ["Ready for Production needs Human sign-off"] };
+      if (c.method === "POST" && c.path === "/api/v1/rules/r1/test") {
+        return {
+          matched: true,
+          nodeIds: ["event", "c1", "a1"],
+          actions: [{ type: "move_to_lane", laneId: "l3" }],
+          refusals: [
+            {
+              action: { type: "move_to_lane", laneId: "l3" },
+              laneId: "l3",
+              missing: [
+                { typeId: "et1", name: "Eval score", need: 1, have: 0 },
+                { typeId: "link", name: "Blocked by STU-2", need: 0, have: 0 },
+              ],
+            },
+          ],
+        };
+      }
       return undefined;
     });
     renderView("/automations/r1");
@@ -206,7 +222,93 @@ describe("Automations view", () => {
     const status = screen.getByRole("status");
     expect(status.textContent).toContain("Matched PAN-2. Nothing was written.");
     expect(status.textContent).toContain("Would move to Ready for Production");
-    expect(status.textContent).toContain("Refused: Ready for Production needs Human sign-off");
+    expect(status.textContent).toContain("Move to Ready for Production would be refused: needs Eval score (0 of 1), Blocked by STU-2");
     expect(calls.filter((c) => c.method === "PATCH" || (c.method === "POST" && !c.path.endsWith("/test")))).toHaveLength(0);
+  });
+
+  it("selecting a node keeps the error rings and the bar; changing the drawing clears them", async () => {
+    mockApi([disconnected]);
+    renderView("/automations/r2");
+    await waitFor(() => expect(document.querySelectorAll(".rnode")).toHaveLength(2));
+    fireEvent.change(screen.getByRole("textbox", { name: "Rule name" }), { target: { value: "Loose action, renamed" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await screen.findByRole("alert");
+    expect(nodeEl("a1")?.querySelector(".rnode")?.classList.contains("has-error")).toBe(true);
+    // A click on the node selects it, and a nudge moves it; neither changes what the drawing means, so the ring stays.
+    await act(async () => {
+      fireEvent.click(nodeEl("a1")!);
+    });
+    await waitFor(() => expect(nodeEl("a1")?.classList.contains("selected")).toBe(true));
+    await act(async () => {
+      fireEvent.keyDown(nodeEl("a1")!, { key: "ArrowRight" });
+    });
+    expect(nodeEl("a1")?.querySelector(".rnode")?.classList.contains("has-error")).toBe(true);
+    expect(screen.getByRole("alert")).toBeTruthy();
+    // Changing what the node means clears it.
+    fireEvent.click(within(nodeEl("a1")!).getByRole("button", { name: "Action" }));
+    fireEvent.click(await screen.findByRole("option", { name: "Set a flag" }));
+    await waitFor(() => expect(nodeEl("a1")?.querySelector(".rnode")?.classList.contains("has-error")).toBe(false));
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+});
+
+describe("keyboard inside nodes", () => {
+  async function drawn() {
+    mockApi([rule({})]);
+    renderView("/automations/r1");
+    await waitFor(() => expect(document.querySelectorAll(".rnode")).toHaveLength(3));
+    const event = nodeEl("event")!;
+    await act(async () => {
+      event.focus();
+    });
+    return event;
+  }
+
+  it("Tab from a focused node reaches its first Picker, then the second, and Escape returns to the node", async () => {
+    const event = await drawn();
+    fireEvent.keyDown(event, { key: "Tab" });
+    const first = within(event).getByRole("button", { name: "Event" });
+    expect(document.activeElement).toBe(first);
+    fireEvent.keyDown(first, { key: "Tab" });
+    const second = within(event).getByRole("button", { name: "From lane" });
+    expect(document.activeElement).toBe(second);
+    fireEvent.keyDown(second, { key: "Tab", shiftKey: true });
+    expect(document.activeElement).toBe(first);
+    fireEvent.keyDown(first, { key: "Escape" });
+    expect(document.activeElement).toBe(event);
+  });
+
+  it("Enter on a Picker does not reopen the first, and Delete on a Picker trigger does not delete the node", async () => {
+    const event = await drawn();
+    const second = within(event).getByRole("button", { name: "From lane" });
+    await act(async () => {
+      second.focus();
+    });
+    // Enter belongs to the Picker it lands on: that one opens, the first stays shut.
+    fireEvent.keyDown(second, { key: "Enter" });
+    expect(second.getAttribute("aria-expanded")).toBe("true");
+    expect(within(event).getByRole("button", { name: "Event" }).getAttribute("aria-expanded")).toBe("false");
+    fireEvent.keyDown(document.activeElement!, { key: "Escape" });
+    expect(second.getAttribute("aria-expanded")).toBe("false");
+    await act(async () => {
+      second.focus();
+    });
+    fireEvent.keyDown(second, { key: "Delete" });
+    fireEvent.keyDown(second, { key: "Backspace" });
+    expect(document.querySelectorAll(".rnode")).toHaveLength(3);
+    // Letters inside a control type, they do not draw.
+    fireEvent.keyDown(second, { key: "c" });
+    expect(document.querySelectorAll(".rnode")).toHaveLength(3);
+  });
+
+  it("after c the new node takes focus, and e selects the existing event node instead of adding one", async () => {
+    const event = await drawn();
+    fireEvent.keyDown(event, { key: "c" });
+    await waitFor(() => expect(document.querySelectorAll(".rnode-condition")).toHaveLength(2));
+    const added = Array.from(document.querySelectorAll<HTMLElement>(".react-flow__node")).find((n) => n.dataset.id !== "event" && n.dataset.id !== "c1" && n.dataset.id !== "a1")!;
+    await waitFor(() => expect(document.activeElement).toBe(added));
+    fireEvent.keyDown(added, { key: "e" });
+    expect(document.querySelectorAll(".rnode-event")).toHaveLength(1);
+    await waitFor(() => expect(document.activeElement).toBe(nodeEl("event")));
   });
 });

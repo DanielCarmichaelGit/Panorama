@@ -1,5 +1,5 @@
 import type { Action, CanvasNodeKind, Family, RuleEvent } from "@boomerang/core";
-import { ACTION_TARGET_KEY, ACTION_TYPES, RULE_EVENT_TYPES } from "@boomerang/core";
+import { ACTION_TARGET_KEY, ACTION_TYPES, MAX_CONDITION_DEPTH, RULE_EVENT_TYPES } from "@boomerang/core";
 import type { CanvasError } from "@boomerang/core";
 
 /**
@@ -314,7 +314,7 @@ export function eventSentence(data: Record<string, unknown>, names: Names): stri
     case "ticket.flag_cleared":
       return data.flag ? `${base.replace("A flag", `Flag ${data.flag}`)}` : base;
     case "ticket.updated":
-      return data.changed ? `${base} (${data.changed})` : base;
+      return data.changed ? `${base} (${changedLabel(String(data.changed))})` : base;
     default:
       return base;
   }
@@ -335,8 +335,31 @@ export function scheduleSentence(data: Record<string, unknown>): string {
   return preset ? preset.label : `Cron ${cron}`;
 }
 
-/** The fields `ticket.updated` can name; the engine takes any short name, these are the common ones. */
-export const CHANGED_OPTIONS = ["title", "epicId", "assigneeId", "tagIds", "dueDate", "startDate", "fields", "successCriteria"].map((k) => ({ id: k, label: k }));
+/** The fields `ticket.updated` can name, as people read them; the id is the key the event carries. The Picker also takes a typed key. */
+export const CHANGED_OPTIONS = [
+  { id: "title", label: "Title" },
+  { id: "metadata", label: "Description" },
+  { id: "laneId", label: "Lane" },
+  { id: "epicId", label: "Arc" },
+  { id: "tagIds", label: "Tags" },
+  { id: "assigneeId", label: "Assignee" },
+  { id: "successCriteria", label: "Success criteria" },
+  { id: "fields", label: "Fields" },
+  { id: "boardId", label: "Board" },
+  { id: "startDate", label: "Start date" },
+  { id: "dueDate", label: "Due date" },
+  { id: "needs_human", label: "Needs human" },
+];
+
+export function changedLabel(key: string): string {
+  return CHANGED_OPTIONS.find((o) => o.id === key)?.label ?? key;
+}
+
+/** One refusal from a dry run as words: "Move to Ready for Production would be refused: needs Eval score (0 of 1), Blocked by STU-2". */
+export function refusalSentence(r: { action: Record<string, unknown>; missing: { name: string; need: number; have: number }[] }, names: Names): string {
+  const parts = r.missing.map((m) => (m.need > 0 ? `needs ${m.name} (${m.have} of ${m.need})` : m.name));
+  return `${actionSentence(r.action, names)} would be refused${parts.length ? `: ${parts.join(", ")}` : ""}`;
+}
 
 /**
  * One plain sentence per validation error, for the bar above the canvas. `describe` names the
@@ -359,7 +382,7 @@ export function errorSentence(e: CanvasError, describe: (nodeId: string) => { ki
     case "missing_target":
       return `${noun} has no ${actionTargetNoun(node?.data.type as string | undefined)} chosen.`;
     case "invalid":
-      return `${noun}${nodeTitle(node, names)} is incomplete. Fill in every choice.`;
+      return `${noun}${nodeTitle(node, names)} cannot run as drawn: a choice is missing, or the engine refuses it (only a person clears needs_human, and conditions nest at most ${MAX_CONDITION_DEPTH} deep).`;
     case "bad_edge":
       return "An edge points at a node that is not on the canvas.";
     default:

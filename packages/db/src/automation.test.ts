@@ -184,4 +184,13 @@ describe("outbox", () => {
     expect(d.getOutboxItem(db, second.id)).toEqual(second);
     expect(() => d.enqueueOutbox(db, { destinationId: "ghost", eventSeq: event.seq, payload: {} }, NOW)).toThrow(/FOREIGN KEY/);
   });
+  it("parks a row so it is never due again without counting an attempt", () => {
+    const { db, project, event } = world();
+    const dest = d.createDestination(db, { projectId: project.id, name: "A", url: "https://a.test", secret: "a" }, NOW);
+    const row = d.enqueueOutbox(db, { destinationId: dest.id, eventSeq: event.seq, payload: {} }, NOW);
+    const parked = d.parkOutbox(db, row.id, "destination archived");
+    expect(parked).toMatchObject({ attempts: 0, lastError: "destination archived", deliveredAt: null });
+    expect(d.dueOutbox(db, "9999-01-01T00:00:00.000Z")).toEqual([]);
+    expect(d.purgeDelivered(db, "9999-01-01T00:00:00.000Z")).toBe(0);
+  });
 });

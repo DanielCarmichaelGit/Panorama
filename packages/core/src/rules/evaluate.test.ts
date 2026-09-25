@@ -66,8 +66,8 @@ describe("matchesEvent", () => {
     [{ type: "cost.added" }, { type: "cost.added", payload: { ticketId: "t1", model: "m" } }, true],
     [{ type: "ticket.due_passed" }, { type: "ticket.due_passed", payload: { ticketId: "t1", dueDate: "2026-10-01" } }, true],
     [{ type: "ticket.due_passed" }, { type: "ticket.updated", payload: { changed: ["dueDate"] } }, false],
-    [{ type: "schedule", cron: "* * * * *", timezone: "UTC" }, { type: "trigger.fired", payload: { ruleId: "r1" } }, true],
-    [{ type: "schedule", cron: "* * * * *", timezone: "UTC" }, { type: "trigger.fired", payload: { ruleId: "r2" } }, false],
+    [{ type: "schedule", cron: "* * * * *", timezone: "UTC", missed: "run_once" }, { type: "trigger.fired", payload: { ruleId: "r1" } }, true],
+    [{ type: "schedule", cron: "* * * * *", timezone: "UTC", missed: "run_once" }, { type: "trigger.fired", payload: { ruleId: "r2" } }, false],
   ];
   it.each(cases)("%j against %j gives %s", (re, ev, expected) => {
     expect(matchesEvent(re, ev, "r1")).toBe(expected);

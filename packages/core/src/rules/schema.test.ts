@@ -27,6 +27,9 @@ describe("RuleEventSchema", () => {
     expect(RuleEventSchema.safeParse({ type: "ticket.created", laneId: "l1" }).success).toBe(false);
     expect(RuleEventSchema.safeParse({ type: "evidence.added", result: "maybe" }).success).toBe(false);
     expect(RuleEventSchema.safeParse({ type: "schedule", cron: "every monday", timezone: "UTC" }).success).toBe(false);
+    expect(RuleEventSchema.safeParse({ type: "schedule", cron: "0 9 * * *", timezone: "UTC", missed: "sometimes" }).success).toBe(false);
+    expect(RuleEventSchema.parse({ type: "schedule", cron: "0 9 * * *", timezone: "UTC" })).toEqual({ type: "schedule", cron: "0 9 * * *", timezone: "UTC", missed: "run_once" });
+    for (const missed of ["skip", "run_once", "run_all"]) expect(RuleEventSchema.parse({ type: "schedule", cron: "0 9 * * *", timezone: "UTC", missed })).toMatchObject({ missed });
     expect(RuleEventSchema.safeParse({ type: "schedule", cron: "0 9 * * *", timezone: "Mars/Olympus" }).success).toBe(false);
   });
 });

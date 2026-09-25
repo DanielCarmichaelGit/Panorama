@@ -54,7 +54,7 @@ describe("canvasToRule", () => {
   it("a schedule node stands in for the event node", () => {
     const sched = node("s", "schedule", { cron: "0 9 * * 1-5", timezone: "Europe/London" });
     const rule = ruleOf({ nodes: [sched, flag], edges: [edge("s", "a2")] });
-    expect(rule.event).toEqual({ type: "schedule", cron: "0 9 * * 1-5", timezone: "Europe/London" });
+    expect(rule.event).toEqual({ type: "schedule", cron: "0 9 * * 1-5", timezone: "Europe/London", missed: "run_once" });
   });
 
   it("no_event", () => {
@@ -170,7 +170,7 @@ describe("canvasToRule", () => {
 describe("ruleToCanvas output", () => {
   it("re-parses under CanvasDocSchema", () => {
     const doc = ruleToCanvas({
-      event: { type: "schedule", cron: "0 9 * * *", timezone: "UTC" },
+      event: { type: "schedule", cron: "0 9 * * *", timezone: "UTC", missed: "run_once" },
       conditions: [inEval.data as any],
       actions: [{ type: "create_ticket", title: "Daily {{ticket.key}}", laneId: "l1", when: [passed.data as any] }, { type: "start_timer" }],
     });
@@ -216,8 +216,8 @@ describe("ruleToCanvas", () => {
     expect(byId.a1.data).toEqual({ type: "move_to_lane", laneId: "l_rfp" });
   });
   it("draws a schedule event as a schedule node", () => {
-    const doc = ruleToCanvas({ event: { type: "schedule", cron: "0 9 * * *", timezone: "UTC" }, conditions: [], actions: [{ type: "set_flag", flag: "needs_human" }] });
-    expect(doc.nodes[0]).toEqual({ id: "schedule", kind: "schedule", position: { x: 0, y: 0 }, data: { type: "schedule", cron: "0 9 * * *", timezone: "UTC" } });
+    const doc = ruleToCanvas({ event: { type: "schedule", cron: "0 9 * * *", timezone: "UTC", missed: "run_once" }, conditions: [], actions: [{ type: "set_flag", flag: "needs_human" }] });
+    expect(doc.nodes[0]).toEqual({ id: "schedule", kind: "schedule", position: { x: 0, y: 0 }, data: { type: "schedule", cron: "0 9 * * *", timezone: "UTC", missed: "run_once" } });
   });
 });
 

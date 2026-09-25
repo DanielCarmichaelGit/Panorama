@@ -206,6 +206,10 @@ A file is uploaded as a signed multipart `POST` to `/api/v1/attachments`, with t
 
 Once unlocked, the browser holds one signed `GET /api/v1/stream` connection open (Server-Sent Events) and reconnects with backoff if it drops. Every ticket, comment, evidence, attachment, agent, lane, and project change is published there as it happens, so two browser tabs, or a human's browser and a script polling nothing at all, see each other's changes within about a second, with no polling.
 
+## Webhooks and schedules
+
+A rule can post to a webhook destination: a signed JSON delivery with retries, a per-attempt deadline, and a guard on where it may go. Schedules fire as chain events with a missed policy for downtime, and due dates are announced once they have passed. The delivery format, how to verify the signature (the hex secret string is the HMAC key), the retry schedule, and the end-of-day rule for due dates are in `docs/webhooks.md`.
+
 ## Tests
 
 ```

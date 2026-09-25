@@ -129,8 +129,51 @@ drop table field_definitions;
 alter table field_definitions_new rename to field_definitions;
 alter table ticket_field_values_new rename to ticket_field_values;
 `;
+// Automation (milestone 3, task 3). rules hold the event, conditions, and actions the engine
+// runs plus the canvas drawing as JSON. rule_runs is the run log: append-only like events, and
+// rule_id deliberately carries no foreign key so the log outlives a rule the owner hard-deletes
+// (the delete of a rule with a foreign key from an append-only table would be refused). Every
+// run and every outbox row points at the chain event (events.seq) that produced it. triggers
+// are the scheduler's state for a rule with a schedule event. destinations keep the webhook
+// secret as a plain column: the database package has no encryption helper of its own, and the
+// whole file is SQLCipher-encrypted when encryption is on (base spec section 6), so the secret
+// is at rest exactly as safe as everything else in the file; the repository never maps it into
+// a listed row. timers enforce one open timer per actor per ticket with a partial unique index.
+// cost_entries store what an agent reported plus the estimate made at write time (null when
+// the model was unknown) and the price table date behind it.
+const M9 = `
+create table rules(id text primary key, project_id text not null references projects(id), name text not null, enabled integer not null default 1,
+  event text not null, conditions text not null default '[]', actions text not null default '[]', canvas text not null,
+  created_at text not null, updated_at text not null);
+create index rules_project on rules(project_id, created_at);
+create table rule_runs(id text primary key, rule_id text not null, ticket_id text references tickets(id), event_seq integer not null references events(seq),
+  fired_at text not null, outcome text not null check(outcome in('applied','skipped','refused','error')), detail text not null default '{}');
+create index rule_runs_rule on rule_runs(rule_id, fired_at, id);
+create trigger rule_runs_no_update before update on rule_runs begin select raise(abort, 'rule runs are append-only'); end;
+create trigger rule_runs_no_delete before delete on rule_runs begin select raise(abort, 'rule runs are append-only'); end;
+create table triggers(id text primary key, rule_id text not null references rules(id), cron text not null, timezone text not null,
+  next_run_at text, last_run_at text, missed_policy text not null default 'run_once' check(missed_policy in('skip','run_once','run_all')),
+  enabled integer not null default 1);
+create index triggers_due on triggers(enabled, next_run_at);
+create table destinations(id text primary key, project_id text not null references projects(id), name text not null, url text not null,
+  secret text not null, created_at text not null, archived integer not null default 0);
+create index destinations_project on destinations(project_id, created_at);
+create table outbox(id text primary key, destination_id text not null references destinations(id), event_seq integer not null references events(seq),
+  payload text not null, attempts integer not null default 0, next_attempt_at text not null, delivered_at text, last_error text, created_at text not null);
+create index outbox_due on outbox(delivered_at, next_attempt_at);
+create table timers(id text primary key, ticket_id text not null references tickets(id), actor_id text not null references actors(id),
+  started_at text not null, stopped_at text);
+create index timers_ticket on timers(ticket_id, started_at);
+create index timers_actor on timers(actor_id, stopped_at);
+create unique index timers_open on timers(ticket_id, actor_id) where stopped_at is null;
+create table cost_entries(id text primary key, ticket_id text not null references tickets(id), actor_id text not null references actors(id),
+  model text not null, input_tokens integer not null, output_tokens integer not null, cache_read_tokens integer not null default 0,
+  cache_write_tokens integer not null default 0, usd_estimate real, price_date text not null, note text, created_at text not null);
+create index cost_entries_ticket on cost_entries(ticket_id, created_at);
+create index cost_entries_actor on cost_entries(actor_id, created_at);
+`;
 type Migration = string | ((db: DB) => void);
-const MIGRATIONS: Migration[] = [M1, M2, M3, M4, M5, M6, M7, M8];
+const MIGRATIONS: Migration[] = [M1, M2, M3, M4, M5, M6, M7, M8, M9];
 
 /** Applies migrations up to (not including index) `version`. Exported so a test can stop a
  *  fresh database at M4, seed pre-boards data, then call `migrate` to exercise the M5 backfill

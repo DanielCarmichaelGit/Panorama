@@ -1,0 +1,15 @@
+{
+  "sessionId": "s_20260925T035702_3bc74c",
+  "actor": "Daniel Carmichael",
+  "tool": "cli",
+  "intent": "milestone 2c server final review wave",
+  "head": "83e61af33dee1a771cc413d4a950b4b808afbde82aa218b6190f9bff8cc2edfe",
+  "count": 371,
+  "diffHash": "116c1c7cb05640fd4f2f9a985af22e0d4812c9dea2b35d1ed417d2afc32cd6ed",
+  "files": [
+    "apps/web/src/components/CostBlock.tsx",
+    "apps/web/src/views/TicketPanel.test.tsx"
+  ],
+  "base": "de1da3b4250533463012a1840522a9d87ac41b1f",
+  "ts": "2026-09-25T19:22:41.692Z"
+}

@@ -335,8 +335,10 @@ describe("TicketPanel cost block", () => {
 
   it("says who has a timer running and since when", async () => {
     renderPanel({ metrics: { ...emptyMetrics(), seconds: 90, openTimers: 1, running: [{ actorId: "ag1", name: "worker", startedAt: "2026-09-24T10:00:00.000Z" }], byActor: [actor({ seconds: 90, openTimers: 1, tokens: tokens(0), usd: 0, known: 0, entries: 0 })] } });
-    const line = await screen.findByText(/Timer running for worker since /);
+    const line = (await screen.findByText("worker")).closest(".running")!;
+    expect(line.textContent).toContain("Timer running for worker since ");
     expect(line.textContent).toContain(new Date("2026-09-24T10:00:00.000Z").toLocaleString());
+    expect(line.querySelectorAll(".mono").length).toBe(2);
   });
 });
 

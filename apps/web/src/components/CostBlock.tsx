@@ -33,7 +33,7 @@ export function CostBlock({ ticketId }: { ticketId: string }) {
           {m.running.map((r) => (
             <p key={r.actorId} className="running">
               <span className="dot" aria-hidden="true" />
-              {`Timer running for ${r.name} since ${when(r.startedAt)}`}
+              Timer running for <span className="mono">{r.name}</span> since <span className="mono">{when(r.startedAt)}</span>
             </p>
           ))}
           {m.byModel.length > 0 && (

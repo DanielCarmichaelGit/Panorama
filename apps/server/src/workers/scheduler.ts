@@ -61,15 +61,25 @@ export function localDay(at: Date): string {
   return `${at.getFullYear()}-${p(at.getMonth() + 1)}-${p(at.getDate())}`;
 }
 
+export interface ReconcileOptions {
+  log?: (m: string) => void;
+  /** Rule id to the `cron|timezone` last noted as rejected, so the note is written once per
+   *  change rather than every tick. The scheduler keeps this across its ticks. */
+  rejected?: Map<string, string>;
+}
+
 /**
  * Keeps triggers in step with rules: exactly one trigger for each rule whose event is a
- * schedule, carrying that schedule's cron and timezone, and none for any other rule. A new or
- * changed schedule gets its first run computed from `now`; an edit never creates missed runs.
- * A schedule croner rejects gets no trigger and a note. The scheduler runs this every tick,
- * so a rule saved by a route is picked up within one interval; the rules routes may call it
- * directly after a save to make that immediate.
+ * schedule, carrying that schedule's cron, timezone and missed policy, and none for any other
+ * rule. A new or changed schedule gets its first run computed from `now`; an edit never
+ * creates missed runs, and a policy change alone leaves the next run where it was. A schedule
+ * croner rejects gets no trigger and one note. The scheduler runs this every tick, so a rule
+ * saved by a route is picked up within one interval; the rules routes may call it directly
+ * after a save to make that immediate.
  */
-export function reconcileTriggers(db: DB, now: Date, log: (m: string) => void = () => {}): void {
+export function reconcileTriggers(db: DB, now: Date, opts: ReconcileOptions = {}): void {
+  const log = opts.log ?? (() => {});
+  const rejected = opts.rejected ?? new Map<string, string>();
   const byRule = new Map<string, Trigger[]>();
   for (const t of listTriggers(db)) byRule.set(t.ruleId, [...(byRule.get(t.ruleId) ?? []), t]);
   for (const project of listProjects(db)) {
@@ -77,25 +87,35 @@ export function reconcileTriggers(db: DB, now: Date, log: (m: string) => void = 
       const existing = byRule.get(rule.id) ?? [];
       if (rule.event.type !== "schedule") {
         for (const t of existing) deleteTrigger(db, t.id);
+        rejected.delete(rule.id);
         continue;
       }
       const { cron, timezone } = rule.event;
+      // A rule stored before the field existed, or written without parsing, reads as run_once.
+      const missedPolicy = rule.event.missed ?? "run_once";
       let next: string | null;
       try {
         next = nextRunAfter(cron, timezone, now)?.toISOString() ?? null;
       } catch (e) {
-        log(`scheduler: rule ${rule.id} has a schedule croner rejects (${(e as Error).message}); it will not run`);
+        const key = `${cron}|${timezone}`;
+        if (rejected.get(rule.id) !== key) {
+          rejected.set(rule.id, key);
+          log(`scheduler: rule ${rule.id} has a schedule croner rejects (${(e as Error).message}); it will not run`);
+        }
         for (const t of existing) deleteTrigger(db, t.id);
         continue;
       }
+      rejected.delete(rule.id);
       if (existing.length === 0) {
-        createTrigger(db, { ruleId: rule.id, cron, timezone, nextRunAt: next });
+        createTrigger(db, { ruleId: rule.id, cron, timezone, nextRunAt: next, missedPolicy });
         continue;
       }
       const [keep, ...extra] = existing;
       for (const t of extra) deleteTrigger(db, t.id);
-      if (keep.cron !== cron || keep.timezone !== timezone) updateTrigger(db, keep.id, { cron, timezone, nextRunAt: next });
-      else if (keep.nextRunAt === null) updateTrigger(db, keep.id, { nextRunAt: next });
+      const policy = keep.missedPolicy !== missedPolicy ? { missedPolicy } : {};
+      if (keep.cron !== cron || keep.timezone !== timezone) updateTrigger(db, keep.id, { cron, timezone, nextRunAt: next, ...policy });
+      else if (keep.nextRunAt === null) updateTrigger(db, keep.id, { nextRunAt: next, ...policy });
+      else if (keep.missedPolicy !== missedPolicy) updateTrigger(db, keep.id, policy);
     }
   }
 }
@@ -113,6 +133,8 @@ export class Scheduler {
   private lastDueScan: number | null = null;
   /** `${ticketId}:${dueDate}` for every due date already announced; seeded from the chain on arm. */
   private announced = new Set<string>();
+  /** Schedules already noted as rejected, so the note is not repeated every tick. */
+  private rejected = new Map<string, string>();
 
   constructor(private readonly ctx: Ctx, opts: SchedulerOptions = {}) {
     this.now = opts.now ?? ctx.now;
@@ -144,20 +166,24 @@ export class Scheduler {
     }
     const now = this.now();
     const out: ChainEvent[] = [];
+    // Due dates announced in this pass are remembered only once the pass has committed: a
+    // rollback must leave them to be announced again next time.
+    const announcedNow: string[] = [];
     try {
       db.transaction(() => {
         if (!this.armed) this.arm(db);
-        reconcileTriggers(db, now, this.log);
+        reconcileTriggers(db, now, { log: this.log, rejected: this.rejected });
         for (const t of dueTriggers(db, now.toISOString())) out.push(...this.fire(db, t, now));
         if (this.lastDueScan === null || now.getTime() - this.lastDueScan >= this.dueScanMs) {
           this.lastDueScan = now.getTime();
-          out.push(...this.scanDueDates(db, now));
+          out.push(...this.scanDueDates(db, now, announcedNow));
         }
       })();
     } catch (e) {
       this.log(`scheduler: tick failed and rolled back: ${(e as Error).message}`);
       return [];
     }
+    for (const key of announcedNow) this.announced.add(key);
     publishEvents(this.ctx, db, out, this.onEvents, this.log);
     return out;
   }
@@ -170,6 +196,7 @@ export class Scheduler {
       })
     );
     this.lastDueScan = null;
+    this.rejected.clear();
     this.armed = true;
   }
 
@@ -201,8 +228,10 @@ export class Scheduler {
         fires = last ? [{ at: last, missed: missed.length }] : [];
         break;
       case "run_all": {
-        const kept = occurrences.slice(0, MAX_RUN_ALL);
-        if (occurrences.length > MAX_RUN_ALL) this.log(`scheduler: trigger ${t.id} had ${occurrences.length} occurrences to run; fired the first ${MAX_RUN_ALL} and dropped the rest`);
+        // The newest occurrences are the ones still worth acting on, and the one due now is
+        // always among them.
+        const kept = occurrences.slice(-MAX_RUN_ALL);
+        if (occurrences.length > MAX_RUN_ALL) this.log(`scheduler: trigger ${t.id} had ${occurrences.length} occurrences to run; fired the newest ${MAX_RUN_ALL} and dropped the older ${occurrences.length - MAX_RUN_ALL}`);
         fires = kept.map((at) => ({ at, missed: isMissed(at) ? 1 : 0 }));
         break;
       }
@@ -222,14 +251,16 @@ export class Scheduler {
     return events;
   }
 
-  private scanDueDates(db: DB, now: Date): ChainEvent[] {
+  /** A due date is a calendar day; it has passed once that day has ended in this process's
+   *  timezone, so the scan takes tickets due strictly before today (docs/webhooks.md). */
+  private scanDueDates(db: DB, now: Date, announcedNow: string[]): ChainEvent[] {
     const events: ChainEvent[] = [];
     const iso = now.toISOString();
     for (const t of listTicketsDueBefore(db, localDay(now))) {
       const key = `${t.id}:${t.dueDate}`;
-      if (this.announced.has(key)) continue;
+      if (this.announced.has(key) || announcedNow.includes(key)) continue;
       events.push(appendSystemEvent(db, "ticket.due_passed", { ticketId: t.id, projectId: t.projectId, dueDate: t.dueDate }, iso));
-      this.announced.add(key);
+      announcedNow.push(key);
     }
     return events;
   }

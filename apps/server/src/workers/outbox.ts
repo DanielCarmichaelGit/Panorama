@@ -1,8 +1,8 @@
 import { createHmac } from "node:crypto";
 import { lookup as dnsLookup } from "node:dns/promises";
-import { request as httpRequest } from "node:http";
+import { request as httpRequest, type RequestOptions } from "node:http";
 import { request as httpsRequest } from "node:https";
-import { isIP } from "node:net";
+import { BlockList, isIP } from "node:net";
 import type { ChainEvent } from "@boomerang/core";
 import {
   dueOutbox,
@@ -23,11 +23,12 @@ import type { Ctx } from "../context";
 import { openSecret } from "./secrets";
 import { appendSystemEvent, publishEvents, type OnEvents } from "./system";
 
-// The outbox worker (base spec section 9). Every 5 s it takes the due rows and POSTs each to its
-// destination, signed with the destination's secret. Any 2xx marks the row delivered; anything
-// else records the error and schedules the next attempt on the backoff below. After the last
-// attempt the row is parked for the record, a `webhook.failed` event is appended, and the ticket
-// the payload names, if any, is flagged needs_human. Delivered rows are purged after seven days.
+// The outbox worker (base spec section 9; delivery format in docs/webhooks.md). Every 5 s it
+// takes the due rows and POSTs each to its destination, signed with the destination's secret.
+// Any 2xx marks the row delivered; anything else records the error and schedules the next
+// attempt on the backoff below. After the last attempt the row is parked for the record, a
+// `webhook.failed` event is appended, and the ticket the payload names, if any, is flagged
+// needs_human. Delivered rows are purged after seven days.
 
 /** Waits before attempts 2 to 6; every later attempt waits the last value again. */
 export const BACKOFF_MS = [30_000, 120_000, 600_000, 3_600_000, 21_600_000];
@@ -35,11 +36,16 @@ export const MAX_ATTEMPTS = 8;
 export const PURGE_AFTER_MS = 7 * 24 * 3_600_000;
 const TICK_MS = 5_000;
 const TIMEOUT_MS = 10_000;
+/** Hard ceiling on one delivery attempt, DNS, connect and body included. */
+const DEADLINE_MS = 20_000;
 
 export interface OutboxOptions {
   now?: () => Date;
   intervalMs?: number;
+  /** Socket idle timeout for one request. */
   timeoutMs?: number;
+  /** Overall deadline for one attempt: DNS, connect, and the response body. */
+  deadlineMs?: number;
   /** Allow loopback and private destinations. Defaults to BOOMERANG_ALLOW_PRIVATE_WEBHOOKS=1. */
   allowPrivate?: boolean;
   log?: (message: string) => void;
@@ -59,37 +65,60 @@ export function enqueueNotification(db: DB, destinationId: string, eventSeq: num
   return enqueueOutbox(db, { destinationId, eventSeq, payload }, now);
 }
 
+/** HMAC-SHA256 over the exact body bytes, keyed by the secret's hex string as UTF-8 bytes. */
 export const signBody = (secret: string, body: string): string => "sha256=" + createHmac("sha256", secret).update(body).digest("hex");
 
-const v4 = (ip: string): number[] | null => {
-  const m = /^(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(ip);
-  return m ? m.slice(1).map(Number) : null;
-};
+// The address guard works on bytes, not spellings. IPv4 ranges: unspecified, loopback,
+// private, link-local, carrier-grade NAT, multicast and reserved. IPv6: unspecified, loopback,
+// unique local, link-local, multicast. An IPv6 address that carries an IPv4 one (v4-mapped
+// ::ffff:0:0/96, v4-compatible ::/96, NAT64 64:ff9b::/96) is judged by the IPv4 it carries,
+// whichever way it was written.
+const v4Block = new BlockList();
+for (const [net, bits] of [["0.0.0.0", 8], ["10.0.0.0", 8], ["100.64.0.0", 10], ["127.0.0.0", 8], ["169.254.0.0", 16], ["172.16.0.0", 12], ["192.168.0.0", 16], ["224.0.0.0", 3]] as const) v4Block.addSubnet(net, bits, "ipv4");
+const v6Block = new BlockList();
+for (const [net, bits] of [["::", 128], ["::1", 128], ["fc00::", 7], ["fe80::", 10], ["ff00::", 8]] as const) v6Block.addSubnet(net, bits, "ipv6");
 
-/** Loopback, link-local, private, carrier-grade NAT, multicast, reserved, and unspecified. */
+/** The eight 16-bit groups of an IPv6 address, or null when it is not one. */
+function v6Groups(ip: string): number[] | null {
+  const s = ip.replace(/^\[|\]$/g, "").split("%")[0].toLowerCase();
+  if (isIP(s) !== 6) return null;
+  let parts = s.split("::");
+  if (parts.length > 2) return null;
+  const expand = (chunk: string): number[] => {
+    if (chunk === "") return [];
+    return chunk.split(":").flatMap((p) => {
+      if (p.includes(".")) { const q = p.split(".").map(Number); return [(q[0] << 8) | q[1], (q[2] << 8) | q[3]]; }
+      return [parseInt(p, 16)];
+    });
+  };
+  const head = expand(parts[0]); const tail = parts.length === 2 ? expand(parts[1]) : [];
+  const fill = 8 - head.length - tail.length;
+  if (fill < 0 || (parts.length === 1 && fill !== 0)) return null;
+  return [...head, ...Array(fill).fill(0), ...tail];
+}
+
+const v4FromGroups = (hi: number, lo: number) => `${hi >> 8}.${hi & 0xff}.${lo >> 8}.${lo & 0xff}`;
+
 export function isPrivateAddress(ip: string): boolean {
-  const q = v4(ip);
-  if (q) {
-    const [a, b] = q;
-    return a === 0 || a === 10 || a === 127 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 100 && b >= 64 && b <= 127) || a >= 224;
+  if (isIP(ip) === 4) return v4Block.check(ip, "ipv4");
+  const g = v6Groups(ip);
+  if (!g) return true; // not an address at all: never deliver to it
+  const zeroTo = (n: number) => g.slice(0, n).every((x) => x === 0);
+  if (zeroTo(5) && g[5] === 0xffff) return v4Block.check(v4FromGroups(g[6], g[7]), "ipv4");
+  if (g[0] === 0x64 && g[1] === 0xff9b && g.slice(2, 6).every((x) => x === 0)) return v4Block.check(v4FromGroups(g[6], g[7]), "ipv4");
+  if (zeroTo(6)) {
+    if (g[6] === 0 && g[7] <= 1) return true; // :: and ::1
+    return v4Block.check(v4FromGroups(g[6], g[7]), "ipv4");
   }
-  const s = ip.toLowerCase().replace(/^\[|\]$/g, "");
-  if (s === "::" || s === "::1") return true;
-  const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/.exec(s);
-  if (mapped) return isPrivateAddress(mapped[1]);
-  const head = s.split(":")[0];
-  if (head.length === 4 && /^f[cd]/.test(head)) return true; // fc00::/7
-  if (head.length === 4 && /^fe[89ab]/.test(head)) return true; // fe80::/10
-  if (head === "64" && s.startsWith("64:ff9b:")) return true; // NAT64
-  return false;
+  return v6Block.check(g.map((x) => x.toString(16)).join(":"), "ipv6");
 }
 
 export type UrlCheck = { ok: true; address: string; family: 4 | 6 } | { ok: false; reason: string };
 
 /**
- * The SSRF guard, run at send time: only http and https, and the name resolved now, so a
- * record that changed since the destination was saved is judged as it stands. The address
- * returned is the one the connection is pinned to.
+ * The SSRF guard, run at send time: only http and https, no credentials in the url, and the
+ * name resolved now, so a record that changed since the destination was saved is judged as it
+ * stands. The address returned is the one the connection is pinned to.
  */
 export async function checkWebhookUrl(url: string, opts: { allowPrivate: boolean }): Promise<UrlCheck> {
   let u: URL;
@@ -99,6 +128,7 @@ export async function checkWebhookUrl(url: string, opts: { allowPrivate: boolean
     return { ok: false, reason: "not a valid url" };
   }
   if (u.protocol !== "http:" && u.protocol !== "https:") return { ok: false, reason: "only http and https urls are delivered to" };
+  if (u.username || u.password) return { ok: false, reason: "urls with credentials are refused" };
   const host = u.hostname.replace(/^\[|\]$/g, "");
   let address: string; let family: 4 | 6;
   const literal = isIP(host);
@@ -116,17 +146,32 @@ export async function checkWebhookUrl(url: string, opts: { allowPrivate: boolean
   return { ok: true, address, family };
 }
 
+type LookupCb = (err: Error | null, address: string | { address: string; family: number }[], family?: number) => void;
+
 /** One POST, pinned to the checked address, no redirects followed. Resolves with the status. */
-function post(url: string, body: string, headers: Record<string, string>, pin: { address: string; family: 4 | 6 }, timeoutMs: number): Promise<number> {
+function post(url: string, body: string, headers: Record<string, string>, pin: { address: string; family: 4 | 6 }, timeoutMs: number, signal: AbortSignal): Promise<number> {
   const u = new URL(url);
   const request = u.protocol === "https:" ? httpsRequest : httpRequest;
+  // Node 22's happy eyeballs asks the lookup for every address ({all: true}) and expects an
+  // array; the classic form wants (address, family). Serve both, and turn the family race off
+  // since there is exactly one address to use.
+  const lookup = (_host: string, opts: unknown, cb?: LookupCb) => {
+    const callback = (typeof opts === "function" ? opts : cb) as LookupCb;
+    const all = typeof opts === "object" && opts !== null && (opts as { all?: boolean }).all === true;
+    if (all) callback(null, [{ address: pin.address, family: pin.family }]);
+    else callback(null, pin.address, pin.family);
+  };
+  // autoSelectFamily is accepted by Node's request options but missing from these typings.
+  const options: RequestOptions & { autoSelectFamily: boolean } = {
+    method: "POST",
+    headers: { ...headers, "content-length": String(Buffer.byteLength(body)) },
+    timeout: timeoutMs,
+    signal,
+    lookup: lookup as never,
+    autoSelectFamily: false,
+  };
   return new Promise((resolve, reject) => {
-    const req = request(u, {
-      method: "POST",
-      headers: { ...headers, "content-length": String(Buffer.byteLength(body)) },
-      timeout: timeoutMs,
-      lookup: ((_host: string, _opts: unknown, cb: (err: Error | null, address: string, family: number) => void) => cb(null, pin.address, pin.family)) as never,
-    }, (res) => {
+    const req = request(u, options, (res) => {
       res.resume();
       res.on("end", () => resolve(res.statusCode ?? 0));
       res.on("error", reject);
@@ -137,10 +182,21 @@ function post(url: string, body: string, headers: Record<string, string>, pin: {
   });
 }
 
+/** Runs `work` against a deadline that also aborts whatever honours the signal; a lookup that
+ *  ignores it is still abandoned when the race settles. */
+function withDeadline<T>(ms: number, work: (signal: AbortSignal) => Promise<T>): Promise<T> {
+  const ac = new AbortController();
+  const reason = new Error(`deadline of ${ms} ms passed`);
+  const timer = setTimeout(() => ac.abort(reason), ms);
+  const expired = new Promise<never>((_, reject) => ac.signal.addEventListener("abort", () => reject(reason)));
+  return Promise.race([work(ac.signal), expired]).finally(() => clearTimeout(timer));
+}
+
 export class OutboxWorker {
   private readonly now: () => Date;
   private readonly intervalMs: number;
   private readonly timeoutMs: number;
+  private readonly deadlineMs: number;
   private readonly allowPrivate: boolean;
   private readonly log: (m: string) => void;
   private readonly onEvents?: OnEvents;
@@ -151,6 +207,7 @@ export class OutboxWorker {
     this.now = opts.now ?? ctx.now;
     this.intervalMs = opts.intervalMs ?? TICK_MS;
     this.timeoutMs = opts.timeoutMs ?? TIMEOUT_MS;
+    this.deadlineMs = opts.deadlineMs ?? DEADLINE_MS;
     this.allowPrivate = opts.allowPrivate ?? process.env.BOOMERANG_ALLOW_PRIVATE_WEBHOOKS === "1";
     this.log = opts.log ?? ((m) => console.warn(m));
     this.onEvents = opts.onEvents;
@@ -199,18 +256,18 @@ export class OutboxWorker {
     let error: string | null = null;
     try {
       const secret = openSecret(this.ctx.fileKey, getDestinationSecret(db, dest.id) ?? "");
-      const check = await checkWebhookUrl(dest.url, { allowPrivate: this.allowPrivate });
-      if (!check.ok) error = check.reason;
-      else {
+      error = await withDeadline(this.deadlineMs, async (signal) => {
+        const check = await checkWebhookUrl(dest.url, { allowPrivate: this.allowPrivate });
+        if (!check.ok) return check.reason;
         const status = await post(dest.url, body, {
           "content-type": "application/json",
           "user-agent": "Boomerang",
           "x-boomerang-signature": signBody(secret, body),
           "x-boomerang-event": event,
           "x-boomerang-delivery": item.id,
-        }, check, this.timeoutMs);
-        if (status < 200 || status >= 300) error = `status ${status}`;
-      }
+        }, check, this.timeoutMs, signal);
+        return status >= 200 && status < 300 ? null : `status ${status}`;
+      });
     } catch (e) {
       error = (e as Error).message;
     }

@@ -8,16 +8,33 @@ import { BACKOFF_MS, checkWebhookUrl, enqueueNotification, MAX_ATTEMPTS, OutboxW
 interface Received { headers: IncomingMessage["headers"]; body: string }
 
 /** A destination on a port of its own: records every request, answers with `status`. */
-function fakeDestination(): Promise<{ url: string; received: Received[]; status: { code: number }; close: () => Promise<void> }> {
+function fakeDestination(host = "127.0.0.1"): Promise<{ url: string; received: Received[]; status: { code: number }; close: () => Promise<void> }> {
   const received: Received[] = []; const status = { code: 200 };
   const server: Server = createServer((req, res) => {
     let body = "";
     req.on("data", (c) => (body += c));
     req.on("end", () => { received.push({ headers: req.headers, body }); res.statusCode = status.code; res.end("ok"); });
   });
+  return new Promise((resolve) => server.listen(0, host, () => {
+    const { port } = server.address() as { port: number };
+    resolve({ url: `http://${host}:${port}/hook`, received, status, close: () => new Promise((r) => server.close(() => r())) });
+  }));
+}
+
+/** Answers 200 at once, then writes a byte every 10 ms and never ends the response. */
+function trickleDestination(): Promise<{ url: string; hits: () => number; close: () => Promise<void> }> {
+  let hits = 0;
+  const sockets = new Set<import("node:net").Socket>();
+  const server = createServer((req, res) => {
+    hits += 1;
+    res.writeHead(200);
+    const drip = setInterval(() => res.write("x"), 10);
+    req.on("close", () => clearInterval(drip));
+  });
+  server.on("connection", (s) => { sockets.add(s); s.on("close", () => sockets.delete(s)); });
   return new Promise((resolve) => server.listen(0, "127.0.0.1", () => {
     const { port } = server.address() as { port: number };
-    resolve({ url: `http://127.0.0.1:${port}/hook`, received, status, close: () => new Promise((r) => server.close(() => r())) });
+    resolve({ url: `http://127.0.0.1:${port}/slow`, hits: () => hits, close: () => new Promise((r) => { for (const s of sockets) s.destroy(); server.close(() => r()); }) });
   }));
 }
 
@@ -154,6 +171,60 @@ describe("outbox worker", () => {
     } finally {
       if (before === undefined) delete process.env.BOOMERANG_ALLOW_PRIVATE_WEBHOOKS; else process.env.BOOMERANG_ALLOW_PRIVATE_WEBHOOKS = before;
     }
+  });
+
+  it("delivers to a hostname, not only an IP literal, on this Node", async () => {
+    // Node 22 resolves through the pinned lookup with {all: true} and expects an array back.
+    const w = await world();
+    // Bound by name, so the server and the worker resolve `localhost` the same way.
+    const named = await fakeDestination("localhost"); servers.push(named);
+    const byName = d.createDestination(w.db(), { projectId: w.project.id, name: "By name", url: named.url, secret: w.secret }, w.clock.now.toISOString());
+    const item = enqueueNotification(w.db(), byName.id, w.event.seq, { n: 1 }, w.clock.now.toISOString());
+    await w.worker.tick();
+    expect(d.getOutboxItem(w.db(), item.id)!.lastError).toBeNull();
+    expect(named.received).toHaveLength(1);
+    expect(d.getOutboxItem(w.db(), item.id)!.deliveredAt).not.toBeNull();
+  });
+
+  it("refuses every spelling of a private address, credentials in the url, and nothing public", async () => {
+    const refused = async (url: string) => expect((await checkWebhookUrl(url, { allowPrivate: false })).ok).toBe(false);
+    const allowed = async (url: string) => expect((await checkWebhookUrl(url, { allowPrivate: false })).ok).toBe(true);
+    await refused("http://[::ffff:7f00:1]/x");
+    await refused("http://[::ffff:a9fe:a9fe]/x");
+    await refused("http://[::ffff:127.0.0.1]/x");
+    await refused("http://[::ffff:10.0.0.1]/x");
+    await refused("http://[::7f00:1]/x");
+    await refused("http://[::0.0.0.0]/x");
+    await refused("http://[64:ff9b::7f00:1]/x");
+    await refused("http://[fd12:3456::1]/x");
+    await refused("http://[fe80::1]/x");
+    await refused("http://[::]/x");
+    await refused("http://0.0.0.0/x");
+    await refused("http://100.64.0.1/x");
+    await refused("http://172.16.0.1/x");
+    await refused("http://224.0.0.1/x");
+    expect((await checkWebhookUrl("http://user:pw@8.8.8.8/x", { allowPrivate: false })).ok).toBe(false);
+    expect((await checkWebhookUrl("http://user:pw@8.8.8.8/x", { allowPrivate: true })).ok).toBe(false);
+    await allowed("http://[::ffff:8.8.8.8]/x");
+    await allowed("http://[::ffff:808:808]/x");
+    await allowed("http://[2606:4700::1111]/x");
+    await allowed("http://8.8.8.8/x");
+    await allowed("https://93.184.216.34/x");
+  });
+
+  it("gives up on one delivery at the deadline so a slow destination cannot stall the queue", async () => {
+    const w = await world();
+    const trickle = await trickleDestination(); servers.push(trickle);
+    const slow = d.createDestination(w.db(), { projectId: w.project.id, name: "Slow", url: trickle.url, secret: w.secret }, w.clock.now.toISOString());
+    const item = enqueueNotification(w.db(), slow.id, w.event.seq, { n: 1 }, w.clock.now.toISOString());
+    const fast = w.enqueue();
+    const worker = new OutboxWorker(w.s.app.ctx, { now: () => w.clock.now, allowPrivate: true, deadlineMs: 150 });
+    const started = Date.now();
+    await worker.tick();
+    expect(Date.now() - started).toBeLessThan(2000);
+    expect(d.getOutboxItem(w.db(), item.id)!.lastError).toMatch(/deadline/);
+    expect(d.getOutboxItem(w.db(), fast.id)!.deliveredAt).not.toBeNull();
+    expect(trickle.hits()).toBe(1);
   });
 
   it("does nothing while locked", async () => {

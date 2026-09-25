@@ -47,7 +47,14 @@ const ruleEventVariants = [
   z.object({ type: z.literal("timer.stopped") }).strict(),
   z.object({ type: z.literal("cost.added") }).strict(),
   z.object({ type: z.literal("ticket.due_passed") }).strict(),
-  z.object({ type: z.literal("schedule"), cron: z.string().max(200).refine(isCron, "five cron fields"), timezone: z.string().max(64).refine(isTimezone, "an IANA timezone") }).strict(),
+  z.object({
+    type: z.literal("schedule"),
+    cron: z.string().max(200).refine(isCron, "five cron fields"),
+    timezone: z.string().max(64).refine(isTimezone, "an IANA timezone"),
+    /** What the scheduler does with runs that fell in downtime or a lock: drop them, fold them
+     *  into one fire, or fire each (capped). The trigger row carries the scheduler's copy. */
+    missed: z.enum(["skip", "run_once", "run_all"]).default("run_once"),
+  }).strict(),
 ] as const;
 export const RuleEventSchema = z.discriminatedUnion("type", [...ruleEventVariants]);
 export type RuleEvent = z.infer<typeof RuleEventSchema>;

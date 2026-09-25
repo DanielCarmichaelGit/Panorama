@@ -34,5 +34,9 @@ When you are stuck, or a decision is the owner's to make, boomerang_set_flag wit
 
 ## Cost and time
 
-Timer and cost tools (boomerang_start_timer, boomerang_stop_timer, boomerang_report_cost) arrive in a later release. Until then, put token counts in a comment when you finish a ticket.
+Boomerang keeps the cost of every ticket, and you are the only one who knows what a turn cost. So:
+
+- boomerang_timer_start when you begin work on a ticket and boomerang_timer_stop when you leave it. The server measures the time; a timer you forget is stopped when the ticket enters a done lane. One open timer per ticket per agent.
+- boomerang_report_cost after each turn, with the model you used and the token counts your harness reports (input, output, cache reads and cache writes separately). Boomerang prices them from a bundled table and answers with an estimate such as ~$0.12 and the date of the prices behind it; a model it does not know is kept as tokens only. Every figure is an estimate, never a bill.
+- boomerang_ticket_metrics shows what a ticket has cost so far: time, tokens, the estimate, and a breakdown by model and by actor.
 `;

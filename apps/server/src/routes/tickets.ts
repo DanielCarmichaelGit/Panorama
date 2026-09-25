@@ -7,6 +7,7 @@ import type { Ctx } from "../context";
 import { blockedByReasons } from "../gate";
 import { HttpError } from "../errors";
 import { loadTicket, makeLog } from "./common";
+import { stopTicketTimers } from "./metrics";
 
 export function ticketRoutes(app: FastifyInstance, ctx: Ctx): void {
   const iso = () => ctx.now().toISOString();
@@ -142,6 +143,7 @@ export function ticketRoutes(app: FastifyInstance, ctx: Ctx): void {
       const { ticket, flagged } = moveTicket(db, t.id, laneId, iso());
       if (req.actor.kind === "agent") setCurrentTicket(db, req.actor.id, lane.isDone ? null : t.id);
       log(db, req, "ticket.moved", { id: t.id, projectId: t.projectId, from: t.laneId, to: laneId });
+      if (lane.isDone) stopTicketTimers(ctx, db, req, t);
       if (flagged) log(db, req, "ticket.flag_set", { id: t.id, projectId: t.projectId, flag: "needs_human", cause: "lane" });
       return ticket;
     })();

@@ -13,3 +13,6 @@ Spec section 5: the list-with-dividers layout and CSS, the row and expandable fo
 
 ### Task 4: E2E, README, demo agent copy
 E2E: add a lane and an evidence type, require it on the lane, create a ticket and see it gated; delete refused. README: the Settings section updated (arcs, colours, lanes, evidence types). Demo agent log copy says arc where it says epic. Dash grep 0.
+
+### Task 5: File field kind
+Owner asked how images, files and video fit fields. Add a `file` field kind: the value is `{attachmentId}` referencing an attachment uploaded to the ticket (any type the attachment route accepts). Core: FIELD_KINDS gains `file`; FieldValueSchema accepts `{attachmentId: string}` for it; validateFieldValues checks the kind. Server: PATCH validates that the attachment belongs to the ticket. Web: FieldControl renders an upload control (reuses the attachment upload from NewTicket and TicketPanel) with an image preview for images and a filename link otherwise, Remove clears; NewTicket uploads after create like its attachments do and then PATCHes the field; Settings Fields tab offers the kind with the label "File". Tests at each layer. README field kinds list.

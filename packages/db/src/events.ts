@@ -13,6 +13,10 @@ export function appendEvent(db: DB, e: { actorId: string; type: string; payload:
   return ev;
 }
 export const listEvents = (db: DB, afterSeq = 0): ChainEvent[] => db.prepare("select * from events where seq > ? order by seq").all(afterSeq).map(toEvent);
+export const getEvent = (db: DB, seq: number): ChainEvent | undefined => { const r = db.prepare("select * from events where seq = ?").get(seq); return r ? toEvent(r) : undefined; };
+/** Every event of one type in chain order; the scheduler seeds its memory of what it has
+ *  already announced from this, so a restart repeats nothing. */
+export const listEventsOfType = (db: DB, type: string): ChainEvent[] => db.prepare("select * from events where type = ? order by seq").all(type).map(toEvent);
 export function latestCheckpoint(db: DB): { seq: number; headHash: string; signature: string } | null {
   const r = db.prepare("select seq, head_hash, signature from checkpoints order by seq desc limit 1").get() as any;
   return r ? { seq: r.seq, headHash: r.head_hash, signature: r.signature } : null;

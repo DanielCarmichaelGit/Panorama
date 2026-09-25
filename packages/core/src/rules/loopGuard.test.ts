@@ -37,6 +37,26 @@ describe("LoopGuard", () => {
     expect(g.check("r1", "t2", 0, chain)).toEqual({ ok: true });
     expect(g.check("r3", "t1", 0, chain)).toEqual({ ok: true });
   });
+  it("forgets rule and ticket pairs once their window has passed", () => {
+    const g = new LoopGuard({ windowMs: 100 });
+    for (let i = 0; i < 20; i++) g.allow(`r${i}`, `t${i}`, i);
+    expect(g.size()).toBe(20);
+    g.allow("late", "t", 50);
+    expect(g.size()).toBe(21);
+    expect(g.check("probe", "t", 200)).toEqual({ ok: true });
+    expect(g.size()).toBe(0);
+    g.allow("again", "t", 200);
+    expect(g.size()).toBe(1);
+  });
+  it("sweeps early when it is holding more than a thousand pairs", () => {
+    const g = new LoopGuard({ windowMs: 1000 });
+    for (let i = 0; i < 1001; i++) g.allow(`r${i}`, "t", 0);
+    expect(g.size()).toBe(1001);
+    g.allow("x", "t", 999);
+    expect(g.size()).toBe(1002);
+    g.allow("y", "t", 1000);
+    expect(g.size()).toBe(2);
+  });
   it("depth and chain are checked before the window and a refused fire leaves the window count alone", () => {
     const g = new LoopGuard({ maxFires: 1 });
     const deep: CausedBy[] = Array.from({ length: 8 }, (_, i) => ({ ruleId: `r${i}`, ticketId: "t" }));

@@ -1,0 +1,26 @@
+{
+  "sessionId": "s_20260925T040954_b1318b",
+  "actor": "Daniel Carmichael",
+  "tool": "cli",
+  "intent": "milestone 3 task 1 rule core",
+  "head": "fb8a267d371fff915ce7093d293d7233fbb480b3db188bcc6137479c8679cb0f",
+  "count": 47,
+  "diffHash": "99bd042f43c748e8966c6f43e449fb92a1d5fc30577478a1d56a76227bf8aa58",
+  "files": [
+    "apps/server/src/auth.ts",
+    "docs/superpowers/specs/2026-09-24-automation-design.md",
+    "packages/core/src/index.ts",
+    "packages/core/src/permissions.ts",
+    "packages/core/src/rules/canvas.test.ts",
+    "packages/core/src/rules/canvas.ts",
+    "packages/core/src/rules/evaluate.test.ts",
+    "packages/core/src/rules/evaluate.ts",
+    "packages/core/src/rules/index.ts",
+    "packages/core/src/rules/loopGuard.test.ts",
+    "packages/core/src/rules/loopGuard.ts",
+    "packages/core/src/rules/schema.test.ts",
+    "packages/core/src/rules/schema.ts"
+  ],
+  "base": "bfc69a80c5599c9ed0cd3693547616971e968fd2",
+  "ts": "2026-09-25T04:24:20.078Z"
+}

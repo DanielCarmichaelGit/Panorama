@@ -14,6 +14,7 @@
     "e2e": "playwright test",
     "demo:agent": "tsx scripts/demo-agent.ts",
     "provenance": "node scripts/provenance/cli.mjs",
+    "prices:update": "node scripts/prices-update.mjs",
     "test:provenance": "node --test scripts/provenance/*.test.mjs"
   },
   "dependencies": { "@boomerang/core": "workspace:*" },

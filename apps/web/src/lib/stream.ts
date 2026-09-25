@@ -149,5 +149,12 @@ export function invalidationsFor(type: string, data: any): unknown[][] {
   if (type.startsWith("field.")) {
     return [["fields"]];
   }
+  // A rule fire writes a run-log row and moves the rule's counters; any rule change moves the list.
+  if (type === "rule.fired") {
+    return [["rules"], ["rule-runs", data.ruleId]];
+  }
+  if (type.startsWith("rule.")) {
+    return [["rules"]];
+  }
   return [];
 }

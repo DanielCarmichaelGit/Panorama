@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, NavLink, Outlet, useMatch, useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
-import { CaretLineLeft, CaretLineRight, GearSix, Kanban, List, Lock, Robot, Tray } from "@phosphor-icons/react";
+import { CaretLineLeft, CaretLineRight, GearSix, Kanban, Lightning, List, Lock, Robot, Tray } from "@phosphor-icons/react";
 import { SidebarStatus } from "../components/SidebarStatus";
 import type { Project } from "@boomerang/core";
 import type { Status } from "../App";
@@ -93,6 +93,7 @@ export function Shell({ status, chainOk }: { status: Status; chainOk: boolean })
         reset();
         if (e.key === "q") { e.preventDefault(); navigate("/"); }
         else if (e.key === "b") { e.preventDefault(); navigate("/board"); }
+        else if (e.key === "m") { e.preventDefault(); navigate("/automations"); }
         else if (e.key === "a") { e.preventDefault(); navigate("/agents"); }
         else if (e.key === "s") { e.preventDefault(); navigate("/settings"); }
         return;
@@ -144,6 +145,10 @@ export function Shell({ status, chainOk }: { status: Status; chainOk: boolean })
           <Kanban size={22} weight="regular" aria-hidden="true" />
           <span className="label">Board</span>
         </Link>
+        <NavLink to="/automations" className="nav-item" aria-label="Automations" title="Automations">
+          <Lightning size={22} weight="regular" aria-hidden="true" />
+          <span className="label">Automations</span>
+        </NavLink>
         <NavLink to="/agents" className="nav-item" aria-label="Agents" title="Agents">
           <Robot size={22} weight="regular" aria-hidden="true" />
           <span className="label">Agents</span>

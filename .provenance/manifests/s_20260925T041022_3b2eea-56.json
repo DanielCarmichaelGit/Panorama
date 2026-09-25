@@ -1,0 +1,23 @@
+{
+  "sessionId": "s_20260925T041022_3b2eea",
+  "actor": "Daniel Carmichael",
+  "tool": "cli",
+  "intent": "milestone 3 task 2 prices",
+  "head": "8f7b7a02a8bea7f6cb3f225c4a3f78daf735e305402704982aaca251936c94eb",
+  "count": 56,
+  "diffHash": "0ae9d5c29c9f317570b71d3846e5ab60047851de65e7a260fca1499ff65a4cfe",
+  "files": [
+    "docs/superpowers/plans/2026-09-24-milestone-3-automation.md",
+    "docs/superpowers/specs/2026-09-24-automation-design.md",
+    "packages/core/package.json",
+    "packages/core/src/cost-format.test.ts",
+    "packages/core/src/cost-format.ts",
+    "packages/core/src/cost.test.ts",
+    "packages/core/src/cost.ts",
+    "packages/core/src/index.ts",
+    "packages/core/src/prices.json",
+    "scripts/prices-update.mjs"
+  ],
+  "base": "1a69218747119790d06a2fd0a98d62561b742042",
+  "ts": "2026-09-25T04:24:57.452Z"
+}

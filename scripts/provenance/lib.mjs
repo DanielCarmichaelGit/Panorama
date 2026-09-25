@@ -84,6 +84,85 @@ function readLastEntry(file) {
   return JSON.parse(lines[lines.length - 1]);
 }
 
+// Appends to one session are serialised with an exclusive lock file next
+// to the session file (`<id>.jsonl.lock`). Without it, two hook
+// invocations from parallel tool calls each read the same tail, computed
+// the same seq and prev, and appended two entries with one seq, which
+// broke the chain for every entry after. The lock is created with "wx"
+// (fails if it exists), retried with short sleeps for up to
+// LOCK_TIMEOUT_MS, and removed in a finally. A lock older than
+// LOCK_STALE_MS belongs to a process that died mid-append and is taken
+// over. The session file format is unchanged; only its writers queue.
+const LOCK_RETRY_MS = 10;
+const LOCK_TIMEOUT_MS = 5000;
+const LOCK_STALE_MS = 30_000;
+
+function sleepSync(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+// Rename first, then remove: rename is atomic, so of several waiters that
+// all see the same stale lock exactly one wins it and the rest get ENOENT
+// and go back to trying openSync. A plain unlink would let a slow waiter
+// remove a fresh lock that a new holder had created in the meantime.
+function takeOverStaleLock(lock) {
+  const tomb = `${lock}.stale.${process.pid}.${randomBytes(3).toString("hex")}`;
+  try {
+    fs.renameSync(lock, tomb);
+  } catch (err) {
+    if (err.code === "ENOENT") return;
+    throw err;
+  }
+  fs.rmSync(tomb, { force: true });
+}
+
+function withSessionLock(file, fn) {
+  const lock = `${file}.lock`;
+  const deadline = Date.now() + LOCK_TIMEOUT_MS;
+  let fd = null;
+  for (;;) {
+    try {
+      fd = fs.openSync(lock, "wx");
+      break;
+    } catch (err) {
+      if (err.code !== "EEXIST") throw err;
+    }
+    let age;
+    try {
+      age = Date.now() - fs.statSync(lock).mtimeMs;
+    } catch (err) {
+      if (err.code !== "ENOENT") throw err;
+      continue; // Released between our open and stat: try again at once.
+    }
+    if (age > LOCK_STALE_MS) {
+      takeOverStaleLock(lock);
+      continue;
+    }
+    if (Date.now() >= deadline) {
+      throw new Error(
+        `provenance: could not lock ${lock} within ${LOCK_TIMEOUT_MS} ms; ` +
+          "another append is holding it, or remove the file if no process is running"
+      );
+    }
+    sleepSync(LOCK_RETRY_MS);
+  }
+  try {
+    fs.writeSync(fd, `${process.pid}\n`);
+    return fn();
+  } finally {
+    try {
+      fs.closeSync(fd);
+    } catch {
+      // Already closed; nothing to do.
+    }
+    try {
+      fs.unlinkSync(lock);
+    } catch {
+      // Already gone; nothing to do.
+    }
+  }
+}
+
 export function startSession(root, { actor, tool, intent }, now = new Date()) {
   const id = sessionId(now);
   const { sessions } = paths(root);
@@ -125,23 +204,29 @@ function entryData(type, rest) {
 
 export function appendEntry(root, id, fields, now = new Date()) {
   const file = sessionFile(root, id);
-  const last = readLastEntry(file);
   const { type, ...rest } = fields;
   const data = entryData(type, rest);
 
-  // M3: seq, ts, and prev are the library's to set, not the caller's.
-  // Spreading `data` first and these fixed fields last means a caller
-  // cannot smuggle its own seq/ts/prev through `fields` and shift the
-  // chain.
-  const seq = last.seq + 1;
-  const prev = last.hash;
-  const ts = now.toISOString();
-  const withoutHash = { ...data, seq, type, ts, prev };
-  const hash = sha256(prev + canonical(withoutHash));
-  const entry = { ...withoutHash, hash };
+  // The tail is read, seq and prev computed, and the line appended all
+  // under the lock, as one write, so no other append can slip between
+  // reading the head and extending it.
+  return withSessionLock(file, () => {
+    const last = readLastEntry(file);
 
-  fs.appendFileSync(file, `${JSON.stringify(entry)}\n`, "utf8");
-  return entry;
+    // M3: seq, ts, and prev are the library's to set, not the caller's.
+    // Spreading `data` first and these fixed fields last means a caller
+    // cannot smuggle its own seq/ts/prev through `fields` and shift the
+    // chain.
+    const seq = last.seq + 1;
+    const prev = last.hash;
+    const ts = now.toISOString();
+    const withoutHash = { ...data, seq, type, ts, prev };
+    const hash = sha256(prev + canonical(withoutHash));
+    const entry = { ...withoutHash, hash };
+
+    fs.appendFileSync(file, `${JSON.stringify(entry)}\n`, "utf8");
+    return entry;
+  });
 }
 
 export function readSession(root, id) {

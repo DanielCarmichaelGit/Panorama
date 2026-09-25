@@ -1,0 +1,17 @@
+{
+  "sessionId": "s_20260925T184652_1c6c42",
+  "actor": "Daniel Carmichael",
+  "tool": "cli",
+  "intent": "provenance append lock",
+  "head": "98c34bb2f7d4912f932bcc817fc9471c890d11bc14e0021c493223ac64811cb2",
+  "count": 37,
+  "diffHash": "30ab92c6300f6a07ae4323f1ce38aade6c622ac34a7b800101eeb838e714a32e",
+  "files": [
+    "docs/provenance.md",
+    "scripts/provenance/cli.test.mjs",
+    "scripts/provenance/lib.mjs",
+    "scripts/provenance/lib.test.mjs"
+  ],
+  "base": "bfc69a80c5599c9ed0cd3693547616971e968fd2",
+  "ts": "2026-09-25T18:50:53.223Z"
+}

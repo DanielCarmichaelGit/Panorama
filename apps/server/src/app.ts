@@ -12,6 +12,7 @@ import { agentRoutes } from "./routes/agents";
 import { attachmentRoutes } from "./routes/attachments";
 import { chainRoutes } from "./routes/chain";
 import { destinationRoutes } from "./routes/destinations";
+import { metricsRoutes } from "./routes/metrics";
 import { modelRoutes } from "./routes/model";
 import { projectRoutes } from "./routes/projects";
 import { threadRoutes } from "./routes/thread";
@@ -68,6 +69,7 @@ export async function buildApp(opts: { dataDir: string; now?: () => Date; webDis
   chainRoutes(app, ctx);
   attachmentRoutes(app, ctx);
   destinationRoutes(app, ctx);
+  metricsRoutes(app, ctx);
   installStream(app, ctx);
 
   if (opts.webDist && existsSync(opts.webDist)) {

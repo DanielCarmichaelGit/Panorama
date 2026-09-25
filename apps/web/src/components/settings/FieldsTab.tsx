@@ -132,7 +132,7 @@ function NewFieldForm({ projectId, onClose }: { projectId: string; onClose: () =
           />
           <p id="nf-key-help" className="field-help">The name agents use in the API, as in fields.customer_name. It follows the name and is fixed once saved.</p>
         </div>
-        <Picker id="nf-kind" label="Kind" options={FIELD_KINDS.map((k) => ({ id: k, label: KIND_LABELS[k] }))} value={kind} onChange={(v) => v && setKind(v as FieldKind)} />
+        <Picker id="nf-kind" label="Kind" options={FIELD_KINDS.map((k) => ({ id: k, label: KIND_LABELS[k], hint: k === "file" ? "One attachment of any type" : undefined }))} value={kind} onChange={(v) => v && setKind(v as FieldKind)} />
         <label className="checkbox-row">
           <input type="checkbox" checked={required} onChange={(e) => setRequired(e.target.checked)} /> Required
         </label>

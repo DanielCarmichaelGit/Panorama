@@ -233,6 +233,14 @@ a{color:var(--accent)}
 .file-row{display:flex;align-items:center;gap:.6rem;font-size:.8125rem;width:100%}
 .file-row .fname{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .file-row .fsize{color:var(--muted)}
+.file-field{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;min-height:34px;font-size:.875rem;border-radius:var(--r-input);transition:background var(--dur) var(--ease)}
+.file-field.over{background:var(--stone-top);outline:1px dashed var(--muted);outline-offset:2px}
+.file-field .btn.small{flex:none}
+.file-thumb{width:64px;height:64px;border-radius:var(--r-input);overflow:hidden;background:var(--stone-top);flex:none}
+.file-thumb img,.file-thumb .att-img{width:64px;height:64px;object-fit:cover;display:block}
+.file-name{flex:1 1 0;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.file-field .icon-btn{width:32px;height:32px;flex:none;border:0;border-radius:var(--r-input)}
+.file-error{flex-basis:100%;font-size:.8125rem;margin:0}
 .picker{display:grid;gap:.35rem}
 .picker-label{font-weight:600;font-size:.8125rem}
 .picker-trigger{display:flex;align-items:center;gap:.5rem;cursor:pointer;text-align:left}

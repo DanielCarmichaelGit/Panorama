@@ -98,6 +98,19 @@ describe("FieldsTab", () => {
     expect(screen.queryByText("Options")).toBeNull();
   });
 
+  it("offers the File kind with its hint and no options editor", async () => {
+    mockApi([]);
+    renderTab();
+    fireEvent.click(await screen.findByRole("button", { name: "Add field" }));
+    fireEvent.click(screen.getByLabelText("Kind"));
+    const option = screen.getByRole("option", { name: /^File/ });
+    expect(option.textContent).toContain("One attachment of any type");
+    fireEvent.click(option);
+    expect(screen.queryByText("Options")).toBeNull();
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Spec" } });
+    expect((screen.getByRole("button", { name: "Save" }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
   it("creates a field through the add form and closes it", async () => {
     const calls = mockApi([], (c) => Promise.resolve({ ...fields[0], id: "f3", ...(c.body as object) }));
     renderTab();

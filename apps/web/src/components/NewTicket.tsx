@@ -117,6 +117,9 @@ export function NewTicket({
   const [blockedByIds, setBlockedByIds] = useState<string[]>([]);
   const [needsHuman, setNeedsHuman] = useState(false);
   const [fieldValues, setFieldValues] = useState<Record<string, FieldValue>>({});
+  // Files chosen for file fields, by field key. They cannot upload before the ticket exists (an
+  // attachment belongs to a ticket), so they wait here and go up right after create.
+  const [fieldFiles, setFieldFiles] = useState<Record<string, File>>({});
   const [files, setFiles] = useState<PendingFile[]>([]);
   const [dragOver, setDragOver] = useState(false);
   const [busyStep, setBusyStep] = useState("");
@@ -135,6 +138,10 @@ export function NewTicket({
   // Dependency links already posted, as "from>to", so a retry after a later failure does not
   // post the same link twice (the server would refuse the duplicate and stall the retry).
   const linkedRef = useRef<Set<string>>(new Set());
+  // File fields already uploaded (key to attachment id) and whether their PATCH landed, so a
+  // retry after a later failure neither re-uploads nor re-sends what already went through.
+  const fieldFileIdsRef = useRef<Record<string, string>>({});
+  const fieldFilesPatchedRef = useRef(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const titleRef = useRef<HTMLInputElement>(null);
@@ -150,7 +157,9 @@ export function NewTicket({
   const busy =
     create.isPending || update.isPending || setFlag.isPending || addComment.isPending || addLink.isPending || !!busyStep;
 
-  const missingFields = activeFields.filter((f) => f.required && isFieldEmpty(f, fieldValues[f.key]));
+  // A required file field does not hold up Create: its attachment can only exist once the ticket
+  // does (the server applies the same rule), so the panel's "Needs fields" chip flags it instead.
+  const missingFields = activeFields.filter((f) => f.required && f.kind !== "file" && isFieldEmpty(f, fieldValues[f.key]));
   const missingNames = [...(title.trim() ? [] : ["Title"]), ...missingFields.map((f) => f.name)];
   const canCreate = missingNames.length === 0 && !busy;
 
@@ -199,6 +208,15 @@ export function NewTicket({
 
   function setField(key: string, value: FieldValue) {
     setFieldValues((v) => ({ ...v, [key]: value }));
+  }
+
+  function setFieldFile(key: string, file: File | null) {
+    setFieldFiles((v) => {
+      const next = { ...v };
+      if (file) next[key] = file;
+      else delete next[key];
+      return next;
+    });
   }
 
   /** Everything the single POST carries; empty choices are left out rather than sent as blanks. */
@@ -284,6 +302,22 @@ export function NewTicket({
         // failure then leaves only the files that never made it through in `files`, so retrying
         // re-uploads exactly those and none that already succeeded.
         setFiles((fs) => fs.filter((x) => x.id !== f.id));
+      }
+
+      // File fields: upload each chosen file to the new ticket, then one PATCH with every id.
+      const fileFieldKeys = Object.keys(fieldFiles);
+      for (const key of fileFieldKeys) {
+        if (fieldFileIdsRef.current[key]) continue;
+        const file = fieldFiles[key];
+        setBusyStep(`Uploading ${file.name}`);
+        const attachment = await uploadFile(ticket.id, file);
+        fieldFileIdsRef.current[key] = attachment.id;
+      }
+      if (fileFieldKeys.length > 0 && !fieldFilesPatchedRef.current) {
+        setBusyStep("Saving file fields");
+        const fields = Object.fromEntries(fileFieldKeys.map((key) => [key, { attachmentId: fieldFileIdsRef.current[key] }]));
+        await update.mutateAsync({ id: ticket.id, patch: { fields } });
+        fieldFilesPatchedRef.current = true;
       }
 
       const attachmentIds = uploadedRef.current.map((a) => a.id);
@@ -519,7 +553,14 @@ export function NewTicket({
                 </label>
                 {activeFields.map((f) => (
                   <FieldRow key={f.id} name={f.name} required={f.required}>
-                    <FieldControl id={`nt-field-${f.id}`} def={f} value={fieldValues[f.key] ?? null} onChange={(v) => setField(f.key, v)} />
+                    <FieldControl
+                      id={`nt-field-${f.id}`}
+                      def={f}
+                      value={fieldValues[f.key] ?? null}
+                      onChange={(v) => setField(f.key, v)}
+                      pendingFile={fieldFiles[f.key] ?? null}
+                      onPickFile={(file) => setFieldFile(f.key, file)}
+                    />
                   </FieldRow>
                 ))}
               </div>

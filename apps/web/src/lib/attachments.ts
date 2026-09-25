@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { signRequest, type Attachment } from "@panorama/core";
-import { ApiError } from "./api";
+import { ApiError, api } from "./api";
 import { session } from "./session";
 
 // Attachment ids are server-generated UUIDs, but any string reaching fetchBlob/useAttachmentUrl
@@ -85,6 +85,31 @@ export function uploadFile(ticketId: string, file: File, onProgress?: (fraction:
 
       xhr.send(form);
     })();
+  });
+}
+
+/** What `GET /api/v1/attachments/:id/meta` reports: enough to render a file field without the bytes. */
+export interface AttachmentMeta {
+  id: string;
+  ticketId: string;
+  filename: string;
+  mime: string;
+  size: number;
+  isImage: boolean;
+}
+
+/**
+ * An attachment's metadata (filename, whether it is an image), cached for good since an
+ * attachment never changes. A null or malformed id leaves the query disabled, the same guard
+ * `useAttachmentUrl` applies before an id can reach a URL.
+ */
+export function useAttachmentMeta(id: string | null) {
+  const valid = isValidAttachmentId(id);
+  return useQuery({
+    queryKey: ["attachment-meta", id],
+    queryFn: () => api<AttachmentMeta>("GET", `/api/v1/attachments/${id}/meta`),
+    enabled: valid,
+    staleTime: Infinity,
   });
 }
 

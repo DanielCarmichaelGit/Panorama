@@ -508,6 +508,60 @@ describe("NewTicket request order", () => {
   });
 });
 
+describe("NewTicket file field", () => {
+  it("does not block Create on a required file field, uploads the chosen file after create, then PATCHes the field", async () => {
+    const order: string[] = [];
+    const calls: { method: string; path: string; body?: unknown }[] = [];
+    const apiImpl = async (method: string, path: string, body?: unknown) => {
+      if (method !== "GET") calls.push({ method, path, body });
+      if (method === "GET" && path === "/api/v1/projects/p1/boards") return [board({})];
+      if (method === "GET" && path === "/api/v1/projects/p1/lanes") return [lane({})];
+      if (method === "GET" && path === "/api/v1/agents") return [];
+      if (method === "GET" && path === "/api/v1/evidence-types") return [signoffType];
+      if (method === "GET" && path === "/api/v1/fields?projectId=p1") return [fieldDef({ id: "f9", name: "Spec", key: "spec", kind: "file", required: true })];
+      if (method === "GET") return [];
+      if (method === "POST" && path === "/api/v1/tickets") {
+        order.push("create");
+        return { id: "t1", projectId: "p1", boardId: "b1", key: "PAN-1", title: (body as any).title, laneId: "l1", number: 1, position: 1, flags: [], assigneeId: null, startDate: null, dueDate: null, metadata: {}, archived: false, createdAt: "", updatedAt: "" };
+      }
+      if (method === "PATCH" && path === "/api/v1/tickets/t1") {
+        order.push("patch");
+        return { id: "t1" };
+      }
+      throw new Error(`unexpected ${method} ${path}`);
+    };
+    vi.mocked(uploadFile).mockClear();
+    vi.mocked(uploadFile).mockImplementation(async (_ticketId: string, file: File) => {
+      order.push("upload");
+      return { id: `att-${file.name}`, ticketId: "t1", commentId: null, actorId: "human", filename: file.name, mime: "application/pdf", size: file.size, sha256: "", createdAt: "" };
+    });
+
+    renderDialog({ agents: [], apiImpl });
+    await screen.findByRole("dialog", { name: "New ticket" });
+    const picker = await screen.findByLabelText("Spec");
+
+    fireEvent.change(screen.getByLabelText("Title"), { target: { value: "Ship it" } });
+    // A required file field is exempt from the create-time check: Create is enabled with just a title.
+    expect((screen.getByRole("button", { name: "Create" }) as HTMLButtonElement).disabled).toBe(false);
+
+    const spec = new File(["spec"], "spec.pdf", { type: "application/pdf" });
+    await act(async () => {
+      fireEvent.change(picker, { target: { files: [spec] } });
+    });
+    expect(screen.getByText("spec.pdf")).toBeTruthy();
+    expect(vi.mocked(uploadFile)).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Create" }));
+
+    await waitFor(() => expect(screen.getByTestId("location").textContent).toBe("/t/t1"));
+    expect(order).toEqual(["create", "upload", "patch"]);
+    expect(vi.mocked(uploadFile).mock.calls[0][0]).toBe("t1");
+    expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual(["POST /api/v1/tickets", "PATCH /api/v1/tickets/t1"]);
+    expect((calls[0].body as any).fields).toBeUndefined();
+    expect(calls[1].body).toEqual({ fields: { spec: { attachmentId: "att-spec.pdf" } } });
+  });
+});
+
 describe("NewTicket request order, Blocks direction", () => {
   it('posts a "Blocks" link from the new ticket\'s own endpoint with the other ticket as toId', async () => {
     const calls: { method: string; path: string; body?: unknown }[] = [];

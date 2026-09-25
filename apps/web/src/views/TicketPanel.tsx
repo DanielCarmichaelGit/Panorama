@@ -213,7 +213,7 @@ function FieldRow({ ticket, def }: { ticket: Ticket; def: FieldDefinition }) {
         {def.required && " *"}
       </span>
       <div className="props-control">
-        <FieldControl id={inputId} def={def} value={draft} onChange={setDraft} onCommit={save} />
+        <FieldControl id={inputId} def={def} value={draft} onChange={setDraft} onCommit={save} ticketId={ticket.id} />
         {error && <p className="error" role="alert">{error}</p>}
       </div>
     </>

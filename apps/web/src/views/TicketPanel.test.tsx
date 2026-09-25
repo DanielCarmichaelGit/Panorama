@@ -177,6 +177,13 @@ describe("TicketPanel Needs fields chip", () => {
     expect(screen.queryByText("Needs fields")).toBeNull();
   });
 
+  it("counts an empty required file field, even though create did not require it", async () => {
+    renderPanel({ fields: [fieldDef({ id: "f3", name: "Spec", key: "spec", kind: "file" })] });
+    await screen.findByRole("button", { name: "Lane" });
+    await screen.findByRole("button", { name: "Choose file" });
+    expect(await screen.findByText("Needs fields")).toBeTruthy();
+  });
+
   it("does not show the chip once the required field has a value", async () => {
     renderPanel({ fields: [fieldDef()], ticket: { ...ticket, fields: { severity: "high" } } });
     await screen.findByRole("button", { name: "Lane" });

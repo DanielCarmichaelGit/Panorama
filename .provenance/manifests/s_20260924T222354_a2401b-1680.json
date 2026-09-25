@@ -1,0 +1,23 @@
+{
+  "sessionId": "s_20260924T222354_a2401b",
+  "actor": "Daniel Carmichael",
+  "tool": "claude-code",
+  "intent": "unstated",
+  "head": "3dfb3f6f1eb6a340f0e0aa997431b5ad0eff2d44c84502bf9be29f8ee87978d8",
+  "count": 1680,
+  "diffHash": "83564ff58d94f6326c38f9394348887d92fbd9bf7a344a9623ce9ba20d226174",
+  "files": [
+    "apps/web/src/components/FieldControl.test.tsx",
+    "apps/web/src/components/FieldControl.tsx",
+    "apps/web/src/components/NewTicket.test.tsx",
+    "apps/web/src/components/NewTicket.tsx",
+    "apps/web/src/components/settings/FieldsTab.test.tsx",
+    "apps/web/src/components/settings/FieldsTab.tsx",
+    "apps/web/src/lib/attachments.ts",
+    "apps/web/src/styles/app.css",
+    "apps/web/src/views/TicketPanel.test.tsx",
+    "apps/web/src/views/TicketPanel.tsx"
+  ],
+  "base": "fa2f21941fab64922ab4ffc73441545592c9f255",
+  "ts": "2026-09-25T03:21:48.526Z"
+}

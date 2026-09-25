@@ -118,3 +118,19 @@ Phosphor, regular weight, 18px in the sidebar and 16px inline, imported per glyp
 - Light theme only in v1. A dark theme is on the traction list.
 - The motion-noise recovery display cannot honour reduced motion, because motion is how it works. It offers an explicit "show as plain text" button instead.
 - The sidebar width snaps when it collapses or expands; only its contents animate. Animating the shell's `grid-template-columns` relaid out the whole page on every frame, which is the layout thrash BRAND rules out, so the track changes in one step and the nav items and labels carry the motion.
+
+## Colour presets
+
+Arcs and tags may carry a custom colour beside their family. The colour control offers, in this order: the five family swatches, then these seven presets, then Custom (a native colour input with a hex field).
+
+| Preset | Hex |
+|---|---|
+| 1 | `#F6C1B4` |
+| 2 | `#F7D9A8` |
+| 3 | `#F2E8A6` |
+| 4 | `#BFE8CF` |
+| 5 | `#B9DDF5` |
+| 6 | `#D3C8F4` |
+| 7 | `#F2C4E0` |
+
+Pastel hues at family-top lightness, chosen so they read as siblings of the five families. A family swatch sets the family and clears the colour; a preset or custom colour sets the colour and keeps the family as the fallback. Any custom colour is rendered through two derived tokens, computed in code (`apps/web/src/lib/color.ts`): `top`, the colour mixed toward white until its relative luminance is at least 0.78, and `ink`, the colour darkened until it reads at 4.5:1 or better against that top. The selected swatch shows a 2px `--accent` ring.

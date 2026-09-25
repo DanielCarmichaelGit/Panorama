@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
-import { estimateCost, findPrice, type PriceTable } from "./index";
+import { CostInput, estimateCost, findPrice, MAX_TOKENS_PER_FIELD, type PriceTable } from "./index";
 import bundled from "./prices.json";
 import { normalise } from "../../../scripts/prices-update.mjs";
 
@@ -48,6 +48,24 @@ describe("estimateCost", () => {
     expect(r.priceDate).toBe(bundled.date);
     expect(r.matched).toBe("anthropic/claude-fable-5-1");
     expect(r.usd).not.toBeNull();
+  });
+});
+
+describe("CostInput", () => {
+  const ok = { model: "claude-fable-5-1", inputTokens: 1, outputTokens: 1 };
+  it("caps every token field at MAX_TOKENS_PER_FIELD and refuses one token more", () => {
+    expect(MAX_TOKENS_PER_FIELD).toBe(50_000_000);
+    for (const field of ["inputTokens", "outputTokens", "cacheReadTokens", "cacheWriteTokens"]) {
+      expect(CostInput.safeParse({ ...ok, [field]: MAX_TOKENS_PER_FIELD }).success).toBe(true);
+      const over = CostInput.safeParse({ ...ok, [field]: MAX_TOKENS_PER_FIELD + 1 });
+      expect(over.success).toBe(false);
+      expect(over.success ? [] : over.error.issues.map((i) => i.path.join("."))).toEqual([field]);
+    }
+  });
+  it("wants whole, non-negative tokens and no other fields", () => {
+    expect(CostInput.safeParse({ ...ok, inputTokens: 1.5 }).success).toBe(false);
+    expect(CostInput.safeParse({ ...ok, outputTokens: -1 }).success).toBe(false);
+    expect(CostInput.safeParse({ ...ok, note: "x" }).success).toBe(false);
   });
 });
 

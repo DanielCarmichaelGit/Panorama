@@ -314,6 +314,11 @@ describe("MCP contract", () => {
     const bad = await tool("boomerang_report_cost", { ticketId: "DEMO-2", model: "claude-fable-5-1", inputTokens: -1, outputTokens: 0 });
     expect(bad.isError).toBe(true);
     expect(bad.text).toMatch(/inputTokens/);
+    // The same cap as the server's CostInput, refused here before any request: the metrics
+    // below still count two entries.
+    const capped = await tool("boomerang_report_cost", { ticketId: "DEMO-2", model: "claude-fable-5-1", inputTokens: 0, outputTokens: 50_000_001 });
+    expect(capped.isError).toBe(true);
+    expect(capped.text).toMatch(/outputTokens/);
 
     const metrics = await tool("boomerang_ticket_metrics", { ticketId: "DEMO-2" });
     expect(metrics.isError).toBe(false);

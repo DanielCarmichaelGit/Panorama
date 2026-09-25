@@ -137,17 +137,23 @@ export function metricsRoutes(app: FastifyInstance, ctx: Ctx): void {
     const nowMs = ctx.now().getTime();
     const timers = listTimers(db, t.id); const entries = listCostEntries(db, t.id);
     const { priceDate, ...total } = costOf(entries);
-    // Biggest spender first, so the panel's breakdown reads top down; ties by name for a stable order.
+    // Dearest first, so the panel's breakdown reads top down: by the estimate, a group with no
+    // estimate (an unpriced model among its entries) after every priced one, then by tokens,
+    // then by name so equal figures keep a stable order.
+    const bySpend = (a: { usd: number | null; tokens: { total: number } }, b: { usd: number | null; tokens: { total: number } }): number => {
+      if (a.usd === null || b.usd === null) return a.usd === b.usd ? b.tokens.total - a.tokens.total : a.usd === null ? 1 : -1;
+      return b.usd - a.usd || b.tokens.total - a.tokens.total;
+    };
     const byModel = [...groupBy(entries, (e) => e.model)]
       .map(([model, list]) => { const { priceDate: _p, ...c } = costOf(list); return { model, ...c }; })
-      .sort((a, b) => b.tokens.total - a.tokens.total || a.model.localeCompare(b.model));
+      .sort((a, b) => bySpend(a, b) || a.model.localeCompare(b.model));
     const actorIds = [...new Set([...timers.map((x) => x.actorId), ...entries.map((e) => e.actorId)])];
     const byActor = actorIds
       .map((actorId) => {
         const { priceDate: _p, ...c } = costOf(entries.filter((e) => e.actorId === actorId));
         return { actorId, name: getActor(db, actorId)?.name ?? actorId, ...figures(timers.filter((x) => x.actorId === actorId), c, nowMs) };
       })
-      .sort((a, b) => b.tokens.total - a.tokens.total || b.seconds - a.seconds || a.actorId.localeCompare(b.actorId));
+      .sort((a, b) => bySpend(a, b) || b.seconds - a.seconds || a.actorId.localeCompare(b.actorId));
     return { ticketId: t.id, estimate: true, priceDate: priceDate ?? BUNDLED_PRICES.date, ...figures(timers, total, nowMs), byModel, byActor };
   });
 

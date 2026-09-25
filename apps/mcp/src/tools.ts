@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
-import { formatEstimate, type Attachment, type Comment, type Epic, type Evidence, type EvidenceType, type FieldDefinition, type Lane, type Project, type Tag, type Ticket, type TicketLink } from "@boomerang/core";
+import { CostInput, formatEstimate, type Attachment, type Comment, type Epic, type Evidence, type EvidenceType, type FieldDefinition, type Lane, type Project, type Tag, type Ticket, type TicketLink } from "@boomerang/core";
 import type { BoomerangClient } from "./client";
 import { BoomerangError, describeError, ToolRefusal, type GateEntry } from "./errors";
 import { HOWTO, HOWTO_URI } from "./howto";
@@ -582,17 +582,13 @@ export function buildServer(client: BoomerangClient): McpServer {
     {
       title: "Report cost",
       description: "Records what one turn cost on a ticket: the model and the token counts your harness reports, cache reads and writes separately when it gives them. Boomerang prices the tokens from its bundled table (never fetched) and answers with an estimate such as ~$0.12 and the date of the prices behind it; an unknown model is kept as tokens only. Call it after each turn.",
-      inputSchema: z
-        .object({
-          ticketId: ticketRef,
-          model: z.string().min(1).max(120).describe("The model id as your harness names it, such as claude-fable-5-1"),
-          inputTokens: z.number().int().nonnegative(),
-          outputTokens: z.number().int().nonnegative(),
-          cacheReadTokens: z.number().int().nonnegative().optional(),
-          cacheWriteTokens: z.number().int().nonnegative().optional(),
-          note: z.string().max(2000).optional().describe("What the turn was for"),
-        })
-        .strict(),
+      // The server's own CostInput (model, the four token counts, each capped per field), so a
+      // report the server would refuse is refused here before any request goes out.
+      inputSchema: CostInput.extend({
+        ticketId: ticketRef,
+        model: CostInput.shape.model.describe("The model id as your harness names it, such as claude-fable-5-1"),
+        note: z.string().max(2000).optional().describe("What the turn was for"),
+      }).strict(),
     },
     ({ ticketId, ...body }) =>
       run(async () => {

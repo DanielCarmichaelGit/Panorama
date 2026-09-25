@@ -179,6 +179,54 @@ describe("cost", () => {
     expect((await w.human("POST", `/api/v1/tickets/${t.id}/cost`, { model: PRICED, inputTokens: 1, outputTokens: 1, bogus: true })).status).toBe(400);
     expect((await w.human("POST", `/api/v1/tickets/${t.id}/cost`, { model: PRICED, inputTokens: 1, outputTokens: 1 })).status).toBe(200);
   });
+
+  it("caps every token field at 50,000,000 and writes nothing for a larger one", async () => {
+    const w = await world();
+    const t = await w.ticket();
+    const CAP = 50_000_000;
+    for (const field of ["inputTokens", "outputTokens", "cacheReadTokens", "cacheWriteTokens"]) {
+      const res = await w.human("POST", `/api/v1/tickets/${t.id}/cost`, { model: PRICED, inputTokens: 0, outputTokens: 0, [field]: CAP + 1 });
+      expect(res.status).toBe(400);
+      expect(res.json.error.code).toBe("validation");
+      expect(JSON.stringify(res.json.error.details)).toContain(field);
+    }
+    expect((await w.human("GET", `/api/v1/tickets/${t.id}/metrics`)).json).toMatchObject({ entries: 0, tokens: { total: 0 } });
+    expect(listEvents(w.app.ctx.db!).some((e) => e.type === "cost.added")).toBe(false);
+    expect((await w.human("POST", `/api/v1/tickets/${t.id}/cost`, { model: PRICED, inputTokens: CAP, outputTokens: CAP, cacheReadTokens: CAP, cacheWriteTokens: CAP })).status).toBe(200);
+  });
+
+  it("refuses an agent scoped to another project, on cost and on timers, writing nothing", async () => {
+    const w = await world();
+    const other = (await w.human("POST", "/api/v1/projects", { name: "Other", key: "OTH" })).json;
+    const t = (await w.human("POST", "/api/v1/tickets", { projectId: other.project.id, title: "not theirs" })).json;
+    const { agent } = await w.agentWith(EVERYTHING); // scoped to PAN only
+    expect((await agent("POST", `/api/v1/tickets/${t.id}/cost`, { model: PRICED, inputTokens: 10, outputTokens: 10 })).status).toBe(403);
+    expect((await agent("POST", `/api/v1/tickets/${t.id}/timer/start`)).status).toBe(403);
+    expect((await agent("POST", `/api/v1/tickets/${t.id}/timer/stop`)).status).toBe(403);
+    expect((await agent("GET", `/api/v1/tickets/${t.id}/metrics`)).status).toBe(403);
+    expect((await w.human("GET", `/api/v1/tickets/${t.id}/metrics`)).json).toMatchObject({ entries: 0, openTimers: 0, seconds: 0 });
+    expect(listEvents(w.app.ctx.db!).some((e) => e.type.startsWith("timer.") || e.type === "cost.added")).toBe(false);
+  });
+
+  it("orders the ticket's models and actors by estimated cost, unpriced last, then by tokens", async () => {
+    const w = await world();
+    const t = await w.ticket();
+    const { agent: a1, agentId: id1 } = await w.agentWith(EVERYTHING);
+    const { agent: a2, agentId: id2 } = await w.agentWith(EVERYTHING);
+    const dear = "anthropic/claude-fable-5-1"; // $50 per million output tokens
+    const cheap = "anthropic/claude-opus-4-7"; // $5 per million input tokens
+    // Fewer tokens but more money on the dear model; the cheap one has eight times the tokens.
+    await a1("POST", `/api/v1/tickets/${t.id}/cost`, { model: dear, inputTokens: 0, outputTokens: 50_000 });
+    await a2("POST", `/api/v1/tickets/${t.id}/cost`, { model: cheap, inputTokens: 400_000, outputTokens: 0 });
+    await a2("POST", `/api/v1/tickets/${t.id}/cost`, { model: UNPRICED, inputTokens: 9_000_000, outputTokens: 0 });
+    const m = (await w.human("GET", `/api/v1/tickets/${t.id}/metrics`)).json;
+    expect(m.byModel.map((x: any) => x.model)).toEqual([dear, cheap, UNPRICED]);
+    expect(m.byModel[0].usd).toBeGreaterThan(m.byModel[1].usd);
+    expect(m.byModel[0].tokens.total).toBeLessThan(m.byModel[1].tokens.total);
+    // Actor 2's total is unpriced (one of its entries has no price), so actor 1 leads despite fewer tokens.
+    expect(m.byActor.map((x: any) => x.actorId)).toEqual([id1, id2]);
+    expect(m.byActor[1]).toMatchObject({ usd: null, unpriced: 1 });
+  });
 });
 
 describe("GET /api/v1/metrics", () => {

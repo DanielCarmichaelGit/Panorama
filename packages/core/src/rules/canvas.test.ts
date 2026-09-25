@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canvasToRule, ruleToCanvas, type CanvasDoc, type CanvasNode } from "../index";
+import { CanvasDocSchema, canvasToRule, conditionDepth, ruleToCanvas, type CanvasDoc, type CanvasNode } from "../index";
 
 const node = (id: string, kind: CanvasNode["kind"], data: unknown, x = 0, y = 0): CanvasNode => ({ id, kind, position: { x, y }, data: data as Record<string, unknown> });
 const edge = (source: string, target: string) => ({ id: `${source}-${target}`, source, target });
@@ -104,6 +104,78 @@ describe("canvasToRule", () => {
   it("errors carry the code and the node id separately", () => {
     const out = canvasToRule({ nodes: [ev, inEval, flag], edges: [edge("ev", "a2")] });
     expect(out).toEqual({ errors: [{ name: "disconnected:c1", code: "disconnected", nodeId: "c1" }] });
+  });
+  it("create_ticket and move_to_board need a target; the timer actions need none", () => {
+    const noLane = node("a", "action", { type: "create_ticket", title: "Retest", laneId: "" });
+    const noBoard = node("b", "action", { type: "move_to_board" });
+    const start = node("c", "action", { type: "start_timer" });
+    const stop = node("d", "action", { type: "stop_timer" });
+    expect(errorsOf({ nodes: [ev, noLane, noBoard, start, stop], edges: [edge("ev", "a"), edge("ev", "b"), edge("ev", "c"), edge("ev", "d")] })).toEqual(["missing_target:a", "missing_target:b"]);
+    const rule = ruleOf({ nodes: [ev, start, stop], edges: [edge("ev", "c"), edge("ev", "d")] });
+    expect(rule.actions).toEqual([{ type: "start_timer" }, { type: "stop_timer" }]);
+  });
+
+  // A diamond is a fan-out into two conditions that meet again at the next condition. Forty of
+  // them in a row have 2^40 paths; the reduction must work per node, not per path.
+  const diamonds = (n: number): CanvasDoc => {
+    const nodes: CanvasNode[] = [ev];
+    const edges: CanvasDoc["edges"][number][] = [];
+    let prev = "ev";
+    for (let i = 1; i <= n; i++) {
+      const left = node(`l${i}`, "condition", { kind: "tag", op: "is", value: `left${i}` });
+      const right = node(`r${i}`, "condition", { kind: "tag", op: "is", value: `right${i}` });
+      const meet = node(`m${i}`, "condition", { kind: "flag", op: "is_not", value: `stop${i}` });
+      nodes.push(left, right, meet);
+      edges.push(edge(prev, left.id), edge(prev, right.id), edge(left.id, meet.id), edge(right.id, meet.id));
+      prev = meet.id;
+    }
+    nodes.push(flag);
+    edges.push(edge(prev, "a2"));
+    return { nodes, edges };
+  };
+  it("reduces forty chained diamonds in linear time", () => {
+    const started = performance.now();
+    const rule = ruleOf(diamonds(40));
+    expect(performance.now() - started).toBeLessThan(100);
+    expect(rule.conditions).toHaveLength(80);
+    expect(rule.conditions[0]).toEqual({ kind: "any", conditions: [{ kind: "tag", op: "is", value: "left1" }, { kind: "tag", op: "is", value: "right1" }] });
+    expect(rule.conditions[1]).toEqual({ kind: "flag", op: "is_not", value: "stop1" });
+    expect(rule.actions).toEqual([flag.data]);
+  });
+  // Each layer merges the chain so far with a fresh branch straight off the event, so the
+  // reduced condition wraps the previous one in an all inside an any: two levels per layer.
+  const layers = (k: number): CanvasDoc => {
+    const nodes: CanvasNode[] = [ev];
+    const edges: CanvasDoc["edges"][number][] = [];
+    let tip = "ev";
+    for (let i = 1; i <= k; i++) {
+      const x = node(`x${i}`, "condition", { kind: "tag", op: "is", value: `x${i}` });
+      const y = node(`y${i}`, "condition", { kind: "tag", op: "is", value: `y${i}` });
+      const m = node(`m${i}`, "condition", { kind: "flag", op: "is_not", value: `m${i}` });
+      nodes.push(x, y, m);
+      edges.push(edge(tip, x.id), edge("ev", y.id), edge(x.id, m.id), edge(y.id, m.id));
+      tip = m.id;
+    }
+    nodes.push(flag);
+    edges.push(edge(tip, "a2"));
+    return { nodes, edges };
+  };
+  it("accepts a reduction that nests exactly to the cap and refuses one deeper, naming the action", () => {
+    const rule = ruleOf(layers(4));
+    expect(conditionDepth(rule.conditions[0])).toBe(8);
+    expect(errorsOf(layers(5))).toEqual(["invalid:a2"]);
+  });
+});
+
+describe("ruleToCanvas output", () => {
+  it("re-parses under CanvasDocSchema", () => {
+    const doc = ruleToCanvas({
+      event: { type: "schedule", cron: "0 9 * * *", timezone: "UTC" },
+      conditions: [inEval.data as any],
+      actions: [{ type: "create_ticket", title: "Daily {{ticket.key}}", laneId: "l1", when: [passed.data as any] }, { type: "start_timer" }],
+    });
+    const parsed = CanvasDocSchema.safeParse(doc);
+    expect(parsed.success, JSON.stringify(parsed)).toBe(true);
   });
 });
 

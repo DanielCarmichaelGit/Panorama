@@ -1,23 +1,29 @@
 import { canonical } from "../canonical";
-import { ACTION_TARGET_KEY, ActionSchema, CANVAS_NODE_KINDS, CanvasDoc, CanvasNode, Condition, ConditionSchema, RuleAction, RuleBody, RuleEvent, RuleEventSchema } from "./schema";
+import { ACTION_TARGET_KEY, ActionSchema, CANVAS_NODE_KINDS, CanvasDoc, CanvasNode, Condition, ConditionSchema, conditionDepth, MAX_CONDITION_DEPTH, RuleAction, RuleBody, RuleEvent, RuleEventSchema } from "./schema";
 
 /**
  * How a drawing becomes a rule.
  *
  * The canvas is a directed graph from one event (or schedule) node. Conditions on the path
- * from the event to an action chain as `all`; two paths into the same action branch as `any`
- * (one `any` of one `all` per path). The conditions every action shares, the common prefix of
- * all paths counted in nodes, become the rule's `conditions`; whatever remains on an action's
- * own paths becomes that action's `when`. When every action ends up with the same `when` it
- * is lifted into `conditions` too, so a rule has one canonical form and the round trip
- * canvas, rule, canvas, rule is stable. Action nodes may chain (Then after Then): a later
- * action inherits the conditions of the path, never the earlier action.
+ * from the event to an action chain as `all`; two paths into the same node branch as `any`
+ * (one `any` of one `all` per branch). The conditions every action shares, the common prefix
+ * of their reductions counted in nodes, become the rule's `conditions`; whatever remains on
+ * an action's own reduction becomes that action's `when`. When every action ends up with the
+ * same `when` it is lifted into `conditions` too, so a rule has one canonical form and the
+ * round trip canvas, rule, canvas, rule is stable. Action nodes may chain (Then after Then):
+ * a later action inherits the conditions of the path, never the earlier action.
+ *
+ * The reduction is computed once per node from its predecessors (memoised), never per path:
+ * a chain of forty diamonds has 2^40 paths but eighty entries. A merge with two incoming
+ * reductions keeps their common prefix and wraps the two remainders in one `any`; where one
+ * remainder is empty, that branch imposes nothing more and the `any` disappears.
  *
  * Errors are named so the canvas can light the offending node:
  *   no_event, two_events, cycle, unknown_kind:<nodeId>, disconnected:<nodeId>,
  *   missing_target:<nodeId> (an action whose picker value is empty), invalid:<nodeId>
- *   (data that does not parse for any other reason), bad_edge:<edgeId> (an edge to a node
- *   not on the canvas).
+ *   (data that does not parse for any other reason, or an action whose reduced conditions
+ *   nest deeper than MAX_CONDITION_DEPTH), bad_edge:<edgeId> (an edge to a node not on the
+ *   canvas).
  */
 
 export type CanvasErrorCode = "no_event" | "two_events" | "cycle" | "unknown_kind" | "disconnected" | "missing_target" | "invalid" | "bad_edge";
@@ -55,7 +61,7 @@ function parseNode(n: CanvasNode): { ok: true; data: RuleEvent | Condition | Rul
     }
     case "action": {
       const type = n.data.type as keyof typeof ACTION_TARGET_KEY;
-      const targetKey = Object.prototype.hasOwnProperty.call(ACTION_TARGET_KEY, type) ? ACTION_TARGET_KEY[type] : undefined;
+      const targetKey = Object.prototype.hasOwnProperty.call(ACTION_TARGET_KEY, type) ? ACTION_TARGET_KEY[type] : null;
       if (targetKey && isEmpty(n.data[targetKey])) return { ok: false, error: err("missing_target", { nodeId: n.id }) };
       const r = ActionSchema.safeParse(n.data);
       return r.success ? { ok: true, data: r.data } : invalid;
@@ -63,12 +69,42 @@ function parseNode(n: CanvasNode): { ok: true; data: RuleEvent | Condition | Rul
   }
 }
 
+/** One step of a node's reduction: a condition node's own data keyed by its id, or a merge
+ *  keyed by the node the branches met at, so two reductions can be compared by key. */
+interface Entry {
+  key: string;
+  cond: Condition;
+}
 const same = (a: unknown, b: unknown) => canonical(a) === canonical(b);
+const sameKeys = (a: Entry[], b: Entry[]) => a.length === b.length && a.every((e, i) => e.key === b[i].key);
+const commonPrefix = (lists: Entry[][]): Entry[] => {
+  let prefix = lists[0] ?? [];
+  for (const l of lists) {
+    let i = 0;
+    while (i < prefix.length && i < l.length && prefix[i].key === l[i].key) i++;
+    prefix = prefix.slice(0, i);
+  }
+  return prefix;
+};
+const asCondition = (rest: Entry[]): Condition => (rest.length === 1 ? rest[0].cond : { kind: "all", conditions: rest.map((e) => e.cond) });
+
+/** Joins the reductions arriving at one node: the common prefix, then one `any` over the
+ *  remainders unless some branch has none left (then that branch alone suffices). */
+function merge(at: string, incoming: Entry[][]): Entry[] {
+  const distinct = incoming.filter((l, i) => incoming.findIndex((m) => sameKeys(m, l)) === i);
+  if (distinct.length === 1) return distinct[0];
+  const prefix = commonPrefix(distinct);
+  const rests = distinct.map((l) => l.slice(prefix.length));
+  if (rests.some((r) => r.length === 0)) return prefix;
+  return [...prefix, { key: `any@${at}`, cond: { kind: "any", conditions: rests.map(asCondition) } }];
+}
 
 export function canvasToRule(doc: CanvasDoc): { rule: RuleBody } | { errors: CanvasError[] } {
   const errors: CanvasError[] = [];
   const known = new Map<string, CanvasNode>();
   for (const n of doc.nodes) {
+    // CanvasDocSchema already rejects an unknown kind; this is defence in depth for a caller
+    // that hands over an unparsed document, so the node is named rather than crashed on.
     if (!(CANVAS_NODE_KINDS as readonly string[]).includes(n.kind)) errors.push(err("unknown_kind", { nodeId: n.id }));
     else known.set(n.id, n);
   }
@@ -78,7 +114,8 @@ export function canvasToRule(doc: CanvasDoc): { rule: RuleBody } | { errors: Can
     return ok;
   });
   const out = new Map<string, string[]>([...known.keys()].map((id) => [id, []]));
-  for (const e of edges) out.get(e.source)!.push(e.target);
+  const into = new Map<string, string[]>([...known.keys()].map((id) => [id, []]));
+  for (const e of edges) out.get(e.source)!.push(e.target), into.get(e.target)!.push(e.source);
 
   const starts = [...known.values()].filter((n) => n.kind === "event" || n.kind === "schedule");
   if (starts.length === 0) errors.push(err("no_event"));
@@ -113,46 +150,51 @@ export function canvasToRule(doc: CanvasDoc): { rule: RuleBody } | { errors: Can
   }
   if (errors.length) return { errors };
 
-  // Every path from the event to each action, as the condition node ids along it.
+  // The reduction after passing through each node, computed once (the graph is acyclic and
+  // every node is reachable from the start, so the recursion bottoms out at the start).
   const start = starts[0].id;
-  const actionOrder: string[] = [];
-  const paths = new Map<string, string[][]>();
-  const walk = (id: string, conds: string[]) => {
+  const memo = new Map<string, Entry[]>();
+  const after = (id: string): Entry[] => {
+    const hit = memo.get(id);
+    if (hit) return hit;
     const node = known.get(id)!;
-    const here = node.kind === "condition" ? [...conds, id] : conds;
-    if (node.kind === "action") {
-      if (!paths.has(id)) (actionOrder.push(id), paths.set(id, []));
-      paths.get(id)!.push(here);
-    }
-    for (const next of out.get(id)!) walk(next, here);
+    const base = id === start ? [] : merge(id, into.get(id)!.map(after));
+    const result = node.kind === "condition" ? [...base, { key: id, cond: parsed.get(id) as Condition }] : base;
+    memo.set(id, result);
+    return result;
   };
-  walk(start, []);
 
-  const allPaths = actionOrder.flatMap((id) => paths.get(id)!);
-  let prefix = allPaths.length ? allPaths[0] : [];
-  for (const p of allPaths) {
-    let i = 0;
-    while (i < prefix.length && i < p.length && prefix[i] === p[i]) i++;
-    prefix = prefix.slice(0, i);
+  // Actions in order of first discovery from the start, following edges in drawing order.
+  const actionOrder: string[] = [];
+  const seen = new Set<string>([start]);
+  const queue = [start];
+  while (queue.length) {
+    const id = queue.shift()!;
+    if (known.get(id)!.kind === "action") actionOrder.push(id);
+    for (const next of out.get(id)!) if (!seen.has(next)) seen.add(next), queue.push(next);
   }
-  const cond = (id: string) => parsed.get(id) as Condition;
 
-  const actions: RuleAction[] = actionOrder.map((id) => {
-    const rests = paths.get(id)!.map((p) => p.slice(prefix.length));
+  const reductions = actionOrder.map(after);
+  const prefix = commonPrefix(reductions);
+  const actions: RuleAction[] = actionOrder.map((id, i) => {
+    const rest = reductions[i].slice(prefix.length);
     const action = parsed.get(id) as RuleAction;
-    if (rests.some((r) => r.length === 0)) return action;
-    if (rests.length === 1) return { ...action, when: rests[0].map(cond) };
-    return { ...action, when: [{ kind: "any", conditions: rests.map((r) => (r.length === 1 ? cond(r[0]) : { kind: "all", conditions: r.map(cond) })) }] };
+    return rest.length ? { ...action, when: rest.map((e) => e.cond) } : action;
   });
-  const conditions = prefix.map(cond);
+  const conditions = prefix.map((e) => e.cond);
   const shared = actions.length && actions[0].when && actions.every((a) => same(a.when, actions[0].when)) ? actions[0].when : undefined;
-  return {
-    rule: {
-      event: parsed.get(start) as RuleEvent,
-      conditions: shared ? [...conditions, ...shared] : conditions,
-      actions: shared ? actions.map(({ when: _when, ...a }) => a) : actions,
-    },
+  const rule: RuleBody = {
+    event: parsed.get(start) as RuleEvent,
+    conditions: shared ? [...conditions, ...shared] : conditions,
+    actions: shared ? actions.map(({ when: _when, ...a }) => a) : actions,
   };
+
+  // A drawing can nest merges deeper than the schema allows; name the action it gates.
+  const tooDeep = (list: Condition[] | undefined) => (list ?? []).some((c) => conditionDepth(c) > MAX_CONDITION_DEPTH);
+  actionOrder.forEach((id, i) => {
+    if (tooDeep(rule.conditions) || tooDeep(actions[i].when)) errors.push(err("invalid", { nodeId: id }));
+  });
+  return errors.length ? { errors } : { rule };
 }
 
 export const CANVAS_GRID = { x: 240, y: 120 } as const;

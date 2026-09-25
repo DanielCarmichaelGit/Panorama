@@ -26,9 +26,19 @@ export interface Evidence {
   createdAt: string;
 }
 
+/** `description` says what the evidence should show ("A markdown file explaining what needs
+ *  to be done"); it travels with the gate so an agent refused at a lane knows what to provide. */
 export interface LaneRequirement {
   typeId: string;
   count: number;
+  description?: string;
+}
+
+export interface MissingRequirement {
+  typeId: string;
+  need: number;
+  have: number;
+  description?: string;
 }
 
 const note = z.string().max(2000).optional();
@@ -58,12 +68,14 @@ export function evaluateEvidence(type: Pick<EvidenceType, "kind" | "params">, pa
   }
 }
 
-export function checkGate(
-  requirements: LaneRequirement[],
-  evidence: Pick<Evidence, "typeId" | "result">[]
-): { typeId: string; need: number; have: number }[] {
+export function checkGate(requirements: LaneRequirement[], evidence: Pick<Evidence, "typeId" | "result">[]): MissingRequirement[] {
   return requirements
-    .map((r) => ({ typeId: r.typeId, need: r.count, have: evidence.filter((e) => e.typeId === r.typeId && e.result !== "fail").length }))
+    .map((r): MissingRequirement => ({
+      typeId: r.typeId,
+      need: r.count,
+      have: evidence.filter((e) => e.typeId === r.typeId && e.result !== "fail").length,
+      ...(r.description ? { description: r.description } : {}),
+    }))
     .filter((r) => r.have < r.need);
 }
 

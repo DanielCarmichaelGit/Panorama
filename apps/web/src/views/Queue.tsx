@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useOutletContext } from "react-router-dom";
 import { CaretDown, CaretRight } from "@phosphor-icons/react";
-import type { Lane, Project } from "@panorama/core";
-import { LaneScene } from "../lib/iso";
-import { useAgents, useBoards, useQueue, useTickets } from "../lib/hooks";
+import type { Lane, Project } from "@boomerang/core";
+import { BoomerangScene } from "../lib/iso";
+import { useAgents, useBoards, useEpics, useQueue, useTags, useTickets } from "../lib/hooks";
 import { isTypingTarget } from "../lib/keys";
 import { TicketRow } from "../components/TicketRow";
 import { NewTicket } from "../components/NewTicket";
@@ -15,6 +15,8 @@ export function Queue() {
   const allTickets = useTickets(project.id);
   const boards = useBoards(project.id).data ?? [];
   const agents = useAgents().data ?? [];
+  const epics = useEpics(project.id).data ?? [];
+  const tags = useTags(project.id).data ?? [];
   const [showNew, setShowNew] = useState(false);
   const [showAllOpen, setShowAllOpen] = useState(false);
   const rowsRef = useRef<HTMLDivElement>(null);
@@ -66,7 +68,7 @@ export function Queue() {
         All open tickets <span className="mono">{openTickets.length}</span>
       </button>
       {showAllOpen && openTickets.map((t, i) => (
-        <TicketRow key={t.id} ticket={t} lanes={lanes} agents={agents} index={i} />
+        <TicketRow key={t.id} ticket={t} lanes={lanes} agents={agents} epics={epics} tags={tags} index={i} />
       ))}
     </>
   );
@@ -92,7 +94,7 @@ export function Queue() {
     return (
       <div className="view">
         <div className="empty">
-          <LaneScene />
+          <BoomerangScene />
           {hasActiveAgents ? (
             <>
               <h1>Nothing needs you</h1>
@@ -116,7 +118,7 @@ export function Queue() {
             <>
               <h2 className="section-title">With agents</h2>
               {active.map((t, i) => (
-                <TicketRow key={t.id} ticket={t} lanes={lanes} agents={agents} index={i} />
+                <TicketRow key={t.id} ticket={t} lanes={lanes} agents={agents} epics={epics} tags={tags} index={i} />
               ))}
             </>
           )}
@@ -138,14 +140,14 @@ export function Queue() {
       <PresenceStrip agents={agents} tickets={tickets} onOpen={(id) => navigate(`/t/${id}`)} />
       <div ref={rowsRef}>
         {needsHuman.map((t, i) => (
-          <TicketRow key={t.id} ticket={t} lanes={lanes} agents={agents} index={i} />
+          <TicketRow key={t.id} ticket={t} lanes={lanes} agents={agents} epics={epics} tags={tags} index={i} />
         ))}
       </div>
       {active.length > 0 && (
         <>
           <h2 className="section-title">With agents</h2>
           {active.map((t, i) => (
-            <TicketRow key={t.id} ticket={t} lanes={lanes} agents={agents} index={needsHuman.length + i} />
+            <TicketRow key={t.id} ticket={t} lanes={lanes} agents={agents} epics={epics} tags={tags} index={needsHuman.length + i} />
           ))}
         </>
       )}

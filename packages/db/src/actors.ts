@@ -1,4 +1,4 @@
-import type { Actor, Scopes } from "@panorama/core";
+import type { Actor, Scopes } from "@boomerang/core";
 import type { DB } from "./open";
 const toActor = (r: any): Actor => ({ id: r.id, kind: r.kind, name: r.name, publicKey: r.public_key, scopes: r.scopes ? JSON.parse(r.scopes) : null, status: r.status, lastSeen: r.last_seen, currentTicketId: r.current_ticket_id, createdAt: r.created_at });
 export const insertActor = (db: DB, a: Actor): void => { db.prepare("insert into actors(id, kind, name, public_key, scopes, status, last_seen, current_ticket_id, created_at) values(?,?,?,?,?,?,?,?,?)").run(a.id, a.kind, a.name, a.publicKey, a.scopes ? JSON.stringify(a.scopes) : null, a.status, a.lastSeen, a.currentTicketId, a.createdAt); };

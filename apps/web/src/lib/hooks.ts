@@ -1,6 +1,29 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { Actor, Attachment, Board, Comment, Evidence, EvidenceType, Family, Lane, LaneRequirement, Project, Scopes, Ticket } from "@panorama/core";
+import type {
+  Actor,
+  Attachment,
+  Board,
+  Comment,
+  CreateEvidenceTypeInput,
+  CreateLaneInput,
+  CreateTicketInput,
+  Epic,
+  Evidence,
+  EvidenceType,
+  Family,
+  FieldDefinition,
+  FieldKind,
+  Lane,
+  LaneRequirement,
+  Project,
+  LinkKind,
+  Scopes,
+  Tag,
+  Ticket,
+  TicketLink,
+  UpdateLaneInput,
+} from "@boomerang/core";
 import { api } from "./api";
 import { session } from "./session";
 import { connectStream, invalidationsFor } from "./stream";
@@ -23,7 +46,7 @@ export const useBoards = (projectId: string | undefined) =>
 export const useQueue = (projectId: string | undefined) =>
   useQuery({
     queryKey: ["queue", projectId],
-    queryFn: () => api<{ needsHuman: Ticket[]; active: Ticket[] }>("GET", `/api/v1/queue?projectId=${projectId}`),
+    queryFn: () => api<{ needsHuman: Ticket[]; active: Ticket[] }>("GET", `/api/v1/queue?projectId=${encodeURIComponent(projectId ?? "")}`),
     enabled: !!projectId,
   });
 
@@ -34,7 +57,7 @@ export const useTicket = (id: string | undefined) =>
   useQuery({ queryKey: ["ticket", id], queryFn: () => api<Ticket>("GET", `/api/v1/tickets/${id}`), enabled: !!id });
 
 export const useTickets = (projectId: string | undefined) =>
-  useQuery({ queryKey: ["tickets", projectId], queryFn: () => api<Ticket[]>("GET", `/api/v1/tickets?projectId=${projectId}`), enabled: !!projectId });
+  useQuery({ queryKey: ["tickets", projectId], queryFn: () => api<Ticket[]>("GET", `/api/v1/tickets?projectId=${encodeURIComponent(projectId ?? "")}`), enabled: !!projectId });
 
 /** The Board's tickets: the same query as `useTickets`, so the two views share one cache entry. */
 export const useBoard = (projectId: string | undefined) => useTickets(projectId);
@@ -42,14 +65,75 @@ export const useBoard = (projectId: string | undefined) => useTickets(projectId)
 export const useEvidenceTypes = () =>
   useQuery({ queryKey: ["evidence-types"], queryFn: () => api<EvidenceType[]>("GET", "/api/v1/evidence-types"), staleTime: Infinity });
 
+export const useEpics = (projectId: string | undefined) =>
+  useQuery({
+    queryKey: ["epics", projectId],
+    queryFn: () => api<Epic[]>("GET", `/api/v1/epics?projectId=${encodeURIComponent(projectId ?? "")}`),
+    enabled: !!projectId,
+  });
+
+export const useTags = (projectId: string | undefined) =>
+  useQuery({ queryKey: ["tags", projectId], queryFn: () => api<Tag[]>("GET", `/api/v1/tags?projectId=${encodeURIComponent(projectId ?? "")}`), enabled: !!projectId });
+
+export const useFields = (projectId: string | undefined) =>
+  useQuery({
+    queryKey: ["fields", projectId],
+    queryFn: () => api<FieldDefinition[]>("GET", `/api/v1/fields?projectId=${encodeURIComponent(projectId ?? "")}`),
+    enabled: !!projectId,
+  });
+
 export const useThread = (ticketId: string | undefined) =>
   useQuery({ queryKey: ["thread", ticketId], queryFn: () => api<ThreadData>("GET", `/api/v1/tickets/${ticketId}/thread`), enabled: !!ticketId });
+
+export interface LinksData {
+  links: TicketLink[];
+  tickets: { id: string; key: string; title: string; laneId: string }[];
+}
+
+export const useLinks = (ticketId: string | undefined) =>
+  useQuery({ queryKey: ["links", ticketId], queryFn: () => api<LinksData>("GET", `/api/v1/tickets/${ticketId}/links`), enabled: !!ticketId });
+
+/**
+ * Adds a link. `ticketId` is the link's *from* side: the server always takes the URL ticket as
+ * `fromId` and the body's `toId` as the other end, so "this ticket blocks that one" and "that
+ * ticket blocks this one" are the same call with `ticketId`/`toId` swapped.
+ */
+export const useAddLink = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { ticketId: string; toId: string; kind: LinkKind }) =>
+      api<TicketLink>("POST", `/api/v1/tickets/${v.ticketId}/links`, { toId: v.toId, kind: v.kind }),
+    onSuccess: (_, v) => {
+      qc.invalidateQueries({ queryKey: ["links", v.ticketId] });
+      qc.invalidateQueries({ queryKey: ["links", v.toId] });
+      qc.invalidateQueries({ queryKey: ["gates", v.ticketId] });
+      qc.invalidateQueries({ queryKey: ["gates", v.toId] });
+      qc.invalidateQueries({ queryKey: ["ticket", v.ticketId] });
+      qc.invalidateQueries({ queryKey: ["ticket", v.toId] });
+    },
+  });
+};
+
+/** Removes a link. `ticketId` is either end: the server accepts any ticket the link touches. */
+export const useRemoveLink = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { ticketId: string; linkId: string }) => api<{ ok: boolean }>("DELETE", `/api/v1/tickets/${v.ticketId}/links/${v.linkId}`),
+    onSuccess: (_, v) => {
+      qc.invalidateQueries({ queryKey: ["links", v.ticketId] });
+      qc.invalidateQueries({ queryKey: ["gates", v.ticketId] });
+      qc.invalidateQueries({ queryKey: ["ticket", v.ticketId] });
+    },
+  });
+};
 
 export interface GateMiss {
   typeId: string;
   name: string;
   need: number;
   have: number;
+  /** What the evidence should show, as written on the lane requirement. */
+  description?: string;
 }
 
 const gatesQueryFn = (ticketId: string) => () => api<Record<string, GateMiss[]>>("GET", `/api/v1/tickets/${ticketId}/gates`);
@@ -109,8 +193,7 @@ export const useCreateProject = () => {
 export const useCreateTicket = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (v: { projectId: string; title: string; boardId?: string; laneId?: string; metadata?: Record<string, unknown> }) =>
-      api<Ticket>("POST", "/api/v1/tickets", v),
+    mutationFn: (v: CreateTicketInput) => api<Ticket>("POST", "/api/v1/tickets", v),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["queue"] });
       qc.invalidateQueries({ queryKey: ["tickets"] });
@@ -172,6 +255,185 @@ export const useSetLaneRequirements = () => {
       qc.invalidateQueries({ queryKey: ["lanes"] });
       qc.invalidateQueries({ queryKey: ["gates"] });
     },
+  });
+};
+
+/**
+ * Human only: adds a lane, placed by the server just before the first done lane. The lane list
+ * feeds the Board, the panel's lane Picker, and every gate, so those caches move too.
+ */
+export const useCreateLane = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { projectId: string } & CreateLaneInput) => {
+      const { projectId, ...body } = v;
+      return api<Lane>("POST", `/api/v1/projects/${projectId}/lanes`, body);
+    },
+    onSuccess: (_, v) => {
+      qc.invalidateQueries({ queryKey: ["lanes", v.projectId] });
+      qc.invalidateQueries({ queryKey: ["gates"] });
+    },
+  });
+};
+
+/** Human only: changes a lane's family or flags (never its name). Done and needs-human flags shape the queue. */
+export const useUpdateLane = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { id: string; projectId: string; patch: UpdateLaneInput }) => api<Lane>("PATCH", `/api/v1/lanes/${v.id}`, v.patch),
+    onSuccess: (_, v) => {
+      qc.invalidateQueries({ queryKey: ["lanes", v.projectId] });
+      qc.invalidateQueries({ queryKey: ["gates"] });
+      qc.invalidateQueries({ queryKey: ["queue"] });
+    },
+  });
+};
+
+/** Human only: sets the full lane order of a project. `ids` lists every lane exactly once. */
+export const useReorderLanes = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { projectId: string; ids: string[] }) => api<Lane[]>("PUT", `/api/v1/projects/${v.projectId}/lanes/order`, { ids: v.ids }),
+    onSuccess: (_, v) => {
+      qc.invalidateQueries({ queryKey: ["lanes", v.projectId] });
+      qc.invalidateQueries({ queryKey: ["gates"] });
+    },
+  });
+};
+
+/** Human only: deletes an empty lane. The server answers 409 (lane_in_use, last_lane, last_done_lane) when it cannot. */
+export const useDeleteLane = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { id: string; projectId: string }) => api<{ ok: boolean }>("DELETE", `/api/v1/lanes/${v.id}`),
+    onSuccess: (_, v) => {
+      qc.invalidateQueries({ queryKey: ["lanes", v.projectId] });
+      qc.invalidateQueries({ queryKey: ["gates"] });
+    },
+  });
+};
+
+/** Human only: adds a global evidence type. `params.threshold` only with kind eval_score. */
+export const useCreateEvidenceType = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: CreateEvidenceTypeInput) => api<EvidenceType>("POST", "/api/v1/evidence-types", v),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["evidence-types"] }),
+  });
+};
+
+/** Human only: deletes an evidence type no lane requires and no evidence row records (409 evidence_type_in_use otherwise). */
+export const useDeleteEvidenceType = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api<{ ok: boolean }>("DELETE", `/api/v1/evidence-types/${id}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["evidence-types"] });
+      qc.invalidateQueries({ queryKey: ["lanes"] });
+      qc.invalidateQueries({ queryKey: ["gates"] });
+    },
+  });
+};
+
+/** Human only: creates an arc (an epic in the API). Arcs show as chips on tickets, so ticket and queue caches move too. */
+export const useCreateEpic = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { projectId: string; name: string; description?: string; family?: Family; color?: string }) => api<Epic>("POST", "/api/v1/epics", v),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["epics"] });
+      qc.invalidateQueries({ queryKey: ["tickets"] });
+      qc.invalidateQueries({ queryKey: ["queue"] });
+    },
+  });
+};
+
+/** Human only: edits, reorders, or archives an arc. A null `color` clears a custom colour back to the family. */
+export const useUpdateEpic = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: {
+      id: string;
+      patch: { name?: string; description?: string | null; family?: Family; color?: string | null; position?: number; archived?: boolean };
+    }) => api<Epic>("PATCH", `/api/v1/epics/${v.id}`, v.patch),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["epics"] });
+      qc.invalidateQueries({ queryKey: ["tickets"] });
+      qc.invalidateQueries({ queryKey: ["queue"] });
+    },
+  });
+};
+
+/** Human only: creates a tag. Tags show as chips on tickets, so ticket and queue caches move too. */
+export const useCreateTag = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { projectId: string; name: string; family?: Family; color?: string }) => api<Tag>("POST", "/api/v1/tags", v),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["tags"] });
+      qc.invalidateQueries({ queryKey: ["tickets"] });
+      qc.invalidateQueries({ queryKey: ["queue"] });
+    },
+  });
+};
+
+/** Human only: renames or recolours a tag. Chips read the tag list, so invalidating it is enough for every view. */
+export const useUpdateTag = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { id: string; projectId: string; patch: { name?: string; family?: Family; color?: string | null } }) =>
+      api<Tag>("PATCH", `/api/v1/tags/${v.id}`, v.patch),
+    onSuccess: (_, v) => qc.invalidateQueries({ queryKey: ["tags", v.projectId] }),
+  });
+};
+
+/** Human only: archives a tag. Values already on tickets stay, but it stops being offered. */
+export const useArchiveTag = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api<Tag>("POST", `/api/v1/tags/${id}/archive`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["tags"] });
+      qc.invalidateQueries({ queryKey: ["tickets"] });
+      qc.invalidateQueries({ queryKey: ["queue"] });
+    },
+  });
+};
+
+/** Human only: creates a custom ticket field definition. */
+export const useCreateField = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: {
+      projectId: string;
+      name: string;
+      key: string;
+      kind: FieldKind;
+      options?: { value: string; label: string }[];
+      required: boolean;
+    }) => api<FieldDefinition>("POST", "/api/v1/fields", v),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["fields"] }),
+  });
+};
+
+/** Human only: edits, reorders, or archives a field definition. */
+export const useUpdateField = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: {
+      id: string;
+      patch: { name?: string; options?: { value: string; label: string }[]; required?: boolean; position?: number; archived?: boolean };
+    }) => api<FieldDefinition>("PATCH", `/api/v1/fields/${v.id}`, v.patch),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["fields"] }),
+  });
+};
+
+/** Human only: archives a field definition. Values already stored stay, just hidden. */
+export const useArchiveField = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api<FieldDefinition>("POST", `/api/v1/fields/${id}/archive`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["fields"] }),
   });
 };
 

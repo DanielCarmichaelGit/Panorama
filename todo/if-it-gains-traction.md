@@ -1,4 +1,4 @@
-# To do if Panorama gains traction
+# To do if Boomerang gains traction
 
 Deliberately cut from v1. Revisit when real users ask.
 
@@ -12,7 +12,6 @@ Deliberately cut from v1. Revisit when real users ask.
 - [ ] Invoicing and a fuller time-tracking suite (v1 has per-ticket timers only)
 - [ ] Plugin marketplace
 - [ ] Dark theme (the "Night shift" direction from the brand harness)
-- [ ] Node-canvas automation editor as an alternative to the sentence builder
 - [ ] Postgres as an alternative database
-- [ ] Live isometric Panorama view: lanes as platforms, tickets as clickable blocks
+- [ ] Live isometric Boomerang view: lanes as platforms, tickets as clickable blocks
 - [ ] Scripted rule actions (sandboxed) beyond the fixed action list

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { ARGON_FAST, deriveKeys, GENESIS, hashEvent, signText } from "@panorama/core";
-import { latestCheckpoint } from "@panorama/db";
+import { ARGON_FAST, deriveKeys, GENESIS, hashEvent, signText } from "@boomerang/core";
+import { latestCheckpoint } from "@boomerang/db";
 import { client, setupApp } from "./test/helpers";
 
 type Setup = Awaited<ReturnType<typeof setupApp>>;

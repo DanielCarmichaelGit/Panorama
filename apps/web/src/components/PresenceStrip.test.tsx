@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
-import type { Actor } from "@panorama/core";
+import type { Actor } from "@boomerang/core";
 import { agentFamily } from "./AgentCard";
 import { presenceLine } from "./PresenceStrip";
 

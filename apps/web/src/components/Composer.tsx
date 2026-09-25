@@ -54,19 +54,34 @@ function extensions(placeholder: string) {
  * the caller uploads them once the ticket is created; `onChange` fires on every edit with the
  * editor's live markdown (and whatever `attachmentIds` this composer has inserted itself, which
  * in draft mode stays empty since it never uploads).
+ *
+ * `content`, draft mode only, seeds the editor with existing markdown (e.g. editing a ticket's
+ * success criteria rather than writing a fresh description): the Markdown extension parses it
+ * the same way it parses a paste, so a plain markdown string is all a caller ever needs to pass.
+ *
+ * `label` names the editor for assistive tech (its `aria-label`) and `placeholder` is the empty
+ * state's prompt; both default to what the mode implies (a Description or a Comment). A dialog
+ * with two draft composers side by side (the New ticket dialog's Description and Success
+ * criteria) needs both so a screen reader can tell them apart.
  */
 export function Composer({
   ticketId,
   onPosted,
   mode = "post",
+  content = "",
   onChange,
   onFilesAdded,
+  label = mode === "draft" ? "Description" : "Comment",
+  placeholder = mode === "draft" ? "Describe the work" : "Write a comment",
 }: {
   ticketId?: string;
   onPosted?: () => void;
   mode?: "post" | "draft";
+  content?: string;
   onChange?: (markdown: string, attachmentIds: string[]) => void;
   onFilesAdded?: (files: File[]) => void;
+  label?: string;
+  placeholder?: string;
 }) {
   const addComment = useAddComment();
   const [uploads, setUploads] = useState<UploadItem[]>([]);
@@ -107,11 +122,11 @@ export function Composer({
   }
 
   const editor = useEditor({
-    extensions: extensions(mode === "draft" ? "Describe the work" : "Write a comment"),
-    content: "",
+    extensions: extensions(placeholder),
+    content,
     onUpdate: mode === "draft" ? ({ editor: ed }) => onChange?.(composerMarkdown(ed), attachmentIds) : undefined,
     editorProps: {
-      attributes: { role: "textbox", "aria-multiline": "true", "aria-label": mode === "draft" ? "Description" : "Comment" },
+      attributes: { role: "textbox", "aria-multiline": "true", "aria-label": label },
       handleDrop(_view, event) {
         const files = event.dataTransfer?.files;
         if (!files || files.length === 0) return false;
@@ -133,9 +148,14 @@ export function Composer({
     },
   });
 
+  // Tests reach the editor through the window: `__panEditor` is the most recently mounted one,
+  // `__panEditors[label]` a specific one when several composers share a page.
   useEffect(() => {
-    if (import.meta.env.MODE === "test") (window as any).__panEditor = editor;
-  }, [editor]);
+    if (import.meta.env.MODE !== "test") return;
+    const w = window as any;
+    w.__panEditor = editor;
+    w.__panEditors = { ...(w.__panEditors ?? {}), [label]: editor };
+  }, [editor, label]);
 
   async function submit() {
     if (mode === "draft" || !ticketId) return;

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { ARGON_FAST, deriveKeys, signText } from "@panorama/core";
+import { ARGON_FAST, deriveKeys, signText } from "@boomerang/core";
 import { unlockFlow, type Anchor, type AnchorStore } from "./unlock";
 
 const SALT = "00".repeat(16);

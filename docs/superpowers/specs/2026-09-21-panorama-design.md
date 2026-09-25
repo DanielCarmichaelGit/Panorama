@@ -1,10 +1,10 @@
-# Panorama system design
+# Boomerang system design
 
 Date: 2026-09-21. Status: approved and frozen by the owner on 2026-09-21. Amend through the owner. UI brief: `BRIEF.md`. Visual system: `BRAND.md`.
 
 ## 1. Purpose
 
-A free, MIT licensed, self-hosted project manager for one developer supervising several AI agents. Agents connect from outside through REST or MCP. Work moves only by deterministic rules. A ticket enters a gated lane only with the evidence that lane requires. Panorama contains no agents and makes no LLM calls.
+A free, MIT licensed, self-hosted project manager for one developer supervising several AI agents. Agents connect from outside through REST or MCP. Work moves only by deterministic rules. A ticket enters a gated lane only with the evidence that lane requires. Boomerang contains no agents and makes no LLM calls.
 
 ## 2. Architecture
 
@@ -20,7 +20,7 @@ TypeScript monorepo, pnpm workspaces.
 
 All open source libraries: Fastify, zod, croner (cron), `@noble/ed25519`, `hash-wasm` (Argon2id), TipTap (editor, markdown input rules), dnd-kit (board), DOMPurify, Phosphor icons, Vitest, Playwright. The Timeline is a custom SVG component.
 
-Run: `pnpm start` or `docker compose up`. Default bind `127.0.0.1:4400`. Data directory `~/.panorama/` holds `panorama.db` and `files/`.
+Run: `pnpm start` or `docker compose up`. Default bind `127.0.0.1:4400`. Data directory `~/.boomerang/` holds `panorama.db` and `files/`.
 
 ## 3. Vocabulary and data model
 
@@ -29,7 +29,7 @@ Project, Board, Epic, Ticket, Lane, Flag, Evidence, Rule, Trigger, Agent.
 - `projects`: id, key (ticket prefix), name.
 - `boards`: id, project, name, description, colour family, position. A board groups tickets inside a project the way an epic categorises them, and a ticket belongs to exactly one board; every project gets a default board named after the project. Lanes stay per project, so every board shares the same lanes. Rules are project-scoped and may match on board, so an automation can move a ticket between boards or react to work on any board. (Added by the owner on 2026-09-24; its wider role arrives with the rule engine.)
 - `epics`: id, project, name, colour family, description.
-- `lanes`: id, project, name, position, colour family, `sets_needs_human` (bool), `evidence_requirements` (list of `{type, params, count}`), `is_done` (bool).
+- `lanes`: id, project, name, position, colour family, `sets_needs_human` (bool), `evidence_requirements` (list of `{typeId, count, description?}`; the description says what the evidence should show, "A markdown file explaining what needs to be done", trimmed, at most 2000 characters, absent when empty, and it travels with the gate: each missing entry in the gates report and in the 422 refusal carries it so an agent knows what to provide), `is_done` (bool).
 - `tickets`: id, project, board, number, title, epic, lane, position, flags (set: `needs_human`, `blocked`, plus user defined), assignee actor, start date, due date, `metadata` (free JSON for agents), created and updated.
 - `ticket_links`: from, to, kind (`blocks`, `relates`). Drives Timeline dependencies.
 - `comments`: id, ticket, actor, body markdown, created. Append-only.
@@ -77,7 +77,7 @@ A canvas of 2px dots at 50 percent density. Glyph pixels form a mask. Each frame
 
 Rules are data: `{event, conditions[], actions[]}`. Deterministic, no scripting in v1.
 
-- **Events**: `ticket.created`, `ticket.moved` (from, to), `ticket.flag_set`, `ticket.flag_cleared`, `evidence.added` (type, result), `comment.added`, `timer.started`, `timer.stopped`, `cost.added`, `trigger.fired`, `ticket.due_passed`.
+- **Events**: `ticket.created`, `ticket.updated` (carries `changed[]`, the names of the fields whose value actually differs from the row, not the keys the client sent; `tagIds` included when tags were added or removed, compared as a set; `fields` compared per key), `ticket.moved` (from, to), `ticket.flag_set`, `ticket.flag_cleared`, `ticket.linked`, `ticket.unlinked` (from, to, kind), `evidence.added` (type, result), `comment.added`, `epic.created`, `epic.updated` (changed[]), `tag.created`, `tag.archived`, `field.created`, `field.updated` (changed[]), `field.archived` (milestone 2b), `tag.updated` (changed[]), `lane.requirements_set` (requirements), `lane.created`, `lane.updated` (changed[]), `lane.reordered` (ids), `lane.deleted`, `evidence_type.created`, `evidence_type.deleted` (milestone 2c; evidence types are global, so those two carry no projectId; every `changed[]` is computed by comparing the patch against the row, so a no-op save appends the event with an empty list), `timer.started`, `timer.stopped`, `cost.added`, `trigger.fired`, `ticket.due_passed`.
 - **Conditions**: all must hold. Fields: project, epic, lane, flag, actor, evidence type and result, metadata path, with operators `is`, `is_not`, `in`, `gte`, `lte`, `exists`.
 - **Actions**: `move_to_lane`, `set_flag`, `clear_flag` (not `needs_human` when human set), `assign`, `add_comment` (system actor), `emit_webhook` (destination, payload template), `create_ticket` (from template), `start_timer`, `stop_timer`.
 - The owner's example: event `ticket.moved` to Ready for Production, condition epic is X, action `set_flag needs_human`.
@@ -119,8 +119,8 @@ Each milestone is its own implementation plan and ends in something usable.
 
 1. **Foundation**: monorepo, database, setup and unlock, human key, agent registration and approval, signing, hash chain, projects, lanes, tickets, REST, app shell with sidebar, Queue, ticket panel, lock screen.
 2. **Evidence and conversation**: comments and composer, attachments, evidence types, lane gates, flags, Board with gated drag, SSE, presence-first home, boards.
-2b. **Ticket model and creation** (added by the owner on 2026-09-24): epics and dependencies pulled forward from milestone 4, tags, success criteria, per-project custom fields, a Settings view (fields, tags, epics, lanes and requirements, evidence types), a full-screen create dialog, and a shared Picker replacing every native select.
-3. **Automation**: rule engine, rule builder, triggers, missed-run catch-up, outbox, webhooks, run logs, MCP server.
+2b. **Ticket model and creation** (added by the owner on 2026-09-24): epics and dependencies pulled forward from milestone 4, tags, success criteria, per-project custom fields (kinds text, number, date, select, checkbox, and file, whose value is `{attachmentId}` naming one of the ticket's own attachments; the server refuses any other ticket's, and a required file field is not checked at create since the attachment can only exist after the ticket does: the panel's "Needs fields" chip flags it instead), a Settings view (fields, tags, epics, lanes and requirements, evidence types), a full-screen create dialog, and a shared Picker replacing every native select.
+3. **Automation**: rule engine, the Automations canvas, triggers, missed-run catch-up, outbox, webhooks, run logs, MCP server, timers and cost reporting (pulled forward from milestone 4 at the owner's request). The Automations view (sidebar item after Board) is a visual flow canvas, not a form: a rule is drawn as nodes on a canvas, When (event), If (conditions), Then (actions), connected left to right, with no code anywhere. Built on `@xyflow/react` (MIT) with every node, edge, handle, and control drawn in Boomerang's own tokens and families (event nodes sky, condition nodes lilac, action nodes mint, refusals coral), pan and zoom, snap to an 8px grid, keyboard reachable node creation and deletion, a node palette that lists exactly the events, conditions, and actions the rule engine supports, and a run log beside the canvas. The canvas serialises to the same `{event, conditions[], actions[]}` rule data the engine runs, so nothing on the canvas can express what the engine cannot do. (Owner decision on 2026-09-24; the sentence builder from the milestone 2 plan is dropped.)
 4. **Planning and accounting**: epics, Timeline, dependencies, timers, cost entries and rollups, Agents view totals.
 5. **Hardening and release**: encryption toggle, recovery code and motion-noise canvas, chain export, Docker, docs, README, contribution guide, seed demo project.
 

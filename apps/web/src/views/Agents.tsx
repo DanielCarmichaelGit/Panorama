@@ -1,11 +1,15 @@
 import { useState } from "react";
 import { useOutletContext } from "react-router-dom";
 import { CaretDown, CaretRight } from "@phosphor-icons/react";
-import { AGENT_ACTIONS, type Actor, type AgentAction, type Lane, type Project, type Scopes } from "@panorama/core";
-import { LaneScene } from "../lib/iso";
+import { AGENT_ACTIONS, type Actor, type AgentAction, type Lane, type Project, type Scopes } from "@boomerang/core";
+import { BoomerangScene } from "../lib/iso";
 import { useAgents, useApproveAgent, useProjects, useRevokeAgent, useTickets } from "../lib/hooks";
+import { isPickerOpen } from "../lib/keys";
 import { useFocusTrap } from "../lib/useFocusTrap";
 import { AgentCard } from "../components/AgentCard";
+import { Picker } from "../components/Picker";
+
+const ALL_PROJECTS_ID = "*";
 
 export const shortKey = (hex: string) => `${hex.slice(0, 8)}…${hex.slice(-4)}`;
 
@@ -40,8 +44,20 @@ function ApproveDialog({ agent, onClose }: { agent: Actor; onClose: () => void }
   function toggleAction(a: AgentAction) {
     setActions((cur) => (cur.includes(a) ? cur.filter((x) => x !== a) : [...cur, a]));
   }
-  function toggleProject(id: string) {
-    setProjectIds((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]));
+
+  // "All projects" (id "*") and specific projects are mutually exclusive: picking "*" clears
+  // the rest, and picking a specific project while "*" was active drops "*" in favour of it,
+  // since having both selected at once would be meaningless (specific ids are redundant once
+  // every project is already included).
+  const projectValues = allProjects ? [ALL_PROJECTS_ID] : projectIds;
+  function changeProjects(ids: string[]) {
+    if (ids.includes(ALL_PROJECTS_ID) && !allProjects) {
+      setAllProjects(true);
+      setProjectIds([]);
+      return;
+    }
+    setAllProjects(false);
+    setProjectIds(ids.filter((id) => id !== ALL_PROJECTS_ID));
   }
 
   async function submit(e: React.FormEvent) {
@@ -57,18 +73,29 @@ function ApproveDialog({ agent, onClose }: { agent: Actor; onClose: () => void }
 
   return (
     <div className="modal-back" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="modal card" role="dialog" aria-modal="true" aria-labelledby="approve-title" ref={dialogRef}>
+      <div
+        className="modal card"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="approve-title"
+        ref={dialogRef}
+        onKeyDown={(e) => {
+          // Dismissing the open Projects Picker's popover must not also cancel the whole dialog
+          // underneath it; useFocusTrap's own Escape handler runs after this one but only sees
+          // the Picker already closed, so it has to be stopped here instead.
+          if (e.key === "Escape" && isPickerOpen()) e.stopPropagation();
+        }}
+      >
         <form onSubmit={submit}>
           <h2 id="approve-title">Approve {agent.name}</h2>
-          <div className="field">
-            <label>Projects</label>
-            <label className="checkbox-row"><input type="checkbox" checked={allProjects} onChange={(e) => setAllProjects(e.target.checked)} /> All projects</label>
-            {!allProjects && list.map((p) => (
-              <label className="checkbox-row" key={p.id}>
-                <input type="checkbox" checked={projectIds.includes(p.id)} onChange={() => toggleProject(p.id)} /> {p.name}
-              </label>
-            ))}
-          </div>
+          <Picker
+            id="approve-projects"
+            label="Projects"
+            multi
+            options={[{ id: ALL_PROJECTS_ID, label: "All projects" }, ...list.map((p) => ({ id: p.id, label: p.name }))]}
+            values={projectValues}
+            onChange={changeProjects}
+          />
           <div className="field">
             <label>Actions</label>
             {AGENT_ACTIONS.map((a) => (
@@ -166,7 +193,7 @@ export function Agents() {
     return (
       <div className="view">
         <div className="empty">
-          <LaneScene />
+          <BoomerangScene />
           <h1>No agents yet</h1>
           <p className="muted">Register an agent key to see it here.</p>
           <p className="muted">An agent registers itself with its own key. You approve it here before it can touch anything.</p>

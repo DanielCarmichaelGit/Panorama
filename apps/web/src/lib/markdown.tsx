@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import createDOMPurify from "dompurify";
-import { marked, type Token, type Tokens } from "marked";
-import type { Attachment } from "@panorama/core";
+import { Renderer, marked, type Token, type Tokens } from "marked";
+import type { Attachment } from "@boomerang/core";
 import { ATTACHMENT_ID_PATTERN, fetchBlob, isValidAttachmentId, useAttachmentUrl } from "./attachments";
 
 export type Block = { kind: "rich"; html: string } | { kind: "html"; html: string };
@@ -11,7 +11,28 @@ export type Block = { kind: "rich"; html: string } | { kind: "html"; html: strin
 // works in the browser, without caring which one provides `window` first.
 let purifier: ReturnType<typeof createDOMPurify> | null = null;
 function purify(): ReturnType<typeof createDOMPurify> {
-  if (!purifier) purifier = createDOMPurify(window);
+  if (!purifier) {
+    purifier = createDOMPurify(window);
+    // The one interactive element markdown is allowed to render is a task-list checkbox
+    // (`- [ ]` / `- [x]`), and even that only as an inert marker: any other <input> (a fake text
+    // field, a password box) is stripped outright, and a checkbox itself is stripped down to just
+    // the attributes that make it one, so a comment or a ticket's success criteria can never
+    // smuggle in a functional form control or an attribute DOMPurify's own checks missed.
+    purifier.addHook("uponSanitizeElement", (node, data) => {
+      if (data.tagName !== "input") return;
+      const el = node as Element;
+      // Only the checkboxes marked's own renderer stamped (see taskRenderer) survive: a literal
+      // <input> in a comment or criteria body, checkbox or not, is removed.
+      if (el.getAttribute("type") !== "checkbox" || !/^\d+$/.test(el.getAttribute("data-task-index") ?? "")) {
+        el.remove();
+        return;
+      }
+      const keep = new Set(["type", "checked", "disabled", "data-task-index"]);
+      for (const attr of Array.from(el.attributes)) {
+        if (!keep.has(attr.name)) el.removeAttribute(attr.name);
+      }
+    });
+  }
   return purifier;
 }
 
@@ -79,6 +100,43 @@ function neutralizeInvalidAttachmentTokens(tokens: Token[] | undefined): void {
   }
 }
 
+type TaskToken = Token & { task?: boolean; taskIndex?: number; items?: TaskToken[]; tokens?: TaskToken[]; text?: string };
+
+/**
+ * Numbers every task-list item in the order lib/criteria.ts counts them (document order, nested
+ * lists and blockquotes included, code blocks never), so a rendered checkbox can name the item it
+ * toggles. Any authored `data-task-index` in raw html is renamed on the way, so only the renderer
+ * below can produce one.
+ */
+function stampTaskIndices(tokens: TaskToken[] | undefined, counter = { n: 0 }): void {
+  if (!tokens) return;
+  for (const t of tokens) {
+    if (t.type === "list") {
+      for (const item of t.items ?? []) {
+        if (item.task) item.taskIndex = counter.n++;
+        stampTaskIndices(item.tokens, counter);
+      }
+      continue;
+    }
+    if (t.type === "html" && typeof t.text === "string") t.text = t.text.replace(/data-task-index/gi, "data-authored-task-index");
+    stampTaskIndices(t.tokens, counter);
+  }
+}
+
+// marked renders a task item's checkbox from inside listitem(); the item's stamped index is held
+// across that one call so checkbox() can write it onto the input.
+let pendingTaskIndex: number | undefined;
+const taskRenderer = new Renderer();
+taskRenderer.listitem = function (item: Tokens.ListItem) {
+  pendingTaskIndex = (item as TaskToken).taskIndex;
+  return Renderer.prototype.listitem.call(this, item);
+};
+taskRenderer.checkbox = function ({ checked }: Tokens.Checkbox) {
+  const index = pendingTaskIndex;
+  pendingTaskIndex = undefined;
+  return `<input ${checked ? 'checked="" ' : ""}disabled="" type="checkbox"${index === undefined ? "" : ` data-task-index="${index}"`}>`;
+};
+
 /**
  * Sanitises a rendered "rich" markdown block (headings, paragraphs, lists, inline html, etc).
  * Comment bodies are stored verbatim on the server (no server-side sanitisation), so this is
@@ -90,7 +148,10 @@ function neutralizeInvalidAttachmentTokens(tokens: Token[] | undefined): void {
 function sanitizeRich(html: string): string {
   return purify().sanitize(html, {
     USE_PROFILES: { html: true },
-    FORBID_TAGS: ["style", "iframe", "object", "embed", "form", "input", "script"],
+    // "input" is allowed through here (unlike a plain FORBID_TAGS entry would), and the
+    // uponSanitizeElement hook above immediately cuts it back down to an inert checkbox or
+    // removes it outright.
+    FORBID_TAGS: ["style", "iframe", "object", "embed", "form", "script"],
     FORBID_ATTR: ["style"],
     ALLOWED_URI_REGEXP,
   });
@@ -130,6 +191,7 @@ export function renderBlocks(md: string): Block[] {
   // turns tokens into an HTML string. See neutralizeInvalidAttachmentTokens for why this must
   // happen at the token level rather than as a post-sanitise string transform.
   neutralizeInvalidAttachmentTokens(tokensList);
+  stampTaskIndices(tokensList as TaskToken[]);
   const blocks: Block[] = [];
   let group: Token[] = [];
 
@@ -138,7 +200,7 @@ export function renderBlocks(md: string): Block[] {
     // marked.parser looks at `tokens.links` (reference-style link definitions) alongside the
     // token array itself, so it must be carried onto each sliced-out group.
     (group as Tokens.Generic[] & { links?: typeof tokensList.links }).links = tokensList.links;
-    const html = marked.parser(group as Tokens.Generic[], { gfm: true });
+    const html = marked.parser(group as Tokens.Generic[], { gfm: true, renderer: taskRenderer });
     blocks.push({ kind: "rich", html: sanitizeRich(html) });
     group = [];
   };

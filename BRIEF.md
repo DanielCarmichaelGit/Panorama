@@ -1,13 +1,13 @@
-# Panorama: BRIEF.md
+# Boomerang: BRIEF.md
 
 UI build brief. The system design (data model, API, rule engine, security) lives in `docs/superpowers/specs/2026-09-21-panorama-design.md`. The visual system lives in `BRAND.md` and is locked.
 
 ## Project
 
-Panorama is a free, open source, self-hosted project manager that any AI agent plugs into. Work moves only by explicit rules, and a ticket cannot close without evidence. Panorama ships no agents and makes no LLM calls.
+Boomerang is a free, open source, self-hosted project manager that any AI agent plugs into. Work moves only by explicit rules, and a ticket cannot close without evidence. Boomerang ships no agents and makes no LLM calls.
 
 - **User:** one developer supervising several AI agents on their own machine.
-- **The one action:** open Panorama, see what needs a human, clear it.
+- **The one action:** open Boomerang, see what needs a human, clear it.
 - **Register:** technical, in the crisp pastel isometric sense of the chosen reference. Calm and precise, never cute.
 - **License:** MIT. No paid dependencies, no telemetry, no network calls except webhooks the user configures.
 

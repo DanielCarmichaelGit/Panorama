@@ -1,6 +1,6 @@
 # Contribution provenance
 
-Every change to Panorama should carry a verifiable record of how it was
+Every change to Boomerang should carry a verifiable record of how it was
 made: who, with which tool, with what stated intent, through which
 prompts and tool calls, producing which diff. A reviewer, human or AI, can
 then check that the record presented matches what was committed, and read

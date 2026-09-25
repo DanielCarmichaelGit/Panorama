@@ -1,45 +1,73 @@
 import { randomUUID } from "node:crypto";
-import type { Ticket } from "@panorama/core";
+import type { FieldValue, Ticket } from "@boomerang/core";
 import type { DB } from "./open";
 import { getLane, listBoards, listLanes } from "./projects";
+import { listTicketTags, setTicketTags } from "./tags";
+import { getTicketFields, setTicketFields } from "./fields";
 
 const SELECT = "select t.*, p.key as project_key from tickets t join projects p on p.id = t.project_id";
 const HAS_FLAG = "exists(select 1 from json_each(t.flags) where value = ?)";
-const toTicket = (r: any): Ticket => ({ id: r.id, projectId: r.project_id, boardId: r.board_id, number: r.number, key: `${r.project_key}-${r.number}`, title: r.title, laneId: r.lane_id, position: r.position,
+const toTicket = (db: DB, r: any): Ticket => ({ id: r.id, projectId: r.project_id, boardId: r.board_id, number: r.number, key: `${r.project_key}-${r.number}`, title: r.title, laneId: r.lane_id, position: r.position,
+  epicId: r.epic_id, tagIds: listTicketTags(db, r.id), successCriteria: r.success_criteria, fields: getTicketFields(db, r.id),
   flags: JSON.parse(r.flags), assigneeId: r.assignee_id, startDate: r.start_date, dueDate: r.due_date, metadata: JSON.parse(r.metadata), archived: !!r.archived, createdAt: r.created_at, updatedAt: r.updated_at });
 const nextPosition = (db: DB, laneId: string): number => ((db.prepare("select max(position) m from tickets where lane_id = ?").get(laneId) as { m: number | null }).m ?? 0) + 1;
 
-export const getTicket = (db: DB, id: string): Ticket | undefined => { const r = db.prepare(`${SELECT} where t.id = ?`).get(id); return r ? toTicket(r) : undefined; };
+export const getTicket = (db: DB, id: string): Ticket | undefined => { const r = db.prepare(`${SELECT} where t.id = ?`).get(id); return r ? toTicket(db, r) : undefined; };
 
-export function createTicket(db: DB, input: { projectId: string; title: string; boardId?: string; laneId?: string; assigneeId?: string | null; metadata?: Record<string, unknown> }, now: string): Ticket {
+export function createTicket(
+  db: DB,
+  input: { projectId: string; title: string; boardId?: string; laneId?: string; assigneeId?: string | null; metadata?: Record<string, unknown>;
+    epicId?: string | null; tagIds?: string[]; successCriteria?: string; fields?: Record<string, FieldValue> },
+  now: string
+): Ticket {
   const boardId = input.boardId ?? listBoards(db, input.projectId)[0].id;
   const laneId = input.laneId ?? listLanes(db, input.projectId)[0].id;
   const { n } = db.prepare("update projects set next_number = next_number + 1 where id = ? returning next_number - 1 as n").get(input.projectId) as { n: number };
   const id = randomUUID();
-  db.prepare("insert into tickets(id, project_id, board_id, number, title, lane_id, position, assignee_id, metadata, created_at, updated_at) values(?,?,?,?,?,?,?,?,?,?,?)")
-    .run(id, input.projectId, boardId, n, input.title, laneId, nextPosition(db, laneId), input.assigneeId ?? null, JSON.stringify(input.metadata ?? {}), now, now);
+  db.prepare("insert into tickets(id, project_id, board_id, number, title, lane_id, position, assignee_id, metadata, epic_id, success_criteria, created_at, updated_at) values(?,?,?,?,?,?,?,?,?,?,?,?,?)")
+    .run(id, input.projectId, boardId, n, input.title, laneId, nextPosition(db, laneId), input.assigneeId ?? null, JSON.stringify(input.metadata ?? {}), input.epicId ?? null, input.successCriteria ?? "", now, now);
+  if (input.tagIds) setTicketTags(db, id, input.tagIds);
+  if (input.fields) setTicketFields(db, id, input.fields);
   return getTicket(db, id)!;
 }
 
-export function listTickets(db: DB, f: { projectId?: string; boardId?: string; laneId?: string; flag?: string }): Ticket[] {
+/** The little the dependency gate needs of every ticket in a project (archived included, since
+ *  a link to an archived ticket still counts): no tags, fields, or metadata are loaded. */
+export const listTicketRefs = (db: DB, projectId: string): { id: string; key: string; laneId: string }[] =>
+  (db.prepare("select t.id, t.number, t.lane_id, p.key as project_key from tickets t join projects p on p.id = t.project_id where t.project_id = ? order by t.number").all(projectId) as any[])
+    .map((r) => ({ id: r.id, key: `${r.project_key}-${r.number}`, laneId: r.lane_id }));
+
+export function listTickets(db: DB, f: { projectId?: string; boardId?: string; laneId?: string; flag?: string; epicId?: string; tagId?: string }): Ticket[] {
   const where = ["t.archived = 0"]; const args: unknown[] = [];
   if (f.projectId) { where.push("t.project_id = ?"); args.push(f.projectId); }
   if (f.boardId) { where.push("t.board_id = ?"); args.push(f.boardId); }
   if (f.laneId) { where.push("t.lane_id = ?"); args.push(f.laneId); }
   if (f.flag) { where.push(HAS_FLAG); args.push(f.flag); }
-  return db.prepare(`${SELECT} where ${where.join(" and ")} order by t.lane_id, t.position`).all(...args).map(toTicket);
+  if (f.epicId) { where.push("t.epic_id = ?"); args.push(f.epicId); }
+  if (f.tagId) { where.push("exists(select 1 from ticket_tags tt where tt.ticket_id = t.id and tt.tag_id = ?)"); args.push(f.tagId); }
+  return db.prepare(`${SELECT} where ${where.join(" and ")} order by t.lane_id, t.position`).all(...args).map((r) => toTicket(db, r));
 }
 
-export function updateTicket(db: DB, id: string, patch: { title?: string; startDate?: string | null; dueDate?: string | null; assigneeId?: string | null; metadata?: Record<string, unknown> }, now: string): Ticket {
+export function updateTicket(
+  db: DB,
+  id: string,
+  patch: { title?: string; startDate?: string | null; dueDate?: string | null; assigneeId?: string | null; metadata?: Record<string, unknown>;
+    epicId?: string | null; tagIds?: string[]; successCriteria?: string; fields?: Record<string, FieldValue> },
+  now: string
+): Ticket {
   const cols: Record<string, unknown> = {};
   if (patch.title !== undefined) cols.title = patch.title;
   if (patch.startDate !== undefined) cols.start_date = patch.startDate;
   if (patch.dueDate !== undefined) cols.due_date = patch.dueDate;
   if (patch.assigneeId !== undefined) cols.assignee_id = patch.assigneeId;
   if (patch.metadata !== undefined) cols.metadata = JSON.stringify(patch.metadata);
+  if (patch.epicId !== undefined) cols.epic_id = patch.epicId;
+  if (patch.successCriteria !== undefined) cols.success_criteria = patch.successCriteria;
   cols.updated_at = now;
   const keys = Object.keys(cols);
   db.prepare(`update tickets set ${keys.map((k) => `${k} = ?`).join(", ")} where id = ?`).run(...keys.map((k) => cols[k]), id);
+  if (patch.tagIds !== undefined) setTicketTags(db, id, patch.tagIds);
+  if (patch.fields !== undefined) setTicketFields(db, id, patch.fields);
   return getTicket(db, id)!;
 }
 
@@ -74,7 +102,7 @@ export function archiveTicket(db: DB, id: string, now: string): Ticket {
 }
 
 export function queue(db: DB, projectId: string): { needsHuman: Ticket[]; active: Ticket[] } {
-  const needsHuman = db.prepare(`${SELECT} where t.archived = 0 and t.project_id = ? and ${HAS_FLAG} order by t.updated_at desc, t.number desc`).all(projectId, "needs_human").map(toTicket);
-  const active = db.prepare(`${SELECT} join lanes l on l.id = t.lane_id where t.archived = 0 and t.project_id = ? and t.assignee_id is not null and l.is_done = 0 and not ${HAS_FLAG} order by t.updated_at desc`).all(projectId, "needs_human").map(toTicket);
+  const needsHuman = db.prepare(`${SELECT} where t.archived = 0 and t.project_id = ? and ${HAS_FLAG} order by t.updated_at desc, t.number desc`).all(projectId, "needs_human").map((r) => toTicket(db, r));
+  const active = db.prepare(`${SELECT} join lanes l on l.id = t.lane_id where t.archived = 0 and t.project_id = ? and t.assignee_id is not null and l.is_done = 0 and not ${HAS_FLAG} order by t.updated_at desc`).all(projectId, "needs_human").map((r) => toTicket(db, r));
   return { needsHuman, active };
 }

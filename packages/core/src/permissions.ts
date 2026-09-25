@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 export const AGENT_ACTIONS = ["read", "ticket.create", "ticket.update", "ticket.move", "flag.set", "comment.add", "evidence.add", "attachment.add"] as const;
-export const HUMAN_ACTIONS = ["project.create", "board.create", "agent.approve", "agent.revoke", "ticket.archive", "flag.clear_needs_human", "checkpoint.create", "lock", "lane.edit", "evidence.signoff"] as const;
+export const HUMAN_ACTIONS = ["project.create", "board.create", "agent.approve", "agent.revoke", "ticket.archive", "flag.clear_needs_human", "checkpoint.create", "lock", "lane.edit", "evidence.signoff", "epic.edit", "tag.edit", "field.edit", "criteria.edit", "evidence.edit", "link.remove"] as const;
 export type AgentAction = (typeof AGENT_ACTIONS)[number];
 export type Action = AgentAction | (typeof HUMAN_ACTIONS)[number];
 

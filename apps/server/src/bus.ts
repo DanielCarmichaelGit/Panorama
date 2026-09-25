@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import type { ChainEvent } from "@panorama/core";
+import type { ChainEvent } from "@boomerang/core";
 import { inScope } from "./auth";
 import type { Ctx } from "./context";
 
@@ -81,6 +81,8 @@ function visibleTo(actor: FastifyRequest["actor"], ev: StreamEvent): boolean {
   if (actor.kind === "human") return true;
   const projectId = payloadProjectId(ev.payload);
   if (projectId) return inScope(actor, projectId);
+  // Evidence types are shared by every project, so an agent in any project may see them change.
+  if (ev.type.startsWith("evidence_type.")) return true;
   // agent.revoked is not relayed here: closeFor ends that agent's stream directly with its own
   // "revoked" frame instead, so the connection doesn't linger to also receive the business event.
   if (ev.type === "agent.approved") {

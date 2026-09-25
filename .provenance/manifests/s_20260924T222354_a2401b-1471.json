@@ -1,0 +1,19 @@
+{
+  "sessionId": "s_20260924T222354_a2401b",
+  "actor": "Daniel Carmichael",
+  "tool": "claude-code",
+  "intent": "unstated",
+  "head": "d3734daee75ad75b0e00ce63de658904f030383a3db827c7c38706327ffff350",
+  "count": 1471,
+  "diffHash": "86040757da800e6ecd9ef7153a1be72c67a3ee7d57519d3e48339fdb28b191e8",
+  "files": [
+    "apps/server/src/thread.test.ts",
+    "docs/superpowers/specs/2026-09-21-panorama-design.md",
+    "packages/core/src/evidence.test.ts",
+    "packages/core/src/evidence.ts",
+    "packages/core/src/schemas.ts",
+    "packages/db/src/thread.test.ts"
+  ],
+  "base": "03f1a7d4457b5c365325478eb832c509e8eed408",
+  "ts": "2026-09-25T02:13:34.623Z"
+}

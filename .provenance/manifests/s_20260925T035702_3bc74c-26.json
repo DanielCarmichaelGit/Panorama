@@ -1,0 +1,14 @@
+{
+  "sessionId": "s_20260925T035702_3bc74c",
+  "actor": "Daniel Carmichael",
+  "tool": "cli",
+  "intent": "milestone 2c server final review wave",
+  "head": "3d0ed3046c1b029845228a23216d8670e6f2aef4d274ea2df2127a5eb68daeba",
+  "count": 26,
+  "diffHash": "59d9c050e760cf4696e99686db9b487b474b24f21a860a710667c5c10e6e632d",
+  "files": [
+    "scripts/demo-agent.ts"
+  ],
+  "base": "50bd32829e1656b30cca1d56350a6aebfae6fb31",
+  "ts": "2026-09-25T04:06:26.387Z"
+}

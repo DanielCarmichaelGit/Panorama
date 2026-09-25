@@ -1,0 +1,24 @@
+{
+  "sessionId": "s_20260924T222354_a2401b",
+  "actor": "Daniel Carmichael",
+  "tool": "claude-code",
+  "intent": "unstated",
+  "head": "ecd7a188491cfcc8d8e17f0aa6fbec0d39b0c6d93700f52d3e9feb0db0b2baf3",
+  "count": 1761,
+  "diffHash": "9c329bfdf28cbe1fa6ad45cc86ba76e9da00170a3e36a5d38a4a765100a95024",
+  "files": [
+    "BRAND.md",
+    "apps/web/src/components/BrandMark.tsx",
+    "apps/web/src/components/settings/primitives.tsx",
+    "apps/web/src/lib/iso.test.ts",
+    "apps/web/src/lib/iso.test.tsx",
+    "apps/web/src/lib/iso.tsx",
+    "apps/web/src/styles/app.css",
+    "apps/web/src/views/Agents.tsx",
+    "apps/web/src/views/FirstProject.tsx",
+    "apps/web/src/views/LockScreen.tsx",
+    "apps/web/src/views/Queue.tsx"
+  ],
+  "base": "cfb6613b84f3441532e843441b2c0fc22f9bb618",
+  "ts": "2026-09-25T03:44:20.209Z"
+}

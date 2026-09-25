@@ -1,4 +1,4 @@
-# Panorama: BRAND.md
+# Boomerang: BRAND.md
 
 Locked visual system. Re-read before every visual change. Values marked **exact** were tuned and are not to be rounded or swapped for framework palette names.
 
@@ -53,12 +53,12 @@ The teal appears on: the primary button, the active sidebar item, the focus ring
 
 ## Composition
 
-Panorama is an application shell with views. It is carried by structure.
+Boomerang is an application shell with views. It is carried by structure.
 
 One sentence: sidebar on the left, view header top left with a mono count beside the title, content rows running the full width, the open ticket as a right-hand panel, and nothing centred except empty states.
 
 - Sidebar: 232px, collapses to 56px (icons with tooltips). Holds project switcher, Queue, Board, Timeline, Epics, Automations, Agents, Settings, and the chain and lock status at the bottom.
-- Ticket detail: right panel, 520px, pushes content at widths above 1280px and overlays below. Full page route also exists for deep links.
+- Ticket detail: right panel, 60vw (never under 520px or over 1100px), pushes content at widths above 1600px and overlays below. Full page route also exists for deep links. (Widened by the owner on 2026-09-24.)
 - Gutter: 16px below 860px, 28px above, on everything that touches the content edge. Exact.
 - Below 860px the sidebar becomes a bottom sheet behind a menu button and rows drop agent and token fields.
 
@@ -94,20 +94,20 @@ Live changes (an agent moves a ticket while you watch): the row or card slides t
 | Ticket row, board card | hover | lift 1px, shadow, border to `--muted` |
 | Ticket row, board card | click or Enter | opens ticket panel |
 | Board card | drag | lifts 2px with shadow, origin slot shows dashed `--line`; illegal drop lanes dim to 50% and show the missing evidence on hover |
-| Chip (state, epic) | click | filters the current view by that value |
+| Chip (state, epic) | | chips on rows and cards are read-only; filtering lives in the Board header's Pickers (chip-click filtering deferred) |
 | Timeline bar | drag ends, drag body | resize or move dates, snaps to day |
 | Timer control | click | toggles, mono time ticks each second |
 | Text selection | | `--accent` background, `--on-accent` text |
 
 If a behaviour is not here it does not exist. If a control has no behaviour it does not ship.
 
-## Signature element: the isometric block scene
+## Signature element: the boomerang
 
-- **What:** lanes drawn as stone platforms with tickets as pastel blocks stacked on them, one block coral. All isometric art in the product comes from one `isoBox(x, y, z, w, d, h, family)` helper using the three face tones above, 30 degree projection, flat fills, no gradients, no outlines, no glow.
-- **Where:** lock screen, empty states (Queue, Board, Epics, Automations, Agents), first-run onboarding, epic cover thumbnails. Never inside working views that have data.
-- **What it does:** on the lock screen and onboarding, blocks settle from 12px above their resting place, 500ms each on the entrance curve, staggered 40ms, once. Everywhere else it is static.
-- **At 375px:** scales to container width, capped at 240px tall.
-- **Reduced motion:** the resting frame, which is the finished illustration.
+- **What:** a boomerang mid-swoop with a tail of wind, drawn as an extruded isometric solid in the sky family (top face `sky-top`, the visible sides `sky-left` and `sky-right`, a 1px `sky-ink` silhouette), a coral band on the leading tip, a ground shadow (`stone-top` at 60 percent) and three to five tapered wind streaks in `stone-left` and `sky-top` at 30 to 60 percent following its arc. All of it comes from one component, `BoomerangScene` in `apps/web/src/lib/iso.tsx`, built from a few plan points through the same 30 degree projection as the block helpers, so faces share their edges exactly. Flat fills, no gradients, no glow.
+- **Where:** lock screen, first-run onboarding, empty states (Queue, Agents, the Settings lists) and the sidebar mark. Never inside working views that have data.
+- **What it does:** on mount it eases in along its arc from 24px behind its resting point, 500ms on the entrance curve, and the streaks fade in staggered 40ms, once. Transform and opacity only. No loop.
+- **Sizes:** scales to its container: up to 420px on the lock screen, 96px in Settings empty rows and 20px in the sidebar mark, where `compact` keeps two streaks and drops the shadow.
+- **Reduced motion:** the resting frame, which is the finished illustration; no animation class is applied.
 
 ## Icons
 
@@ -118,3 +118,19 @@ Phosphor, regular weight, 18px in the sidebar and 16px inline, imported per glyp
 - Light theme only in v1. A dark theme is on the traction list.
 - The motion-noise recovery display cannot honour reduced motion, because motion is how it works. It offers an explicit "show as plain text" button instead.
 - The sidebar width snaps when it collapses or expands; only its contents animate. Animating the shell's `grid-template-columns` relaid out the whole page on every frame, which is the layout thrash BRAND rules out, so the track changes in one step and the nav items and labels carry the motion.
+
+## Colour presets
+
+Arcs and tags may carry a custom colour beside their family. The colour control offers, in this order: the five family swatches, then these seven presets, then Custom (a native colour input with a hex field).
+
+| Preset | Hex |
+|---|---|
+| 1 | `#F6C1B4` |
+| 2 | `#F7D9A8` |
+| 3 | `#F2E8A6` |
+| 4 | `#BFE8CF` |
+| 5 | `#B9DDF5` |
+| 6 | `#D3C8F4` |
+| 7 | `#F2C4E0` |
+
+Pastel hues at family-top lightness, chosen so they read as siblings of the five families. A family swatch sets the family and clears the colour; a preset or custom colour sets the colour and keeps the family as the fallback. Any custom colour is rendered through two derived tokens, computed in code (`apps/web/src/lib/color.ts`): `top`, the colour mixed toward white until its relative luminance is at least 0.78, and `ink`, the colour darkened until it reads at 4.5:1 or better against that top. The selected swatch shows a 2px `--accent` ring.

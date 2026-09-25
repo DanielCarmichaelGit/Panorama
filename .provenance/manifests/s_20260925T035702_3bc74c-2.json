@@ -1,0 +1,33 @@
+{
+  "sessionId": "s_20260925T035702_3bc74c",
+  "actor": "Daniel Carmichael",
+  "tool": "cli",
+  "intent": "milestone 2c server final review wave",
+  "head": "dd1c67c561bf7a9dbba28775d993bb50a635513ad97ca2ef9ccef05c9afa8668",
+  "count": 2,
+  "diffHash": "f2d7db3f4f3a949cd4078b61163c89c174bef1f64b205c943290cb26ce876bdf",
+  "files": [
+    "apps/server/src/dataDir.test.ts",
+    "apps/server/src/dataDir.ts",
+    "apps/server/src/gate.ts",
+    "apps/server/src/main.ts",
+    "apps/server/src/model.test.ts",
+    "apps/server/src/routes/attachments.ts",
+    "apps/server/src/routes/common.ts",
+    "apps/server/src/routes/model.ts",
+    "apps/server/src/routes/projects.ts",
+    "apps/server/src/routes/thread.ts",
+    "apps/server/src/routes/tickets.ts",
+    "docs/superpowers/specs/2026-09-24-ticket-model-design.md",
+    "packages/core/src/fields.test.ts",
+    "packages/core/src/fields.ts",
+    "packages/core/src/permissions.test.ts",
+    "packages/core/src/permissions.ts",
+    "packages/core/src/schemas.test.ts",
+    "packages/core/src/schemas.ts",
+    "packages/db/src/db.test.ts",
+    "packages/db/src/tickets.ts"
+  ],
+  "base": "3e2df85b71fa5a38d99f61d0a5733ed68555ed7c",
+  "ts": "2026-09-25T03:57:02.546Z"
+}

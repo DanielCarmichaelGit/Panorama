@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { verifyChain } from "@panorama/core";
-import { listEvents } from "@panorama/db";
+import { verifyChain } from "@boomerang/core";
+import { listEvents } from "@boomerang/db";
 import { agentIn, setupApp } from "./test/helpers";
 
 async function world() {
@@ -66,6 +66,43 @@ describe("comments and lanes", () => {
     expect((await w.agent("POST", `/api/v1/tickets/${w.t.id}/move`, { laneId: ready.id })).status).toBe(422);
     const types = listEvents(w.app.ctx.db!).map((e) => e.type);
     expect(types).toContain("lane.requirements_set"); expect(verifyChain(listEvents(w.app.ctx.db!)).ok).toBe(true);
+  });
+  it("carries a requirement's description through PUT, GET lanes, the gates report, and the 422 on move and create", async () => {
+    const w = await world();
+    const ready = w.lane("Ready");
+    const description = "Show that the issue reproduces or that the intended behaviour does not happen";
+    const put = await w.human("PUT", `/api/v1/lanes/${ready.id}/requirements`, { requirements: [
+      { typeId: "et_test_run", count: 1, description: `  ${description}  ` },
+      { typeId: "et_file", count: 1, description: "" },
+    ] });
+    expect(put.status).toBe(200);
+    expect(put.json.evidenceRequirements).toEqual([{ typeId: "et_test_run", count: 1, description }, { typeId: "et_file", count: 1 }]);
+
+    const lanes = (await w.agent("GET", `/api/v1/projects/${w.project.id}/lanes`)).json;
+    expect(lanes.find((l: any) => l.id === ready.id).evidenceRequirements[0].description).toBe(description);
+
+    const gates = (await w.agent("GET", `/api/v1/tickets/${w.t.id}/gates`)).json;
+    expect(gates[ready.id]).toEqual([
+      { typeId: "et_test_run", name: "Test run", need: 1, have: 0, description },
+      { typeId: "et_file", name: "File", need: 1, have: 0 },
+    ]);
+
+    const move = await w.agent("POST", `/api/v1/tickets/${w.t.id}/move`, { laneId: ready.id });
+    expect(move.status).toBe(422);
+    expect(move.json.error.details.missing).toEqual([
+      { typeId: "et_test_run", name: "Test run", need: 1, have: 0, description },
+      { typeId: "et_file", name: "File", need: 1, have: 0 },
+    ]);
+    const create = await w.agent("POST", "/api/v1/tickets", { projectId: w.project.id, title: "straight into Ready", laneId: ready.id });
+    expect(create.status).toBe(422);
+    expect(create.json.error.details.missing[0]).toMatchObject({ typeId: "et_test_run", description });
+
+    const ev = listEvents(w.app.ctx.db!).find((e) => e.type === "lane.requirements_set");
+    expect((ev!.payload as any).requirements[0].description).toBe(description);
+
+    const tooLong = await w.human("PUT", `/api/v1/lanes/${ready.id}/requirements`, { requirements: [{ typeId: "et_test_run", count: 1, description: "x".repeat(2001) }] });
+    expect(tooLong.status).toBe(400);
+    expect(tooLong.json.error.code).toBe("validation");
   });
   it("refuses lane requirements that name the same evidence type twice", async () => {
     const w = await world(); const ready = w.lane("Ready");

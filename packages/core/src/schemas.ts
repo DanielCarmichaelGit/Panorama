@@ -1,9 +1,14 @@
 import { z } from "zod";
 import { Scopes, ScopesSchema } from "./permissions";
-import type { LaneRequirement } from "./evidence";
+import { EVIDENCE_KINDS, type LaneRequirement } from "./evidence";
+import { FieldValueSchema, type FieldValue } from "./fields";
 
 export const FAMILIES = ["coral", "sky", "lilac", "mint", "stone"] as const;
 export type Family = (typeof FAMILIES)[number];
+
+/** A colour is `#rrggbb`, any case on the way in, lower-case once stored (milestone 2c). */
+export const HEX_COLOR = /^#[0-9a-f]{6}$/i;
+export const normalizeColor = (color: string): string => color.toLowerCase();
 
 export const DEFAULT_LANES: { name: string; family: Family; setsNeedsHuman: boolean; isDone: boolean; evidenceRequirements: LaneRequirement[] }[] = [
   { name: "Backlog", family: "stone", setsNeedsHuman: false, isDone: false, evidenceRequirements: [] },
@@ -32,6 +37,28 @@ export interface Lane { id: string; projectId: string; name: string; position: n
 
 export interface Board { id: string; projectId: string; name: string; description: string | null; family: Family; position: number; createdAt: string }
 
+export interface Epic {
+  id: string;
+  projectId: string;
+  name: string;
+  description: string | null;
+  family: Family;
+  color: string | null;
+  position: number;
+  archived: boolean;
+  createdAt: string;
+}
+
+export interface Tag {
+  id: string;
+  projectId: string;
+  name: string;
+  family: Family;
+  color: string | null;
+  archived: boolean;
+  createdAt: string;
+}
+
 export interface Ticket {
   id: string;
   projectId: string;
@@ -41,6 +68,10 @@ export interface Ticket {
   title: string;
   laneId: string;
   position: number;
+  epicId: string | null;
+  tagIds: string[];
+  successCriteria: string;
+  fields: Record<string, FieldValue>;
   flags: string[];
   assigneeId: string | null;
   startDate: string | null;
@@ -70,6 +101,7 @@ const hex32 = hex(32);
 const hex64 = hex(64);
 const hex128 = hex(128);
 const dateField = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable();
+const colorField = z.string().regex(HEX_COLOR, "a colour is #rrggbb").transform(normalizeColor);
 
 const argonSchema = z.object({
   iterations: z.number().int().positive(),
@@ -110,7 +142,11 @@ export const CreateTicketInput = z.object({
   boardId: z.string().min(1).optional(),
   laneId: z.string().min(1).optional(),
   metadata: z.record(z.unknown()).optional(),
-});
+  epicId: z.string().min(1).optional(),
+  tagIds: z.array(z.string().min(1)).max(20).optional(),
+  successCriteria: z.string().max(20000).optional(),
+  fields: z.record(FieldValueSchema).optional(),
+}).strict();
 export type CreateTicketInput = z.infer<typeof CreateTicketInput>;
 
 export const CreateBoardInput = z
@@ -123,6 +159,91 @@ export const CreateBoardInput = z
   .strict();
 export type CreateBoardInput = z.infer<typeof CreateBoardInput>;
 
+export const CreateEpicInput = z
+  .object({
+    projectId: z.string().min(1),
+    name: z.string().min(1).max(80),
+    description: z.string().max(500).optional(),
+    family: z.enum(FAMILIES).optional(),
+    color: colorField.optional(),
+  })
+  .strict();
+export type CreateEpicInput = z.infer<typeof CreateEpicInput>;
+
+export const UpdateEpicInput = z
+  .object({
+    name: z.string().min(1).max(80).optional(),
+    description: z.string().max(500).nullable().optional(),
+    family: z.enum(FAMILIES).optional(),
+    color: colorField.nullable().optional(),
+    archived: z.boolean().optional(),
+    position: z.number().int().min(0).optional(),
+  })
+  .strict()
+  .refine((o) => Object.keys(o).length > 0, "empty patch");
+export type UpdateEpicInput = z.infer<typeof UpdateEpicInput>;
+
+const tagName = z.string().trim().min(1).max(40).regex(/^[\p{L}\p{N}][\p{L}\p{N} _-]*$/u);
+
+export const CreateTagInput = z
+  .object({
+    projectId: z.string().min(1),
+    name: tagName,
+    family: z.enum(FAMILIES).optional(),
+    color: colorField.optional(),
+  })
+  .strict();
+export type CreateTagInput = z.infer<typeof CreateTagInput>;
+
+export const UpdateTagInput = z
+  .object({
+    name: tagName.optional(),
+    family: z.enum(FAMILIES).optional(),
+    color: colorField.nullable().optional(),
+  })
+  .strict()
+  .refine((o) => Object.keys(o).length > 0, "empty patch");
+export type UpdateTagInput = z.infer<typeof UpdateTagInput>;
+
+// Lanes are added and removed, never renamed: the name is what agents match on and what the
+// event history records, so UpdateLaneInput carries no name (milestone 2c, spec section 3).
+export const CreateLaneInput = z
+  .object({
+    name: z.string().trim().min(1).max(40),
+    family: z.enum(FAMILIES).default("stone"),
+    setsNeedsHuman: z.boolean().default(false),
+    isDone: z.boolean().default(false),
+  })
+  .strict();
+export type CreateLaneInput = z.infer<typeof CreateLaneInput>;
+
+export const UpdateLaneInput = z
+  .object({
+    family: z.enum(FAMILIES).optional(),
+    setsNeedsHuman: z.boolean().optional(),
+    isDone: z.boolean().optional(),
+  })
+  .strict()
+  .refine((o) => Object.keys(o).length > 0, "empty patch");
+export type UpdateLaneInput = z.infer<typeof UpdateLaneInput>;
+
+export const LaneOrderInput = z.object({ ids: z.array(z.string().min(1)).min(1) }).strict();
+export type LaneOrderInput = z.infer<typeof LaneOrderInput>;
+
+// A threshold only means something to eval_score (see evaluateEvidence), so any other kind
+// refuses one rather than silently carrying a number the gate would never read.
+export const CreateEvidenceTypeInput = z
+  .object({
+    name: z.string().min(1).max(60),
+    kind: z.enum(EVIDENCE_KINDS),
+    params: z.object({ threshold: z.number().min(0).max(1).optional() }).strict().optional(),
+    humanOnly: z.boolean().default(false),
+    needsAttachment: z.boolean().default(false),
+  })
+  .strict()
+  .refine((o) => o.params?.threshold === undefined || o.kind === "eval_score", { message: "Only an eval_score type takes a threshold", path: ["params", "threshold"] });
+export type CreateEvidenceTypeInput = z.infer<typeof CreateEvidenceTypeInput>;
+
 export const UpdateTicketInput = z
   .object({
     title: z.string().min(1).max(200).optional(),
@@ -130,6 +251,10 @@ export const UpdateTicketInput = z
     dueDate: dateField.optional(),
     assigneeId: z.string().min(1).nullable().optional(),
     metadata: z.record(z.unknown()).optional(),
+    epicId: z.string().min(1).nullable().optional(),
+    tagIds: z.array(z.string().min(1)).max(20).optional(),
+    successCriteria: z.string().max(20000).optional(),
+    fields: z.record(FieldValueSchema).optional(),
   })
   .strict()
   .refine((o) => Object.keys(o).length > 0, "empty patch");
@@ -169,9 +294,12 @@ export const AddEvidenceInput = z
   .strict();
 export type AddEvidenceInput = z.infer<typeof AddEvidenceInput>;
 
-export const LaneRequirementsInput = z
-  .object({
-    requirements: z.array(z.object({ typeId: z.string().min(1), count: z.number().int().min(1).max(20) }).strict()).max(20),
-  })
-  .strict();
+// An empty or whitespace-only description is the same as none: it is dropped rather than
+// stored as "", so a requirement either has something to show or has no key at all.
+const laneRequirement = z
+  .object({ typeId: z.string().min(1), count: z.number().int().min(1).max(20), description: z.string().trim().max(2000).optional() })
+  .strict()
+  .transform(({ description, ...r }): LaneRequirement => (description ? { ...r, description } : r));
+
+export const LaneRequirementsInput = z.object({ requirements: z.array(laneRequirement).max(20) }).strict();
 export type LaneRequirementsInput = z.infer<typeof LaneRequirementsInput>;

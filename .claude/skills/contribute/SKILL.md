@@ -1,11 +1,11 @@
 ---
 name: contribute
-description: Use before changing anything in the Panorama repository: the working contract, vocabulary, test and commit rules, and how provenance is recorded and verified.
+description: Use before changing anything in the Boomerang repository: the working contract, vocabulary, test and commit rules, and how provenance is recorded and verified.
 ---
 
-# Contributing to Panorama
+# Contributing to Boomerang
 
-Panorama is a free, self-hosted project manager that any AI agent plugs into through REST or MCP. Work moves only by explicit rules, and a ticket cannot close without evidence. Panorama ships no agents and makes no LLM calls; it is the record of what other agents did, not an agent itself.
+Boomerang is a free, self-hosted project manager that any AI agent plugs into through REST or MCP. Work moves only by explicit rules, and a ticket cannot close without evidence. Boomerang ships no agents and makes no LLM calls; it is the record of what other agents did, not an agent itself.
 
 ## Read first, in order
 

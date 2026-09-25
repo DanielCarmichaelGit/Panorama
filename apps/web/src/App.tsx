@@ -8,6 +8,7 @@ import { Agents } from "./views/Agents";
 import { Board } from "./views/Board";
 import { LockScreen } from "./views/LockScreen";
 import { Queue } from "./views/Queue";
+import { Settings } from "./views/Settings";
 import { Shell } from "./views/Shell";
 import type { ChainState } from "./views/unlock";
 
@@ -33,7 +34,7 @@ export function App() {
   if (status.isError) {
     return (
       <main style={{ padding: "var(--gutter)" }}>
-        <p className="error">Cannot reach the Panorama server. Is it running?</p>
+        <p className="error">Cannot reach the Boomerang server. Is it running?</p>
         <button className="btn" onClick={() => status.refetch()}>Try again</button>
       </main>
     );
@@ -49,6 +50,7 @@ export function App() {
           <Route path="/" element={<Queue />} />
           <Route path="/board" element={<Board />} />
           <Route path="/agents" element={<Agents />} />
+          <Route path="/settings" element={<Settings />} />
           <Route path="/t/:id" element={<Queue />} />
           <Route path="/board/t/:id" element={<Board />} />
         </Route>

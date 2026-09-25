@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { ARGON_FAST, deriveKeys, verifyChain } from "@panorama/core";
-import { listEvents } from "@panorama/db";
+import { ARGON_FAST, deriveKeys, verifyChain } from "@boomerang/core";
+import { listEvents } from "@boomerang/db";
 import { client, setupApp } from "./test/helpers";
 
 async function world() {
   const s = await setupApp();
-  const { project, lanes } = (await s.human("POST", "/api/v1/projects", { name: "Panorama", key: "PAN" })).json;
+  const { project, lanes } = (await s.human("POST", "/api/v1/projects", { name: "Boomerang", key: "PAN" })).json;
   const ak = await deriveKeys("agent-secret-xyz", "11".repeat(16), ARGON_FAST);
   const id = (await s.app.inject({ method: "POST", url: "/api/v1/agents/register", payload: { name: "worker", publicKey: ak.publicKeyHex } })).json().id;
   await s.human("POST", `/api/v1/agents/${id}/approve`, { scopes: { projects: [project.id], actions: ["read", "ticket.create", "ticket.update", "ticket.move", "flag.set", "evidence.add"] } });
@@ -80,7 +80,7 @@ describe("tickets", () => {
     const w = await world();
     const boards = (await w.human("GET", `/api/v1/projects/${w.project.id}/boards`)).json;
     expect(boards).toHaveLength(1);
-    expect(boards[0].name).toBe("Panorama");
+    expect(boards[0].name).toBe("Boomerang");
     expect(boards[0].family).toBe("stone");
 
     const t = (await w.human("POST", "/api/v1/tickets", { projectId: w.project.id, title: "on default board" })).json;
@@ -174,5 +174,30 @@ describe("tickets", () => {
     const badActor = await w.human("PATCH", `/api/v1/tickets/${t.id}`, { assigneeId: "no-such-actor" });
     expect(badActor.status).toBe(400);
     expect(badActor.json.error.code).toBe("validation");
+  });
+
+  it("still lets a ticket with no dependency links move into Done normally (the gate's blocked_by extension has no effect when nothing links to it)", async () => {
+    const w = await world();
+    const done = w.lanes.find((l: any) => l.name === "Done");
+    const t = (await w.human("POST", "/api/v1/tickets", { projectId: w.project.id, title: "solo" })).json;
+    await w.human("POST", "/api/v1/evidence", { ticketId: t.id, typeId: "et_human_signoff", payload: {} });
+    const moved = await w.human("POST", `/api/v1/tickets/${t.id}/move`, { laneId: done.id });
+    expect(moved.status).toBe(200);
+    expect(moved.json.laneId).toBe(done.id);
+  });
+
+  it("reports gate blockers for a done lane through GET /tickets/:id/gates even before evidence is satisfied", async () => {
+    const w = await world();
+    const done = w.lanes.find((l: any) => l.name === "Done");
+    const a = (await w.human("POST", "/api/v1/tickets", { projectId: w.project.id, title: "A" })).json;
+    const b = (await w.human("POST", "/api/v1/tickets", { projectId: w.project.id, title: "B" })).json;
+    await w.human("POST", `/api/v1/tickets/${a.id}/links`, { toId: b.id, kind: "blocks" });
+    const gates = (await w.human("GET", `/api/v1/tickets/${b.id}/gates`)).json;
+    expect(gates[done.id]).toEqual(
+      expect.arrayContaining([
+        { typeId: "et_human_signoff", name: "Human sign-off", need: 1, have: 0 },
+        { typeId: "blocked_by", name: `Blocked by ${a.key}`, need: 1, have: 0 },
+      ]),
+    );
   });
 });

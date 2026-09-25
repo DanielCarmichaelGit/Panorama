@@ -1,8 +1,8 @@
-# Panorama Milestone 1: Foundation Implementation Plan
+# Boomerang Milestone 1: Foundation Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** A running Panorama where the owner sets a password, unlocks an encrypted database, approves an agent key, and clears a Needs Human ticket from the Queue, with every change signed and hash chained.
+**Goal:** A running Boomerang where the owner sets a password, unlocks an encrypted database, approves an agent key, and clears a Needs Human ticket from the Queue, with every change signed and hash chained.
 
 **Architecture:** pnpm TypeScript monorepo. `packages/core` is pure logic (canonical JSON, hash chain, key derivation, request signing, permissions, zod schemas). `packages/db` wraps SQLite (SQLCipher compatible) with SQL migrations and repositories. `apps/server` is a Fastify REST API that verifies a signature on every request and appends a chained event inside the same transaction as each change. `apps/web` is a React and Vite app that derives the human key from the password in the browser and signs its own requests.
 
@@ -15,7 +15,7 @@
 - License MIT. Every dependency must be MIT, ISC, BSD, Apache 2.0, or OFL. No paid services, no telemetry, no runtime network requests except to the local server.
 - Node `>=20`. All packages `"type": "module"`, TypeScript `moduleResolution: "Bundler"`, workspace packages export `src/index.ts` directly (no build step for libraries).
 - Every package and app has a `tsconfig.json` containing `{ "extends": "../../tsconfig.base.json", "include": ["src"] }`.
-- Server binds `127.0.0.1:4400`. Data directory is `process.env.PANORAMA_DATA_DIR` or `~/.panorama`.
+- Server binds `127.0.0.1:4400`. Data directory is `process.env.BOOMERANG_DATA_DIR` or `~/.boomerang`.
 - No em dashes and no en dashes in any string, comment, commit message, or document.
 - UI uses only the tokens in `BRAND.md` as CSS custom properties. No framework palette names, no CSS framework. Fonts come from the `@fontsource` packages, bundled locally.
 - M1 sidebar shows only views that exist: Queue and Agents. Controls for unbuilt features are absent.
@@ -93,17 +93,17 @@ cd /Users/danielcarmichael/panorama && git init -b main && git checkout -b m1-fo
 `package.json`:
 ```json
 {
-  "name": "panorama",
+  "name": "boomerang",
   "private": true,
   "type": "module",
   "license": "MIT",
   "engines": { "node": ">=20" },
   "scripts": {
     "test": "vitest run",
-    "dev:server": "pnpm --filter @panorama/server dev",
-    "dev:web": "pnpm --filter @panorama/web dev",
-    "build:web": "pnpm --filter @panorama/web build",
-    "start": "pnpm build:web && pnpm --filter @panorama/server start",
+    "dev:server": "pnpm --filter @boomerang/server dev",
+    "dev:web": "pnpm --filter @boomerang/web dev",
+    "build:web": "pnpm --filter @boomerang/web build",
+    "start": "pnpm build:web && pnpm --filter @boomerang/server start",
     "e2e": "playwright test"
   },
   "devDependencies": { "typescript": "^5.5.0", "vitest": "^2.1.0", "tsx": "^4.19.0", "@types/node": "^20.14.0" },
@@ -132,12 +132,12 @@ dist
 test-results
 playwright-report
 ```
-`LICENSE`: the standard MIT text, `Copyright (c) 2026 Panorama contributors`.
-`README.md`: title `# Panorama`, the one-sentence purpose from spec section 1, and `pnpm install && pnpm start`.
+`LICENSE`: the standard MIT text, `Copyright (c) 2026 Boomerang contributors`.
+`README.md`: title `# Boomerang`, the one-sentence purpose from spec section 1, and `pnpm install && pnpm start`.
 
 `packages/core/package.json`:
 ```json
-{ "name": "@panorama/core", "version": "0.1.0", "private": true, "type": "module", "main": "src/index.ts", "types": "src/index.ts",
+{ "name": "@boomerang/core", "version": "0.1.0", "private": true, "type": "module", "main": "src/index.ts", "types": "src/index.ts",
   "dependencies": { "@noble/ed25519": "^2.1.0", "@noble/hashes": "^1.5.0", "hash-wasm": "^4.11.0", "zod": "^3.23.0" } }
 ```
 `packages/core/tsconfig.json`: `{ "extends": "../../tsconfig.base.json", "include": ["src"] }`
@@ -466,8 +466,8 @@ export function can(actor: { kind: "human" | "agent"; status: string; scopes: Sc
 
 `package.json`:
 ```json
-{ "name": "@panorama/db", "version": "0.1.0", "private": true, "type": "module", "main": "src/index.ts", "types": "src/index.ts",
-  "dependencies": { "@panorama/core": "workspace:*", "better-sqlite3-multiple-ciphers": "^11.5.0" },
+{ "name": "@boomerang/db", "version": "0.1.0", "private": true, "type": "module", "main": "src/index.ts", "types": "src/index.ts",
+  "dependencies": { "@boomerang/core": "workspace:*", "better-sqlite3-multiple-ciphers": "^11.5.0" },
   "devDependencies": { "@types/better-sqlite3": "^7.6.11" } }
 ```
 `src/types.d.ts`:
@@ -482,7 +482,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { verifyChain } from "@panorama/core";
+import { verifyChain } from "@boomerang/core";
 import * as d from "./index";
 
 const NOW = "2026-09-21T10:00:00.000Z";
@@ -519,14 +519,14 @@ describe("events", () => {
 describe("projects and tickets", () => {
   it("creates a project with the six default lanes", () => {
     const { db } = fresh();
-    const { project, lanes } = d.createProject(db, { name: "Panorama", key: "PAN" }, NOW);
+    const { project, lanes } = d.createProject(db, { name: "Boomerang", key: "PAN" }, NOW);
     expect(lanes.map((l) => l.name)).toEqual(["Backlog", "Ready", "In Progress", "Eval", "Ready for Production", "Done"]);
     expect(lanes[4].setsNeedsHuman).toBe(true);
     expect(d.listLanes(db, project.id)).toHaveLength(6);
   });
   it("numbers tickets per project, defaults to the first lane, and flags on entry to a needs-human lane", () => {
     const { db } = fresh();
-    const { project, lanes } = d.createProject(db, { name: "Panorama", key: "PAN" }, NOW);
+    const { project, lanes } = d.createProject(db, { name: "Boomerang", key: "PAN" }, NOW);
     const t1 = d.createTicket(db, { projectId: project.id, title: "One" }, NOW);
     const t2 = d.createTicket(db, { projectId: project.id, title: "Two" }, NOW);
     expect([t1.key, t2.key, t1.laneId]).toEqual(["PAN-1", "PAN-2", lanes[0].id]);
@@ -622,7 +622,7 @@ export function migrate(db: DB): void {
 ```ts
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { ArgonParams } from "@panorama/core";
+import type { ArgonParams } from "@boomerang/core";
 export interface Config { kdfSalt: string; argon: ArgonParams; humanPublicKey: string; encryption: boolean }
 export function readConfig(dir: string): Config | null {
   const f = join(dir, "config.json");
@@ -637,7 +637,7 @@ export function writeConfig(dir: string, c: Config): void {
 ```
 `events.ts`:
 ```ts
-import { GENESIS, hashEvent, type ChainEvent } from "@panorama/core";
+import { GENESIS, hashEvent, type ChainEvent } from "@boomerang/core";
 import type { DB } from "./open";
 const toEvent = (r: any): ChainEvent => ({ seq: r.seq, prevHash: r.prev_hash, hash: r.hash, actorId: r.actor_id, type: r.type, payload: JSON.parse(r.payload), createdAt: r.created_at });
 
@@ -662,7 +662,7 @@ export const addCheckpoint = (db: DB, c: { seq: number; headHash: string; signat
 ```
 `actors.ts`:
 ```ts
-import type { Actor, Scopes } from "@panorama/core";
+import type { Actor, Scopes } from "@boomerang/core";
 import type { DB } from "./open";
 const toActor = (r: any): Actor => ({ id: r.id, kind: r.kind, name: r.name, publicKey: r.public_key, scopes: r.scopes ? JSON.parse(r.scopes) : null, status: r.status, lastSeen: r.last_seen, createdAt: r.created_at });
 export const insertActor = (db: DB, a: Actor): void => { db.prepare("insert into actors(id, kind, name, public_key, scopes, status, last_seen, created_at) values(?,?,?,?,?,?,?,?)").run(a.id, a.kind, a.name, a.publicKey, a.scopes ? JSON.stringify(a.scopes) : null, a.status, a.lastSeen, a.createdAt); };
@@ -675,7 +675,7 @@ export const countPending = (db: DB): number => (db.prepare("select count(*) c f
 `projects.ts`:
 ```ts
 import { randomUUID } from "node:crypto";
-import { DEFAULT_LANES, type Lane, type Project } from "@panorama/core";
+import { DEFAULT_LANES, type Lane, type Project } from "@boomerang/core";
 import type { DB } from "./open";
 const toProject = (r: any): Project => ({ id: r.id, key: r.key, name: r.name, createdAt: r.created_at });
 const toLane = (r: any): Lane => ({ id: r.id, projectId: r.project_id, name: r.name, position: r.position, family: r.family, setsNeedsHuman: !!r.sets_needs_human, isDone: !!r.is_done });
@@ -694,7 +694,7 @@ export const getLane = (db: DB, id: string): Lane | undefined => { const r = db.
 `tickets.ts`:
 ```ts
 import { randomUUID } from "node:crypto";
-import type { Ticket } from "@panorama/core";
+import type { Ticket } from "@boomerang/core";
 import type { DB } from "./open";
 import { getLane, listLanes } from "./projects";
 
@@ -786,16 +786,16 @@ export function queue(db: DB, projectId: string): { needsHuman: Ticket[]; active
 - [ ] **Step 1: Package**
 
 ```json
-{ "name": "@panorama/server", "version": "0.1.0", "private": true, "type": "module",
+{ "name": "@boomerang/server", "version": "0.1.0", "private": true, "type": "module",
   "scripts": { "dev": "tsx watch src/main.ts", "start": "tsx src/main.ts" },
-  "dependencies": { "@panorama/core": "workspace:*", "@panorama/db": "workspace:*", "fastify": "^5.0.0", "@fastify/static": "^8.0.0", "zod": "^3.23.0" } }
+  "dependencies": { "@boomerang/core": "workspace:*", "@boomerang/db": "workspace:*", "fastify": "^5.0.0", "@fastify/static": "^8.0.0", "zod": "^3.23.0" } }
 ```
 
 - [ ] **Step 2: Write the failing test** `lifecycle.test.ts`
 
 ```ts
 import { describe, expect, it } from "vitest";
-import { ARGON_FAST, signRequest } from "@panorama/core";
+import { ARGON_FAST, signRequest } from "@boomerang/core";
 import { buildApp } from "./app";
 import { humanKeys, tempDir } from "./test/helpers";
 
@@ -862,15 +862,15 @@ export function installErrorHandler(app: FastifyInstance): void {
 ```
 `context.ts`:
 ```ts
-import type { Config, DB } from "@panorama/db";
+import type { Config, DB } from "@boomerang/db";
 export interface Ctx { dataDir: string; db: DB | null; config: Config | null; now: () => Date; nonces: Map<string, number> }
 ```
 `routes/lifecycle.ts`:
 ```ts
 import { join } from "node:path";
 import type { FastifyInstance } from "fastify";
-import { SetupInput, UnlockInput, verifyRequest } from "@panorama/core";
-import { appendEvent, insertActor, migrate, openDatabase, writeConfig } from "@panorama/db";
+import { SetupInput, UnlockInput, verifyRequest } from "@boomerang/core";
+import { appendEvent, insertActor, migrate, openDatabase, writeConfig } from "@boomerang/db";
 import type { Ctx } from "../context";
 import { HttpError } from "../errors";
 
@@ -886,7 +886,7 @@ export function lifecycleRoutes(app: FastifyInstance, ctx: Ctx): void {
   });
 
   app.post("/api/v1/setup", async (req) => {
-    if (ctx.config) throw new HttpError(409, "already_setup", "Panorama is already set up");
+    if (ctx.config) throw new HttpError(409, "already_setup", "Boomerang is already set up");
     const input = SetupInput.parse(req.body);
     if (input.encryption !== (input.dbKey !== null)) throw new HttpError(400, "validation", "dbKey must be present exactly when encryption is on");
     const ok = await verifyRequest(input.publicKey, req.headers as any, "POST", req.url, (req as any).rawBody ?? "", ctx.now().getTime());
@@ -905,7 +905,7 @@ export function lifecycleRoutes(app: FastifyInstance, ctx: Ctx): void {
   });
 
   app.post("/api/v1/unlock", async (req) => {
-    if (!ctx.config) throw new HttpError(409, "not_setup", "Panorama is not set up");
+    if (!ctx.config) throw new HttpError(409, "not_setup", "Boomerang is not set up");
     if (ctx.db) return { ok: true };
     const { dbKey } = UnlockInput.parse(req.body);
     try { ctx.db = openDatabase(dbFile(ctx), dbKey); } catch { throw new HttpError(401, "bad_key", "That key does not open this database"); }
@@ -919,7 +919,7 @@ export function lifecycleRoutes(app: FastifyInstance, ctx: Ctx): void {
 import { existsSync } from "node:fs";
 import Fastify from "fastify";
 import fastifyStatic from "@fastify/static";
-import { migrate, openDatabase, readConfig } from "@panorama/db";
+import { migrate, openDatabase, readConfig } from "@boomerang/db";
 import type { Ctx } from "./context";
 import { installErrorHandler } from "./errors";
 import { dbFile, lifecycleRoutes } from "./routes/lifecycle";
@@ -939,7 +939,7 @@ export async function buildApp(opts: { dataDir: string; now?: () => Date; webDis
   app.addHook("onRequest", async (req, reply) => {
     const path = req.url.split("?")[0];
     if (!path.startsWith("/api/") || OPEN.has(path)) return;
-    if (!ctx.db) return reply.status(423).header("retry-after", "30").send({ error: { code: "locked", message: "Panorama is locked" } });
+    if (!ctx.db) return reply.status(423).header("retry-after", "30").send({ error: { code: "locked", message: "Boomerang is locked" } });
   });
 
   lifecycleRoutes(app, ctx);
@@ -957,21 +957,21 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildApp } from "./app";
-const dataDir = process.env.PANORAMA_DATA_DIR ?? join(homedir(), ".panorama");
+const dataDir = process.env.BOOMERANG_DATA_DIR ?? join(homedir(), ".boomerang");
 const webDist = resolve(fileURLToPath(new URL(".", import.meta.url)), "../../web/dist");
 const app = await buildApp({ dataDir, webDist });
 await app.listen({ host: "127.0.0.1", port: Number(process.env.PORT ?? 4400) });
-console.log(`Panorama on http://127.0.0.1:${process.env.PORT ?? 4400} (data: ${dataDir})`);
+console.log(`Boomerang on http://127.0.0.1:${process.env.PORT ?? 4400} (data: ${dataDir})`);
 ```
 `test/helpers.ts`:
 ```ts
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ARGON_FAST, deriveKeys, signRequest } from "@panorama/core";
+import { ARGON_FAST, deriveKeys, signRequest } from "@boomerang/core";
 import { buildApp } from "../app";
 
-export const tempDir = () => mkdtempSync(join(tmpdir(), "pan-srv-"));
+export const tempDir = () => mkdtempSync(join(tmpdir(), "bm-srv-"));
 export const humanKeys = () => deriveKeys("test-password-123", "00".repeat(16), ARGON_FAST);
 
 export function client(app: any, seed: Uint8Array, actorId: string) {
@@ -1018,7 +1018,7 @@ The 423 test requests `/api/v1/projects`, which has no route yet; the `onRequest
 
 ```ts
 import { describe, expect, it } from "vitest";
-import { ARGON_FAST, deriveKeys, signRequest } from "@panorama/core";
+import { ARGON_FAST, deriveKeys, signRequest } from "@boomerang/core";
 import { client, setupApp } from "./test/helpers";
 
 const agentKeys = () => deriveKeys("agent-secret-xyz", "11".repeat(16), ARGON_FAST);
@@ -1071,15 +1071,15 @@ describe("agents", () => {
 `auth.ts`:
 ```ts
 import type { FastifyInstance, FastifyRequest } from "fastify";
-import { can, verifyRequest, type Action, type Actor } from "@panorama/core";
-import { getActor, touchActor, type DB } from "@panorama/db";
+import { can, verifyRequest, type Action, type Actor } from "@boomerang/core";
+import { getActor, touchActor, type DB } from "@boomerang/db";
 import type { Ctx } from "./context";
 import { HttpError } from "./errors";
 
 declare module "fastify" { interface FastifyRequest { actor: Actor; sig: string } }
 
 export function getDb(ctx: Ctx): DB {
-  if (!ctx.db) throw new HttpError(423, "locked", "Panorama is locked");
+  if (!ctx.db) throw new HttpError(423, "locked", "Boomerang is locked");
   return ctx.db;
 }
 
@@ -1112,8 +1112,8 @@ export function installAuth(app: FastifyInstance, ctx: Ctx, openPaths: Set<strin
 ```ts
 import { randomUUID } from "node:crypto";
 import type { FastifyInstance } from "fastify";
-import { ApproveAgentInput, RegisterAgentInput } from "@panorama/core";
-import { appendEvent, countPending, getActor, insertActor, listActors, setActorStatus } from "@panorama/db";
+import { ApproveAgentInput, RegisterAgentInput } from "@boomerang/core";
+import { appendEvent, countPending, getActor, insertActor, listActors, setActorStatus } from "@boomerang/db";
 import { getDb, requireCan } from "../auth";
 import type { Ctx } from "../context";
 import { HttpError } from "../errors";
@@ -1185,13 +1185,13 @@ In `app.ts`: add `"/api/v1/agents/register"` to `OPEN`, call `installAuth(app, c
 
 ```ts
 import { describe, expect, it } from "vitest";
-import { ARGON_FAST, deriveKeys, verifyChain } from "@panorama/core";
-import { listEvents } from "@panorama/db";
+import { ARGON_FAST, deriveKeys, verifyChain } from "@boomerang/core";
+import { listEvents } from "@boomerang/db";
 import { client, setupApp } from "./test/helpers";
 
 async function world() {
   const s = await setupApp();
-  const { project, lanes } = (await s.human("POST", "/api/v1/projects", { name: "Panorama", key: "PAN" })).json;
+  const { project, lanes } = (await s.human("POST", "/api/v1/projects", { name: "Boomerang", key: "PAN" })).json;
   const ak = await deriveKeys("agent-secret-xyz", "11".repeat(16), ARGON_FAST);
   const id = (await s.app.inject({ method: "POST", url: "/api/v1/agents/register", payload: { name: "worker", publicKey: ak.publicKeyHex } })).json().id;
   await s.human("POST", `/api/v1/agents/${id}/approve`, { scopes: { projects: [project.id], actions: ["read", "ticket.create", "ticket.update", "ticket.move", "flag.set"] } });
@@ -1243,8 +1243,8 @@ describe("tickets", () => {
 `routes/projects.ts`:
 ```ts
 import type { FastifyInstance } from "fastify";
-import { CreateProjectInput } from "@panorama/core";
-import { appendEvent, createProject, getProject, listLanes, listProjects } from "@panorama/db";
+import { CreateProjectInput } from "@boomerang/core";
+import { appendEvent, createProject, getProject, listLanes, listProjects } from "@boomerang/db";
 import { getDb, requireCan } from "../auth";
 import type { Ctx } from "../context";
 import { HttpError } from "../errors";
@@ -1276,8 +1276,8 @@ export function projectRoutes(app: FastifyInstance, ctx: Ctx): void {
 `routes/tickets.ts`:
 ```ts
 import type { FastifyInstance } from "fastify";
-import { CreateTicketInput, FlagInput, MoveTicketInput, UpdateTicketInput } from "@panorama/core";
-import { appendEvent, archiveTicket, createTicket, getLane, getProject, getTicket, listTickets, moveTicket, queue, setFlag, updateTicket, type DB } from "@panorama/db";
+import { CreateTicketInput, FlagInput, MoveTicketInput, UpdateTicketInput } from "@boomerang/core";
+import { appendEvent, archiveTicket, createTicket, getLane, getProject, getTicket, listTickets, moveTicket, queue, setFlag, updateTicket, type DB } from "@boomerang/db";
 import { getDb, requireCan } from "../auth";
 import type { Ctx } from "../context";
 import { HttpError } from "../errors";
@@ -1368,8 +1368,8 @@ Register both in `app.ts` after `agentRoutes`.
 
 ```ts
 import { describe, expect, it } from "vitest";
-import { signText } from "@panorama/core";
-import { latestCheckpoint } from "@panorama/db";
+import { signText } from "@boomerang/core";
+import { latestCheckpoint } from "@boomerang/db";
 import { setupApp } from "./test/helpers";
 
 describe("chain", () => {
@@ -1399,8 +1399,8 @@ describe("chain", () => {
 
 ```ts
 import type { FastifyInstance } from "fastify";
-import { CheckpointInput, verifyChain, verifyText } from "@panorama/core";
-import { addCheckpoint, latestCheckpoint, listEvents } from "@panorama/db";
+import { CheckpointInput, verifyChain, verifyText } from "@boomerang/core";
+import { addCheckpoint, latestCheckpoint, listEvents } from "@boomerang/db";
 import { getDb, requireCan } from "../auth";
 import type { Ctx } from "../context";
 import { HttpError } from "../errors";
@@ -1446,9 +1446,9 @@ Register in `app.ts`.
 - [ ] **Step 1: Package and config**
 
 ```json
-{ "name": "@panorama/web", "version": "0.1.0", "private": true, "type": "module",
+{ "name": "@boomerang/web", "version": "0.1.0", "private": true, "type": "module",
   "scripts": { "dev": "vite", "build": "tsc -p . && vite build" },
-  "dependencies": { "@panorama/core": "workspace:*", "react": "^18.3.0", "react-dom": "^18.3.0", "react-router-dom": "^6.26.0", "@tanstack/react-query": "^5.56.0",
+  "dependencies": { "@boomerang/core": "workspace:*", "react": "^18.3.0", "react-dom": "^18.3.0", "react-router-dom": "^6.26.0", "@tanstack/react-query": "^5.56.0",
     "@phosphor-icons/react": "^2.1.7", "@fontsource/figtree": "^5.1.0", "@fontsource/jetbrains-mono": "^5.1.0" },
   "devDependencies": { "vite": "^5.4.0", "@vitejs/plugin-react": "^4.3.0", "@types/react": "^18.3.0", "@types/react-dom": "^18.3.0" } }
 ```
@@ -1458,7 +1458,7 @@ import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 export default defineConfig({ plugins: [react()], server: { port: 4401, proxy: { "/api": "http://127.0.0.1:4400" } } });
 ```
-`index.html`: `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Panorama</title></head><body><div id="root"></div><script type="module" src="/src/main.tsx"></script></body></html>`
+`index.html`: `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Boomerang</title></head><body><div id="root"></div><script type="module" src="/src/main.tsx"></script></body></html>`
 
 `src/styles/tokens.css` (values exact, from `BRAND.md`):
 ```css
@@ -1519,7 +1519,7 @@ createRoot(document.getElementById("root")!).render(<QueryClientProvider client=
 
 ```ts
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ARGON_FAST, deriveKeys, verifyRequest } from "@panorama/core";
+import { ARGON_FAST, deriveKeys, verifyRequest } from "@boomerang/core";
 import { api, ApiError } from "./api";
 import { session } from "./session";
 
@@ -1537,7 +1537,7 @@ describe("api", () => {
   });
   it("throws ApiError with the server code and drops the session when locked", async () => {
     const k = await deriveKeys("test-password-123", "00".repeat(16), ARGON_FAST); session.setSeed(k.seed);
-    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ error: { code: "locked", message: "Panorama is locked" } }), { status: 423 })));
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ error: { code: "locked", message: "Boomerang is locked" } }), { status: 423 })));
     await expect(api("GET", "/api/v1/projects")).rejects.toMatchObject({ status: 423, code: "locked" });
     expect(session.getSeed()).toBeNull();
     expect(new ApiError(400, "x", "y")).toBeInstanceOf(Error);
@@ -1561,7 +1561,7 @@ export const session = {
 ```
 `api.ts`:
 ```ts
-import { signRequest } from "@panorama/core";
+import { signRequest } from "@boomerang/core";
 import { session } from "./session";
 export class ApiError extends Error { constructor(public status: number, public code: string, message: string, public details?: unknown) { super(message); } }
 export async function api<T = unknown>(method: string, path: string, body?: unknown, seedOverride?: Uint8Array): Promise<T> {
@@ -1590,13 +1590,13 @@ export function App() {
   const seed = useSyncExternalStore(session.subscribe, session.getSeed);
   const status = useQuery({ queryKey: ["status"], queryFn: () => api<Status>("GET", "/api/v1/status") });
   if (status.isPending) return null;
-  if (status.isError) return <main style={{ padding: "var(--gutter)" }}><p className="error">Cannot reach the Panorama server. Is it running?</p><button className="btn" onClick={() => status.refetch()}>Try again</button></main>;
+  if (status.isError) return <main style={{ padding: "var(--gutter)" }}><p className="error">Cannot reach the Boomerang server. Is it running?</p><button className="btn" onClick={() => status.refetch()}>Try again</button></main>;
   if (status.data.state !== "unlocked" || !seed) return <p>Lock</p>;
   return <p>Unlocked</p>;
 }
 ```
 
-- [ ] **Step 5: Run** `pnpm install && pnpm test && pnpm --filter @panorama/web build` Expected: tests pass and the build succeeds.
+- [ ] **Step 5: Run** `pnpm install && pnpm test && pnpm --filter @boomerang/web build` Expected: tests pass and the build succeeds.
 - [ ] **Step 6: Commit** `feat(web): scaffold, locked tokens, in-memory session, signed api client`
 
 ---
@@ -1636,7 +1636,7 @@ describe("iso", () => {
 `unlock.test.ts`:
 ```ts
 import { describe, expect, it, vi } from "vitest";
-import { ARGON_FAST, deriveKeys } from "@panorama/core";
+import { ARGON_FAST, deriveKeys } from "@boomerang/core";
 import { unlockFlow } from "./unlock";
 
 const SALT = "00".repeat(16);
@@ -1669,7 +1669,7 @@ describe("unlockFlow", () => {
 
 `iso.tsx`:
 ```tsx
-import type { Family } from "@panorama/core";
+import type { Family } from "@boomerang/core";
 import { FAMILY } from "./families";
 const C = Math.cos(Math.PI / 6), S = 0.5;
 const r = (n: number) => Math.round(n * 100) / 100 + 0;
@@ -1716,7 +1716,7 @@ Add to `app.css`:
 ```
 `views/unlock.ts`:
 ```ts
-import { ARGON, ARGON_FAST, deriveKeys, randomHex, signText } from "@panorama/core";
+import { ARGON, ARGON_FAST, deriveKeys, randomHex, signText } from "@boomerang/core";
 import { api } from "../lib/api";
 import type { Status } from "../App";
 type Call = (method: string, path: string, body: unknown, seed: Uint8Array) => Promise<any>;
@@ -1765,12 +1765,12 @@ export function LockScreen({ status, onDone }: { status: Status; onDone: (seed: 
   return (
     <main className="lock">
       <form onSubmit={submit}>
-        <div className="mark">Panorama</div>
+        <div className="mark">Boomerang</div>
         <h1>{first ? "Set your password" : "Unlock"}</h1>
         <p className="muted">{first ? "It signs everything you approve and it is never stored. If you lose it, it cannot be recovered in this version." : status.encryption ? "Your database is encrypted. Schedules and agents wait until you unlock." : "Your password signs the actions only you can take."}</p>
         <div className="field"><label htmlFor="pw">Password</label><input id="pw" className="input" type="password" autoFocus autoComplete={first ? "new-password" : "current-password"} value={pw} onChange={(e) => setPw(e.target.value)} /></div>
         {first && <div className="field"><label htmlFor="pw2">Repeat password</label><input id="pw2" className="input" type="password" autoComplete="new-password" value={pw2} onChange={(e) => setPw2(e.target.value)} /></div>}
-        {first && <label className="check"><input type="checkbox" checked={enc} onChange={(e) => setEnc(e.target.checked)} /><span>Encrypt the database. Panorama then stays locked after a restart until you enter this password.</span></label>}
+        {first && <label className="check"><input type="checkbox" checked={enc} onChange={(e) => setEnc(e.target.checked)} /><span>Encrypt the database. Boomerang then stays locked after a restart until you enter this password.</span></label>}
         {err && <p className="error" role="alert">{err}</p>}
         <button className="btn" disabled={busy || !pw}>{busy ? "Working" : first ? "Create" : "Unlock"}</button>
       </form>
@@ -1782,12 +1782,12 @@ export function LockScreen({ status, onDone }: { status: Status; onDone: (seed: 
 `ChainBanner.tsx`:
 ```tsx
 export const ChainBanner = ({ brokenAt }: { brokenAt: number }) => (
-  <div className="banner" role="alert">The event log was changed outside Panorama. First bad entry: {brokenAt}. Treat ticket history after that point as untrusted.</div>
+  <div className="banner" role="alert">The event log was changed outside Boomerang. First bad entry: {brokenAt}. Treat ticket history after that point as untrusted.</div>
 );
 ```
 In `App.tsx`: hold `const [brokenAt, setBrokenAt] = useState<number | null>(null)`. Replace the `Lock` placeholder with `<LockScreen status={status.data} onDone={(s, b) => { setBrokenAt(b); session.setSeed(s); status.refetch(); }} />`, and render `{brokenAt !== null && <ChainBanner brokenAt={brokenAt} />}` above the unlocked placeholder.
 
-- [ ] **Step 4: Run tests, then check by hand.** `pnpm test`. Then `PANORAMA_DATA_DIR=/tmp/pan-dev pnpm dev:server` and `VITE_FAST_KDF=1 pnpm dev:web`, open `http://localhost:4401`: set a password, see "Unlocked", reload, unlock, try a wrong password, tab through the form and confirm the teal focus ring, view at 375px.
+- [ ] **Step 4: Run tests, then check by hand.** `pnpm test`. Then `BOOMERANG_DATA_DIR=/tmp/pan-dev pnpm dev:server` and `VITE_FAST_KDF=1 pnpm dev:web`, open `http://localhost:4401`: set a password, see "Unlocked", reload, unlock, try a wrong password, tab through the form and confirm the teal focus ring, view at 375px.
 - [ ] **Step 5: Commit** `feat(web): isometric helper, first run and unlock with chain check`
 
 ---
@@ -1845,7 +1845,7 @@ describe("TicketRow", () => {
 
 `Chip.tsx`:
 ```tsx
-import type { Family } from "@panorama/core";
+import type { Family } from "@boomerang/core";
 export function Chip({ family, children, onClick }: { family: Family; children: React.ReactNode; onClick?: () => void }) {
   const style = { background: `var(--${family}-top)`, color: `var(--${family}-ink)` };
   return onClick ? <button type="button" className="chip" style={style} onClick={(e) => { e.stopPropagation(); onClick(); }}>{children}</button> : <span className="chip" style={style}>{children}</span>;
@@ -1853,7 +1853,7 @@ export function Chip({ family, children, onClick }: { family: Family; children: 
 ```
 `TicketRow.tsx`:
 ```tsx
-import type { Actor, Family, Lane, Ticket } from "@panorama/core";
+import type { Actor, Family, Lane, Ticket } from "@boomerang/core";
 import { Chip } from "./Chip";
 export const laneFamily = (t: Ticket, lanes: Lane[]): Family => t.flags.includes("needs_human") ? "coral" : lanes.find((l) => l.id === t.laneId)?.family ?? "stone";
 export function TicketRow({ ticket, lanes, agents, onOpen, index = 0 }: { ticket: Ticket; lanes: Lane[]; agents: Pick<Actor, "id" | "name">[]; onOpen: (id: string) => void; index?: number }) {
@@ -1948,7 +1948,7 @@ describe("agents helpers", () => {
 - [ ] **Step 2: Run, confirm FAIL. Step 3: Implement** both views to the Produces description. Helpers:
 
 ```ts
-import { AGENT_ACTIONS, type AgentAction, type Scopes } from "@panorama/core";
+import { AGENT_ACTIONS, type AgentAction, type Scopes } from "@boomerang/core";
 export const shortKey = (hex: string) => `${hex.slice(0, 8)}…${hex.slice(-4)}`;
 export const scopesFromForm = (projects: string[] | "*", actions: AgentAction[]): Scopes => ({ projects, actions: AGENT_ACTIONS.filter((a) => actions.includes(a)) });
 ```
@@ -1977,13 +1977,13 @@ The horizontal ellipsis in `shortKey` is U+2026, which is allowed; dashes are no
 
 **Interfaces:**
 - Consumes: the REST API, `signRequest`, `publicKeyFromSeed`, `randomHex`.
-- Produces: `scripts/demo-agent.ts` with env `PANORAMA_URL` (default `http://127.0.0.1:4400`) and `AGENT_NAME` (default `demo-agent`). It generates a 32 byte seed in memory, registers, polls `GET /api/v1/me` every second until 200 (max 120 tries), lists projects, creates the ticket "Demo: wire outbox retries" with `metadata: {tokens: 18422}`, moves it to In Progress, then to Ready for Production, prints each step, exits 0.
+- Produces: `scripts/demo-agent.ts` with env `BOOMERANG_URL` (default `http://127.0.0.1:4400`) and `AGENT_NAME` (default `demo-agent`). It generates a 32 byte seed in memory, registers, polls `GET /api/v1/me` every second until 200 (max 120 tries), lists projects, creates the ticket "Demo: wire outbox retries" with `metadata: {tokens: 18422}`, moves it to In Progress, then to Ready for Production, prints each step, exits 0.
 
 - [ ] **Step 1: Write the demo agent**
 
 ```ts
-import { publicKeyFromSeed, signRequest } from "@panorama/core";
-const BASE = process.env.PANORAMA_URL ?? "http://127.0.0.1:4400", NAME = process.env.AGENT_NAME ?? "demo-agent";
+import { publicKeyFromSeed, signRequest } from "@boomerang/core";
+const BASE = process.env.BOOMERANG_URL ?? "http://127.0.0.1:4400", NAME = process.env.AGENT_NAME ?? "demo-agent";
 const seed = crypto.getRandomValues(new Uint8Array(32));
 let actorId = "";
 async function call(method: string, path: string, body?: unknown, signed = true) {
@@ -2020,10 +2020,10 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { defineConfig } from "@playwright/test";
-const dataDir = mkdtempSync(join(tmpdir(), "pan-e2e-"));
+const dataDir = mkdtempSync(join(tmpdir(), "bm-e2e-"));
 export default defineConfig({
   testDir: "e2e", timeout: 60_000, use: { baseURL: "http://127.0.0.1:4410" },
-  webServer: { command: "pnpm start", url: "http://127.0.0.1:4410/api/v1/health", env: { PORT: "4410", PANORAMA_DATA_DIR: dataDir, VITE_FAST_KDF: "1" }, reuseExistingServer: false, timeout: 120_000 },
+  webServer: { command: "pnpm start", url: "http://127.0.0.1:4410/api/v1/health", env: { PORT: "4410", BOOMERANG_DATA_DIR: dataDir, VITE_FAST_KDF: "1" }, reuseExistingServer: false, timeout: 120_000 },
 });
 ```
 `e2e/first-run.spec.ts`:
@@ -2037,11 +2037,11 @@ test("first run, agent approval, clearing the queue", async ({ page }) => {
   await page.getByLabel("Repeat password").fill("a-long-test-password");
   await page.getByRole("button", { name: "Create" }).click();
 
-  await page.getByLabel("Project name").fill("Panorama");
+  await page.getByLabel("Project name").fill("Boomerang");
   await page.getByRole("button", { name: "Create project" }).click();
   await expect(page.getByText("Nothing needs you")).toBeVisible();
 
-  const agent = spawn("pnpm", ["demo:agent"], { env: { ...process.env, PANORAMA_URL: "http://127.0.0.1:4410", AGENT_NAME: "e2e-agent" }, stdio: "inherit" });
+  const agent = spawn("pnpm", ["demo:agent"], { env: { ...process.env, BOOMERANG_URL: "http://127.0.0.1:4410", AGENT_NAME: "e2e-agent" }, stdio: "inherit" });
   const exited = new Promise<number>((r) => agent.on("exit", (c) => r(c ?? 1)));
   await page.getByRole("link", { name: "Agents" }).click();
   await expect(page.getByText("e2e-agent")).toBeVisible({ timeout: 15_000 });
@@ -2071,7 +2071,7 @@ test("first run, agent approval, clearing the queue", async ({ page }) => {
 The Agents list does not poll; the spec navigates to Agents after the script starts, and the view fetches on mount. If the row is not there yet, the test's `toBeVisible` timeout needs a refetch: give `useAgents` `refetchInterval: 3000` only while the Agents view is mounted. That is the one interval in M1 and SSE replaces it in milestone 2.
 
 - [ ] **Step 3: Run** `pnpm add -Dw @playwright/test && pnpm exec playwright install chromium && pnpm e2e` Expected: 1 passed.
-- [ ] **Step 4: README.** Sections: what Panorama is (spec section 1), requirements (Node 20, pnpm 9), `pnpm install`, `pnpm start`, where data lives, how an agent registers and signs (link `scripts/demo-agent.ts`), `pnpm test`, `pnpm e2e`, license. No em dashes.
+- [ ] **Step 4: README.** Sections: what Boomerang is (spec section 1), requirements (Node 20, pnpm 9), `pnpm install`, `pnpm start`, where data lives, how an agent registers and signs (link `scripts/demo-agent.ts`), `pnpm test`, `pnpm e2e`, license. No em dashes.
 - [ ] **Step 5: Final check** `pnpm test && pnpm e2e && grep -rn "—\|–" --include="*.ts" --include="*.tsx" --include="*.css" --include="*.md" . --exclude-dir=node_modules --exclude-dir=docs | wc -l` Expected: tests pass, grep count 0.
 - [ ] **Step 6: Commit** `feat: demo agent, production static serving, end to end first run`
 
@@ -2080,7 +2080,7 @@ The Agents list does not poll; the spec navigates to Agents after the script sta
 ## Milestone 1 acceptance
 
 1. `pnpm start` on a clean machine serves the app on `127.0.0.1:4400`.
-2. First run sets a password; with encryption on, a restart leaves Panorama locked, every API call answers 423, and only the right password unlocks.
+2. First run sets a password; with encryption on, a restart leaves Boomerang locked, every API call answers 423, and only the right password unlocks.
 3. `pnpm demo:agent` can do nothing until approved in the Agents view, then creates and moves a ticket; the ticket appears in the Queue in coral; the agent cannot clear the flag; the owner can.
 4. Editing `panorama.db` directly makes the next unlock show the chain banner with the first bad entry.
 5. Every control on screen works, has hover and focus states from `BRAND.md`, and the app is usable at 375px and with reduced motion.

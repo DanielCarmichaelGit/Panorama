@@ -1,0 +1,22 @@
+{
+  "sessionId": "s_20260924T222354_a2401b",
+  "actor": "Daniel Carmichael",
+  "tool": "claude-code",
+  "intent": "unstated",
+  "head": "1a04fd56ba160e69250c728898ccc79f564566fc2ae743c844174527e252c35d",
+  "count": 782,
+  "diffHash": "a3451c890d4200fc3c72c36bca2520b6941bbb2e3004446666bc6a8d755e5deb",
+  "files": [
+    "apps/web/src/components/BoardCard.test.tsx",
+    "apps/web/src/components/BoardCard.tsx",
+    "apps/web/src/components/Chip.tsx",
+    "apps/web/src/components/TicketRow.test.tsx",
+    "apps/web/src/components/TicketRow.tsx",
+    "apps/web/src/styles/app.css",
+    "apps/web/src/views/Board.test.tsx",
+    "apps/web/src/views/Board.tsx",
+    "apps/web/src/views/Queue.tsx"
+  ],
+  "base": "6a11f903d37e01069164fb387f47c82dd22b7a6f",
+  "ts": "2026-09-24T23:43:58.045Z"
+}

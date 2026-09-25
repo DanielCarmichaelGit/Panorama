@@ -19,19 +19,24 @@ test("gates refuse a move without evidence, then allow one with it", async ({ pa
   const panel = page.getByRole("dialog", { name: /^GATEKEEPER-/ });
   await expect(panel).toBeVisible();
 
-  const laneSelect = page.getByLabel("Lane", { exact: true });
-  const doneOption = laneSelect.locator("option", { hasText: "Done" });
-  await expect(doneOption).toHaveText(/Human sign-off/);
+  const laneTrigger = page.getByRole("button", { name: "Lane", exact: true });
+  await laneTrigger.click();
+  const doneOption = page.getByRole("option", { name: "Done" });
+  await expect(doneOption).toHaveAttribute("title", /Human sign-off/);
   await expect(doneOption).toBeDisabled();
+  await page.keyboard.press("Escape"); // close the popover before it can cover anything below it
 
   await page.getByRole("button", { name: "Add evidence" }).click();
   const addEvidence = page.getByRole("dialog", { name: "Add evidence" });
-  await addEvidence.getByLabel("Type").selectOption({ label: "Human sign-off" });
+  await addEvidence.getByRole("button", { name: "Type" }).click();
+  // The Picker's popover portals to the end of <body>, outside the dialog's own DOM subtree.
+  await page.getByRole("option", { name: "Human sign-off" }).click();
   await addEvidence.getByRole("button", { name: "Attach" }).click();
   await expect(addEvidence).toBeHidden();
 
-  await expect(doneOption).toBeEnabled();
-  await laneSelect.selectOption({ label: "Done" });
+  await laneTrigger.click();
+  await expect(page.getByRole("option", { name: "Done" })).toBeEnabled();
+  await page.getByRole("option", { name: "Done" }).click();
   await expect(page.getByRole("alert")).toHaveCount(0);
 
   await page.getByRole("link", { name: "Board" }).click();

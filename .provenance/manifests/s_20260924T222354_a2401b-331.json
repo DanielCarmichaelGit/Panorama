@@ -1,0 +1,14 @@
+{
+  "sessionId": "s_20260924T222354_a2401b",
+  "actor": "Daniel Carmichael",
+  "tool": "claude-code",
+  "intent": "unstated",
+  "head": "7c8cd56533caaac874ec363d5c032625e55372250c21899a118446932eca387f",
+  "count": 331,
+  "diffHash": "cab40f573e0e338fce5ab35c7b2a6f9f6284e1acc39c8c354694c1b34057689a",
+  "files": [
+    "apps/web/src/components/Picker.tsx"
+  ],
+  "base": "b15722031678d8cac21e3440795d97f182baa70f",
+  "ts": "2026-09-24T22:53:37.169Z"
+}

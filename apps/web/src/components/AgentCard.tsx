@@ -1,4 +1,4 @@
-import type { Actor, Family, Scopes, Ticket } from "@panorama/core";
+import type { Actor, Family, Scopes, Ticket } from "@boomerang/core";
 import { AgentMark } from "../lib/iso";
 
 const AGENT_FAMILIES: Family[] = ["sky", "lilac", "mint", "stone"];

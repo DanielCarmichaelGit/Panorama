@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { LaneScene } from "../lib/iso";
+import { BoomerangScene } from "../lib/iso";
 import { useCreateProject } from "../lib/hooks";
 
 // The key prefixes every ticket (FIRETOWER-1). It is the name in capitals with spaces as
@@ -25,9 +25,9 @@ export function FirstProject() {
     <main id="main" className="lock">
       <a className="skip" href="#main">Skip to content</a>
       <form onSubmit={submit}>
-        <div className="mark">Panorama</div>
+        <div className="mark">Boomerang</div>
         <h1>Name your first project</h1>
-        <p className="muted">Everything in Panorama belongs to a project. You can add more later.</p>
+        <p className="muted">Everything in Boomerang belongs to a project. You can add more later.</p>
         <div className="field">
           <label htmlFor="proj-name">Project name</label>
           <input id="proj-name" className="input" autoFocus value={name} onChange={(e) => onNameChange(e.target.value)} />
@@ -39,7 +39,7 @@ export function FirstProject() {
         {create.isError && <p className="error" role="alert">{create.error instanceof Error ? create.error.message : "Could not create the project."}</p>}
         <button className="btn" disabled={!name.trim() || !key.trim() || create.isPending}>{create.isPending ? "Creating" : "Create project"}</button>
       </form>
-      <div className="art"><LaneScene /></div>
+      <div className="art"><BoomerangScene /></div>
     </main>
   );
 }

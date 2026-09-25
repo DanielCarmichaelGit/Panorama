@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { DEFAULT_EVIDENCE_TYPES } from "@panorama/core";
+import { DEFAULT_EVIDENCE_TYPES } from "@boomerang/core";
 import type { DB } from "./open";
 const M1 = `
 create table actors(id text primary key, kind text not null check(kind in('human','agent')), name text not null, public_key text not null unique,
@@ -43,7 +43,7 @@ create index evidence_ticket on evidence(ticket_id, created_at);
 create trigger evidence_no_update before update on evidence begin select raise(abort, 'evidence is append-only'); end;
 create trigger evidence_no_delete before delete on evidence begin select raise(abort, 'evidence is append-only'); end;
 ` + DEFAULT_EVIDENCE_TYPES.map((e) => `insert into evidence_types(id, name, kind, params, human_only, needs_attachment, created_at) values(${[e.id, e.name, e.kind, JSON.stringify(e.params)].map((v) => `'${v}'`).join(",")}, ${e.humanOnly ? 1 : 0}, ${e.needsAttachment ? 1 : 0}, '2026-09-22T00:00:00.000Z');`).join("\n");
-// DEFAULT_EVIDENCE_TYPES is a fixed constant in @panorama/core: its id, name, kind, and
+// DEFAULT_EVIDENCE_TYPES is a fixed constant in @boomerang/core: its id, name, kind, and
 // params values are hardcoded literals containing no quote characters, so interpolating
 // them into this migration string is safe. This is the one exception to bound parameters;
 // everything else in this file (and every other query in this package) uses them.
@@ -77,8 +77,60 @@ function M5(db: DB): void {
     backfillTickets.run(boardId, p.id);
   }
 }
+// The ticket model milestone (2b): epics group tickets the way boards do but looser, tags
+// classify freely (unique per project, case-insensitively, hence the lower(name) index),
+// ticket_links record dependencies and relations between tickets, and field_definitions with
+// ticket_field_values let the owner attach custom, typed data to tickets. tickets gains two
+// plain columns: epic_id (nullable, a ticket belongs to at most one epic) and success_criteria
+// (markdown, empty by default). A fresh install and an upgrade both just get the columns and
+// empty tables, so this is a static string like M1-M4, not a backfill function like M5.
+const M6 = `
+create table epics(id text primary key, project_id text not null references projects(id), name text not null, description text,
+  family text not null, position integer not null, archived integer not null default 0, created_at text not null);
+create index epics_project on epics(project_id, position);
+create table tags(id text primary key, project_id text not null references projects(id), name text not null, family text not null,
+  archived integer not null default 0, created_at text not null);
+create unique index tags_project_name on tags(project_id, lower(name));
+create table ticket_tags(ticket_id text not null references tickets(id), tag_id text not null references tags(id), primary key(ticket_id, tag_id));
+create table ticket_links(id text primary key, project_id text not null references projects(id), from_id text not null references tickets(id),
+  to_id text not null references tickets(id), kind text not null check(kind in('blocks','relates')), created_at text not null,
+  unique(from_id, to_id, kind));
+create table field_definitions(id text primary key, project_id text not null references projects(id), name text not null, key text not null,
+  kind text not null check(kind in('text','number','date','select','checkbox')), options text not null default '[]', required integer not null default 0,
+  position integer not null, archived integer not null default 0, created_at text not null, unique(project_id, key));
+create table ticket_field_values(ticket_id text not null references tickets(id), field_id text not null references field_definitions(id),
+  value text not null, primary key(ticket_id, field_id));
+alter table tickets add column epic_id text references epics(id);
+alter table tickets add column success_criteria text not null default '';
+`;
+// The settings refresh (2c): an arc (epic) or a tag may carry its own `#rrggbb` colour, which
+// wins over its family when set. Nullable, so every existing row simply keeps its family.
+const M7 = `
+alter table epics add column color text;
+alter table tags add column color text;
+`;
+// The file field kind (2c, task 5): field_definitions.kind carries a CHECK listing the kinds,
+// and SQLite cannot alter a CHECK in place, so the table is rebuilt with "file" in the list.
+// ticket_field_values references field_definitions(id), and dropping a referenced table with
+// foreign keys on is refused while child rows exist, so the child is rebuilt alongside it:
+// both new tables are filled, the old pair dropped (child first), and the new pair renamed
+// into place. A rename rewrites the references other tables hold, so the child ends up
+// pointing at the renamed parent. Nothing else references either table.
+const M8 = `
+create table field_definitions_new(id text primary key, project_id text not null references projects(id), name text not null, key text not null,
+  kind text not null check(kind in('text','number','date','select','checkbox','file')), options text not null default '[]', required integer not null default 0,
+  position integer not null, archived integer not null default 0, created_at text not null, unique(project_id, key));
+insert into field_definitions_new select id, project_id, name, key, kind, options, required, position, archived, created_at from field_definitions;
+create table ticket_field_values_new(ticket_id text not null references tickets(id), field_id text not null references field_definitions_new(id),
+  value text not null, primary key(ticket_id, field_id));
+insert into ticket_field_values_new select ticket_id, field_id, value from ticket_field_values;
+drop table ticket_field_values;
+drop table field_definitions;
+alter table field_definitions_new rename to field_definitions;
+alter table ticket_field_values_new rename to ticket_field_values;
+`;
 type Migration = string | ((db: DB) => void);
-const MIGRATIONS: Migration[] = [M1, M2, M3, M4, M5];
+const MIGRATIONS: Migration[] = [M1, M2, M3, M4, M5, M6, M7, M8];
 
 /** Applies migrations up to (not including index) `version`. Exported so a test can stop a
  *  fresh database at M4, seed pre-boards data, then call `migrate` to exercise the M5 backfill

@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { Actor, Board, EvidenceType, Lane } from "@panorama/core";
+import type { Actor, Board, EvidenceType, Lane } from "@boomerang/core";
 import { api } from "../lib/api";
 import { uploadFile } from "../lib/attachments";
 import { NewTicket } from "./NewTicket";
@@ -27,7 +27,7 @@ vi.mock("../lib/attachments", async (importOriginal) => {
 afterEach(cleanup);
 
 const board = (over: Partial<Board>): Board => ({
-  id: "b1", projectId: "p1", name: "Panorama", description: null, family: "stone", position: 0, createdAt: "", ...over,
+  id: "b1", projectId: "p1", name: "Boomerang", description: null, family: "stone", position: 0, createdAt: "", ...over,
 });
 
 const lane = (over: Partial<Lane>): Lane => ({
@@ -50,14 +50,31 @@ function LocationProbe() {
   );
 }
 
-function editor(): any {
-  return (window as any).__panEditor;
+/** The draft composer for one labelled field (Description or Success criteria), registered by Composer in test mode. */
+function editor(label = "Description"): any {
+  return (window as any).__panEditors?.[label];
 }
+
+const fieldDef = (over: Record<string, unknown> = {}) => ({
+  id: "f1", projectId: "p1", name: "Severity", key: "severity", kind: "text", options: [], required: true, position: 0, archived: false, createdAt: "", ...over,
+});
+const epic = { id: "e1", projectId: "p1", name: "Launch", description: null, family: "lilac", color: null, position: 0, archived: false, createdAt: "" };
+const tag = (id: string, name: string) => ({ id, projectId: "p1", name, family: "sky", color: null, archived: false, createdAt: "" });
+const otherTicket = {
+  id: "t2", projectId: "p1", boardId: "b1", number: 2, key: "PAN-2", title: "Other ticket", laneId: "l1", position: 2,
+  epicId: null, tagIds: [], successCriteria: "", fields: {},
+  flags: [], assigneeId: null, startDate: null, dueDate: null, metadata: {}, archived: false, createdAt: "", updatedAt: "",
+};
 
 function renderDialog(opts: {
   boards?: Board[];
   lanes?: Lane[];
   agents?: Actor[];
+  evidenceTypes?: EvidenceType[];
+  epics?: unknown[];
+  tags?: unknown[];
+  fields?: unknown[];
+  tickets?: unknown[];
   returnTo?: "queue" | "board";
   onClose?: (t?: any) => void;
   apiImpl?: (method: string, path: string, body?: unknown) => Promise<unknown>;
@@ -65,6 +82,7 @@ function renderDialog(opts: {
   const boards = opts.boards ?? [board({})];
   const lanes = opts.lanes ?? [lane({})];
   const agents = opts.agents ?? [agent({})];
+  const evidenceTypes = opts.evidenceTypes ?? [signoffType];
   const onClose = opts.onClose ?? vi.fn();
 
   vi.mocked(api).mockImplementation(
@@ -73,7 +91,11 @@ function renderDialog(opts: {
         if (method === "GET" && path === "/api/v1/projects/p1/boards") return boards;
         if (method === "GET" && path === "/api/v1/projects/p1/lanes") return lanes;
         if (method === "GET" && path === "/api/v1/agents") return agents;
-        if (method === "GET" && path === "/api/v1/evidence-types") return [signoffType];
+        if (method === "GET" && path === "/api/v1/evidence-types") return evidenceTypes;
+        if (method === "GET" && path === "/api/v1/epics?projectId=p1") return opts.epics ?? [];
+        if (method === "GET" && path === "/api/v1/tags?projectId=p1") return opts.tags ?? [];
+        if (method === "GET" && path === "/api/v1/fields?projectId=p1") return opts.fields ?? [];
+        if (method === "GET" && path === "/api/v1/tickets?projectId=p1") return opts.tickets ?? [];
         if (method === "POST" && path === "/api/v1/tickets") {
           return { id: "t1", projectId: "p1", boardId: (body as any).boardId ?? boards[0].id, key: "PAN-1", title: (body as any).title, laneId: (body as any).laneId ?? lanes[0].id, number: 1, position: 1, flags: [], assigneeId: null, startDate: null, dueDate: null, metadata: {}, archived: false, createdAt: "", updatedAt: "" };
         }
@@ -105,15 +127,15 @@ describe("NewTicket", () => {
     expect(dialog.closest("body")).toBe(document.body);
   });
 
-  it("hides the board select with only one board, shows it with two", async () => {
+  it("hides the board picker with only one board, shows it with two", async () => {
     renderDialog({ boards: [board({})] });
-    await screen.findByText("Backlog"); // waits for the lane select's options, i.e. data loaded
-    expect(screen.queryByLabelText("Board")).toBeNull();
+    await screen.findByText("Backlog"); // waits for the lane picker's selected value, i.e. data loaded
+    expect(screen.queryByRole("button", { name: "Board" })).toBeNull();
     cleanup();
 
-    renderDialog({ boards: [board({ id: "b1", name: "Panorama" }), board({ id: "b2", name: "Growth", position: 1 })] });
-    await screen.findByLabelText("Board");
-    expect(screen.getByLabelText("Board")).toBeTruthy();
+    renderDialog({ boards: [board({ id: "b1", name: "Boomerang" }), board({ id: "b2", name: "Growth", position: 1 })] });
+    await screen.findByRole("button", { name: "Board" });
+    expect(screen.getByRole("button", { name: "Board" })).toBeTruthy();
   });
 
   it("disables a lane whose evidence requirements a brand new ticket cannot meet", async () => {
@@ -121,9 +143,11 @@ describe("NewTicket", () => {
       lanes: [lane({}), lane({ id: "l6", name: "Done", position: 5, isDone: true, evidenceRequirements: [{ typeId: "et_human_signoff", count: 1 }] })],
     });
     await screen.findByText("Backlog");
-    const done = await screen.findByRole("option", { name: "Done (needs Human sign-off)" });
-    expect((done as HTMLOptionElement).disabled).toBe(true);
-    expect((screen.getByRole("option", { name: "Backlog" }) as HTMLOptionElement).disabled).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: "Lane" }));
+    const done = await screen.findByRole("option", { name: "Done" });
+    expect(done.getAttribute("aria-disabled")).toBe("true");
+    expect(done.getAttribute("title")).toBe("Done (needs Human sign-off)");
+    expect(screen.getByRole("option", { name: "Backlog" }).getAttribute("aria-disabled")).toBeNull();
   });
 
   it("leaves the Description label pointing at nothing, since the composer labels itself", async () => {
@@ -307,6 +331,24 @@ describe("NewTicket", () => {
     expect(onClose).toHaveBeenCalledWith();
   });
 
+  it("Escape closes only an open Picker's popover, not the whole dialog; a second Escape then cancels it", async () => {
+    const onClose = vi.fn();
+    renderDialog({ onClose });
+    await screen.findByRole("dialog", { name: "New ticket" });
+
+    const laneTrigger = screen.getByRole("button", { name: "Lane" });
+    fireEvent.click(laneTrigger);
+    expect(screen.getByRole("listbox")).toBeTruthy();
+
+    fireEvent.keyDown(laneTrigger, { key: "Escape" });
+    expect(screen.queryByRole("listbox")).toBeNull();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByRole("dialog", { name: "New ticket" })).toBeTruthy();
+
+    fireEvent.keyDown(laneTrigger, { key: "Escape" });
+    expect(onClose).toHaveBeenCalledWith();
+  });
+
   it("saves assignee, dates, and needs human via PATCH and the flag endpoint before posting", async () => {
     const calls: { method: string; path: string; body?: unknown }[] = [];
     const apiImpl = async (method: string, path: string, body?: unknown) => {
@@ -325,7 +367,8 @@ describe("NewTicket", () => {
     await screen.findByRole("dialog", { name: "New ticket" });
 
     fireEvent.change(screen.getByLabelText("Title"), { target: { value: "Ship it" } });
-    fireEvent.change(screen.getByLabelText("Assignee"), { target: { value: "a1" } });
+    fireEvent.click(screen.getByRole("button", { name: "Assignee" }));
+    fireEvent.click(screen.getByRole("option", { name: "worker" }));
     fireEvent.change(screen.getByLabelText("Start date"), { target: { value: "2026-09-24" } });
     fireEvent.change(screen.getByLabelText("Due date"), { target: { value: "2026-09-30" } });
     fireEvent.click(screen.getByLabelText("Needs human"));
@@ -336,5 +379,264 @@ describe("NewTicket", () => {
     expect(patch?.body).toEqual({ assigneeId: "a1", startDate: "2026-09-24", dueDate: "2026-09-30" });
     const flag = calls.find((c) => c.method === "POST" && c.path === "/api/v1/tickets/t1/flags");
     expect(flag?.body).toEqual({ flag: "needs_human", on: true });
+  });
+});
+
+describe("NewTicket dialog shell", () => {
+  it("is a full-screen, labelled modal dialog", async () => {
+    renderDialog();
+    const dialog = await screen.findByRole("dialog", { name: "New ticket" });
+    expect(dialog.classList.contains("create-dialog")).toBe(true);
+    expect(dialog.getAttribute("aria-modal")).toBe("true");
+    expect(dialog.getAttribute("aria-labelledby")).toBe("new-ticket-title");
+    expect(screen.getByRole("button", { name: "Close" })).toBeTruthy();
+  });
+});
+
+describe("NewTicket required fields", () => {
+  it("keeps Create disabled and refuses Ctrl+Enter until every required custom field has a value", async () => {
+    renderDialog({ fields: [fieldDef()] });
+    await screen.findByRole("dialog", { name: "New ticket" });
+    const severity = await screen.findByRole("textbox", { name: "Severity" });
+    fireEvent.change(screen.getByLabelText("Title"), { target: { value: "Ship it" } });
+
+    const create = screen.getByRole("button", { name: "Create" }) as HTMLButtonElement;
+    expect(create.disabled).toBe(true);
+
+    // The api mock is shared across this file's tests; only calls from here on matter.
+    vi.mocked(api).mockClear();
+    fireEvent.keyDown(screen.getByLabelText("Title"), { key: "Enter", ctrlKey: true });
+    expect(await screen.findByText("Missing required fields: Severity")).toBeTruthy();
+    expect(vi.mocked(api)).not.toHaveBeenCalledWith("POST", "/api/v1/tickets", expect.anything());
+
+    fireEvent.change(severity, { target: { value: "high" } });
+    expect(create.disabled).toBe(false);
+    expect(screen.queryByText("Missing required fields: Severity")).toBeNull();
+  });
+});
+
+describe("NewTicket required checkbox", () => {
+  it("treats an untouched required checkbox as false: Create stays enabled and the POST carries false for it", async () => {
+    const posts: unknown[] = [];
+    vi.mocked(api).mockClear();
+    renderDialog({ fields: [fieldDef({ id: "f2", name: "Approved", key: "approved", kind: "checkbox" })] });
+    await screen.findByRole("dialog", { name: "New ticket" });
+    await screen.findByRole("checkbox", { name: "Approved" });
+    fireEvent.change(screen.getByLabelText("Title"), { target: { value: "Ship it" } });
+
+    const create = screen.getByRole("button", { name: "Create" }) as HTMLButtonElement;
+    expect(create.disabled).toBe(false);
+    fireEvent.click(create);
+
+    await waitFor(() => expect(screen.getByTestId("location").textContent).toBe("/t/t1"));
+    for (const call of vi.mocked(api).mock.calls) if (call[0] === "POST" && call[1] === "/api/v1/tickets") posts.push(call[2]);
+    expect(posts).toHaveLength(1);
+    expect((posts[0] as any).fields).toEqual({ approved: false });
+  });
+});
+
+describe("NewTicket request order", () => {
+  it("sends arc, tags, fields and success criteria in the one POST, then the flag, then the dependency link from the other ticket", async () => {
+    const calls: { method: string; path: string; body?: unknown }[] = [];
+    const apiImpl = async (method: string, path: string, body?: unknown) => {
+      calls.push({ method, path, body });
+      if (method === "GET" && path === "/api/v1/projects/p1/boards") return [board({})];
+      if (method === "GET" && path === "/api/v1/projects/p1/lanes") return [lane({})];
+      if (method === "GET" && path === "/api/v1/agents") return [];
+      if (method === "GET" && path === "/api/v1/evidence-types") return [signoffType];
+      if (method === "GET" && path === "/api/v1/epics?projectId=p1") return [epic];
+      if (method === "GET" && path === "/api/v1/tags?projectId=p1") return [tag("tg1", "Backend"), tag("tg2", "Frontend")];
+      if (method === "GET" && path === "/api/v1/fields?projectId=p1") return [fieldDef()];
+      if (method === "GET" && path === "/api/v1/tickets?projectId=p1") return [otherTicket];
+      if (method === "POST" && path === "/api/v1/tickets") {
+        return { id: "t1", projectId: "p1", boardId: "b1", key: "PAN-1", title: (body as any).title, laneId: "l1", number: 1, position: 1, flags: [], assigneeId: null, startDate: null, dueDate: null, metadata: {}, archived: false, createdAt: "", updatedAt: "" };
+      }
+      if (method === "POST" && path === "/api/v1/tickets/t1/flags") return { id: "t1" };
+      if (method === "POST" && path === "/api/v1/tickets/t2/links") return { id: "link1", projectId: "p1", fromId: "t2", toId: "t1", kind: "blocks", createdAt: "" };
+      throw new Error(`unexpected ${method} ${path}`);
+    };
+
+    renderDialog({ agents: [], apiImpl });
+    await screen.findByRole("dialog", { name: "New ticket" });
+    const severity = await screen.findByRole("textbox", { name: "Severity" });
+
+    fireEvent.change(screen.getByLabelText("Title"), { target: { value: "Ship it" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Arc" }));
+    fireEvent.click(await screen.findByRole("option", { name: "Launch" }));
+
+    const tags = screen.getByRole("button", { name: "Tags" });
+    fireEvent.click(tags);
+    fireEvent.click(await screen.findByRole("option", { name: "Backend" }));
+    fireEvent.click(screen.getByRole("option", { name: "Frontend" }));
+    fireEvent.keyDown(tags, { key: "Escape" });
+
+    fireEvent.change(severity, { target: { value: "high" } });
+
+    await act(async () => {
+      editor("Success criteria").commands.setContent("<p>Tests pass</p>");
+    });
+
+    const blockedBy = screen.getByRole("button", { name: "Blocked by" });
+    fireEvent.click(blockedBy);
+    fireEvent.click(await screen.findByRole("option", { name: "PAN-2 Other ticket" }));
+    fireEvent.keyDown(blockedBy, { key: "Escape" });
+
+    fireEvent.click(screen.getByLabelText("Needs human"));
+    fireEvent.click(screen.getByRole("button", { name: "Create" }));
+
+    await waitFor(() => expect(screen.getByTestId("location").textContent).toBe("/t/t1"));
+    const writes = calls.filter((c) => c.method !== "GET");
+    expect(writes.map((c) => `${c.method} ${c.path}`)).toEqual([
+      "POST /api/v1/tickets",
+      "POST /api/v1/tickets/t1/flags",
+      "POST /api/v1/tickets/t2/links",
+    ]);
+    expect(writes[0].body).toEqual({
+      projectId: "p1",
+      boardId: "b1",
+      laneId: "l1",
+      title: "Ship it",
+      metadata: {},
+      epicId: "e1",
+      tagIds: ["tg1", "tg2"],
+      successCriteria: "Tests pass",
+      fields: { severity: "high" },
+    });
+    expect(writes[1].body).toEqual({ flag: "needs_human", on: true });
+    expect(writes[2].body).toEqual({ toId: "t1", kind: "blocks" });
+  });
+});
+
+describe("NewTicket file field", () => {
+  it("does not block Create on a required file field, uploads the chosen file after create, then PATCHes the field", async () => {
+    const order: string[] = [];
+    const calls: { method: string; path: string; body?: unknown }[] = [];
+    const apiImpl = async (method: string, path: string, body?: unknown) => {
+      if (method !== "GET") calls.push({ method, path, body });
+      if (method === "GET" && path === "/api/v1/projects/p1/boards") return [board({})];
+      if (method === "GET" && path === "/api/v1/projects/p1/lanes") return [lane({})];
+      if (method === "GET" && path === "/api/v1/agents") return [];
+      if (method === "GET" && path === "/api/v1/evidence-types") return [signoffType];
+      if (method === "GET" && path === "/api/v1/fields?projectId=p1") return [fieldDef({ id: "f9", name: "Spec", key: "spec", kind: "file", required: true })];
+      if (method === "GET") return [];
+      if (method === "POST" && path === "/api/v1/tickets") {
+        order.push("create");
+        return { id: "t1", projectId: "p1", boardId: "b1", key: "PAN-1", title: (body as any).title, laneId: "l1", number: 1, position: 1, flags: [], assigneeId: null, startDate: null, dueDate: null, metadata: {}, archived: false, createdAt: "", updatedAt: "" };
+      }
+      if (method === "PATCH" && path === "/api/v1/tickets/t1") {
+        order.push("patch");
+        return { id: "t1" };
+      }
+      throw new Error(`unexpected ${method} ${path}`);
+    };
+    vi.mocked(uploadFile).mockClear();
+    vi.mocked(uploadFile).mockImplementation(async (_ticketId: string, file: File) => {
+      order.push("upload");
+      return { id: `att-${file.name}`, ticketId: "t1", commentId: null, actorId: "human", filename: file.name, mime: "application/pdf", size: file.size, sha256: "", createdAt: "" };
+    });
+
+    renderDialog({ agents: [], apiImpl });
+    await screen.findByRole("dialog", { name: "New ticket" });
+    const picker = await screen.findByLabelText("Spec");
+
+    fireEvent.change(screen.getByLabelText("Title"), { target: { value: "Ship it" } });
+    // A required file field is exempt from the create-time check: Create is enabled with just a title.
+    expect((screen.getByRole("button", { name: "Create" }) as HTMLButtonElement).disabled).toBe(false);
+
+    const spec = new File(["spec"], "spec.pdf", { type: "application/pdf" });
+    await act(async () => {
+      fireEvent.change(picker, { target: { files: [spec] } });
+    });
+    expect(screen.getByText("spec.pdf")).toBeTruthy();
+    expect(vi.mocked(uploadFile)).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Create" }));
+
+    await waitFor(() => expect(screen.getByTestId("location").textContent).toBe("/t/t1"));
+    expect(order).toEqual(["create", "upload", "patch"]);
+    expect(vi.mocked(uploadFile).mock.calls[0][0]).toBe("t1");
+    expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual(["POST /api/v1/tickets", "PATCH /api/v1/tickets/t1"]);
+    expect((calls[0].body as any).fields).toBeUndefined();
+    expect(calls[1].body).toEqual({ fields: { spec: { attachmentId: "att-spec.pdf" } } });
+  });
+});
+
+describe("NewTicket request order, Blocks direction", () => {
+  it('posts a "Blocks" link from the new ticket\'s own endpoint with the other ticket as toId', async () => {
+    const calls: { method: string; path: string; body?: unknown }[] = [];
+    const apiImpl = async (method: string, path: string, body?: unknown) => {
+      calls.push({ method, path, body });
+      if (method === "GET" && path === "/api/v1/projects/p1/boards") return [board({})];
+      if (method === "GET" && path === "/api/v1/projects/p1/lanes") return [lane({})];
+      if (method === "GET" && path === "/api/v1/agents") return [];
+      if (method === "GET" && path === "/api/v1/evidence-types") return [signoffType];
+      if (method === "GET" && path === "/api/v1/epics?projectId=p1") return [];
+      if (method === "GET" && path === "/api/v1/tags?projectId=p1") return [];
+      if (method === "GET" && path === "/api/v1/fields?projectId=p1") return [];
+      if (method === "GET" && path === "/api/v1/tickets?projectId=p1") return [otherTicket];
+      if (method === "POST" && path === "/api/v1/tickets") {
+        return { id: "t1", projectId: "p1", boardId: "b1", key: "PAN-1", title: (body as any).title, laneId: "l1", number: 1, position: 1, flags: [], assigneeId: null, startDate: null, dueDate: null, metadata: {}, archived: false, createdAt: "", updatedAt: "" };
+      }
+      if (method === "POST" && path === "/api/v1/tickets/t1/links") return { id: "link1", projectId: "p1", fromId: "t1", toId: "t2", kind: "blocks", createdAt: "" };
+      throw new Error(`unexpected ${method} ${path}`);
+    };
+
+    renderDialog({ agents: [], apiImpl });
+    await screen.findByRole("dialog", { name: "New ticket" });
+    fireEvent.change(screen.getByLabelText("Title"), { target: { value: "Ship it" } });
+
+    const blocks = screen.getByRole("button", { name: "Blocks" });
+    fireEvent.click(blocks);
+    fireEvent.click(await screen.findByRole("option", { name: "PAN-2 Other ticket" }));
+    fireEvent.keyDown(blocks, { key: "Escape" });
+    fireEvent.click(screen.getByRole("button", { name: "Create" }));
+
+    await waitFor(() => expect(screen.getByTestId("location").textContent).toBe("/t/t1"));
+    const writes = calls.filter((c) => c.method !== "GET");
+    expect(writes.map((c) => `${c.method} ${c.path}`)).toEqual(["POST /api/v1/tickets", "POST /api/v1/tickets/t1/links"]);
+    expect(writes[1].body).toEqual({ toId: "t2", kind: "blocks" });
+  });
+});
+
+describe("NewTicket automations preview", () => {
+  const prType: EvidenceType = { id: "et_pr_link", name: "PR link", kind: "pr_link", params: {}, humanOnly: false, needsAttachment: false, createdAt: "" };
+  const testType: EvidenceType = { id: "et_test_run", name: "Test run", kind: "test_run", params: {}, humanOnly: false, needsAttachment: false, createdAt: "" };
+
+  it("names each lane whose requirements gate the ticket, with the requirement names", async () => {
+    renderDialog({
+      lanes: [
+        lane({}),
+        lane({ id: "l4", name: "Review", position: 3, family: "lilac", evidenceRequirements: [{ typeId: "et_pr_link", count: 1 }, { typeId: "et_test_run", count: 1 }] }),
+        lane({ id: "l6", name: "Done", position: 5, family: "mint", isDone: true, evidenceRequirements: [{ typeId: "et_human_signoff", count: 1 }] }),
+      ],
+      evidenceTypes: [signoffType, prType, testType],
+    });
+    expect(await screen.findByText("Gated at Review (PR link, Test run) and Done (Human sign-off).")).toBeTruthy();
+  });
+
+  it("leaves out the lane the ticket is created into, even when that lane carries a requirement", async () => {
+    renderDialog({
+      lanes: [
+        lane({ evidenceRequirements: [{ typeId: "et_pr_link", count: 1 }] }),
+        lane({ id: "l4", name: "Review", position: 3, family: "lilac", evidenceRequirements: [{ typeId: "et_test_run", count: 1 }] }),
+        lane({ id: "l6", name: "Done", position: 5, family: "mint", isDone: true, evidenceRequirements: [{ typeId: "et_human_signoff", count: 1 }] }),
+      ],
+      evidenceTypes: [signoffType, prType, testType],
+    });
+    const preview = await screen.findByText(/^Gated at/);
+    expect(preview.textContent).toBe("Gated at Review (Test run) and Done (Human sign-off).");
+  });
+
+  it("phrases a single gated lane without a conjunction", async () => {
+    renderDialog({
+      lanes: [lane({}), lane({ id: "l6", name: "Done", position: 5, family: "mint", isDone: true, evidenceRequirements: [{ typeId: "et_human_signoff", count: 1 }] })],
+    });
+    expect(await screen.findByText("Gated at Done (Human sign-off).")).toBeTruthy();
+  });
+
+  it("says so when no lane gates it", async () => {
+    renderDialog();
+    expect(await screen.findByText("No lanes gate this ticket yet.")).toBeTruthy();
   });
 });

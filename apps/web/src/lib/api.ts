@@ -1,4 +1,4 @@
-import { signRequest } from "@panorama/core";
+import { signRequest } from "@boomerang/core";
 import { session } from "./session";
 
 export class ApiError extends Error {

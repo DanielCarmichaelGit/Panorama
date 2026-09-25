@@ -1,18 +1,20 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, NavLink, Outlet, useMatch, useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
-import { CaretLineLeft, CaretLineRight, Kanban, List, Lock, Robot, Tray } from "@phosphor-icons/react";
-import type { Project } from "@panorama/core";
+import { CaretLineLeft, CaretLineRight, GearSix, Kanban, List, Lock, Robot, Tray } from "@phosphor-icons/react";
+import { SidebarStatus } from "../components/SidebarStatus";
+import type { Project } from "@boomerang/core";
 import type { Status } from "../App";
 import { api } from "../lib/api";
 import { session } from "../lib/session";
+import { SIDEBAR_KEY } from "../lib/storage";
 import { useLanes, useProjects, useStream } from "../lib/hooks";
 import { isTypingTarget } from "../lib/keys";
 import { useFocusTrap } from "../lib/useFocusTrap";
+import { ProjectSwitcher } from "../components/ProjectSwitcher";
+import { BrandMark } from "../components/BrandMark";
 import { FirstProject } from "./FirstProject";
 import { TicketPanel } from "./TicketPanel";
-
-const SIDEBAR_KEY = "pan.sidebar";
 
 function readCollapsed(): boolean {
   try {
@@ -34,22 +36,6 @@ function SkeletonRows() {
   return (
     <div className="view">
       {[0, 1, 2, 3].map((i) => <div key={i} className="skeleton" />)}
-    </div>
-  );
-}
-
-function ProjectSwitcher({ list, current, onChange }: { list: Project[]; current: Project; onChange: (id: string) => void }) {
-  if (list.length > 1) {
-    return (
-      <select className="input" aria-label="Project" value={current.id} onChange={(e) => onChange(e.target.value)}>
-        {list.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-      </select>
-    );
-  }
-  return (
-    <div>
-      <strong>{current.name}</strong>
-      <div className="mono muted">{current.key}</div>
     </div>
   );
 }
@@ -108,6 +94,7 @@ export function Shell({ status, chainOk }: { status: Status; chainOk: boolean })
         if (e.key === "q") { e.preventDefault(); navigate("/"); }
         else if (e.key === "b") { e.preventDefault(); navigate("/board"); }
         else if (e.key === "a") { e.preventDefault(); navigate("/agents"); }
+        else if (e.key === "s") { e.preventDefault(); navigate("/settings"); }
         return;
       }
       if (e.key === "g") { pendingG = true; timer = window.setTimeout(reset, 900); }
@@ -127,14 +114,14 @@ export function Shell({ status, chainOk }: { status: Status; chainOk: boolean })
       session.clear();
       qc.invalidateQueries({ queryKey: ["status"] });
     } catch (e) {
-      setLockError(e instanceof Error ? e.message : "Could not lock Panorama.");
+      setLockError(e instanceof Error ? e.message : "Could not lock Boomerang.");
     }
   }
 
   if (projects.isError) {
     return (
       <main className="view">
-        <p className="error" role="alert">Cannot reach the Panorama server.</p>
+        <p className="error" role="alert">Cannot reach the Boomerang server.</p>
         <button className="btn" onClick={() => projects.refetch()}>Try again</button>
       </main>
     );
@@ -145,12 +132,9 @@ export function Shell({ status, chainOk }: { status: Status; chainOk: boolean })
     <div className={collapsed ? "shell collapsed" : "shell"}>
       <a className="skip" href="#main">Skip to content</a>
       <nav className="side" aria-label="Main">
-        <div className="switcher" title={current?.name}>
-          {!current ? null : collapsed ? (
-            <strong className="mono key-mark" aria-label={current.name}>{current.key.slice(0, 2)}</strong>
-          ) : (
-            <ProjectSwitcher list={list} current={current} onChange={setProjectOverride} />
-          )}
+        <BrandMark collapsed={collapsed} />
+        <div className="switcher">
+          {current && <ProjectSwitcher id="project-switcher" list={list} current={current} onChange={setProjectOverride} compact={collapsed} />}
         </div>
         <Link to="/" className="nav-item" aria-label="Queue" title="Queue" aria-current={queueCurrent ? "page" : undefined}>
           <Tray size={22} weight="regular" aria-hidden="true" />
@@ -164,15 +148,18 @@ export function Shell({ status, chainOk }: { status: Status; chainOk: boolean })
           <Robot size={22} weight="regular" aria-hidden="true" />
           <span className="label">Agents</span>
         </NavLink>
-        <button type="button" className="nav-item menu-item" onClick={() => setMenuOpen(true)} aria-haspopup="dialog" aria-expanded={menuOpen}>
+        <NavLink to="/settings" className="nav-item" aria-label="Settings" title="Settings">
+          <GearSix size={22} weight="regular" aria-hidden="true" />
+          <span className="label">Settings</span>
+        </NavLink>
+        <button type="button" className="nav-item menu-item" onClick={() => setMenuOpen(true)} aria-haspopup="dialog" aria-expanded={menuOpen} aria-label="Menu" title="Menu">
           <List size={22} weight="regular" aria-hidden="true" />
           <span className="label">Menu</span>
         </button>
         <div className="foot">
-          {!collapsed && <span className="mono muted">{chainOk ? "chain verified" : "chain broken"}</span>}
-          {!collapsed && <span className="mono muted">{streamStatus === "open" ? "live" : "reconnecting"}</span>}
+          <SidebarStatus chainOk={chainOk} connected={streamStatus === "open"} />
           {status.encryption && (
-            <button type="button" className="nav-item" onClick={handleLock} aria-label="Lock" title={collapsed ? `Lock (${chainOk ? "chain verified" : "chain broken"}, ${streamStatus === "open" ? "live" : "reconnecting"})` : "Lock"}>
+            <button type="button" className="nav-item" onClick={handleLock} aria-label="Lock" title="Lock">
               <Lock size={22} weight="regular" aria-hidden="true" />
               <span className="label">Lock</span>
             </button>
@@ -198,9 +185,18 @@ export function Shell({ status, chainOk }: { status: Status; chainOk: boolean })
       {ticketId && <TicketPanel id={ticketId} onClose={closeTicketPanel} />}
       {menuOpen && (
         <MenuSheet onClose={closeMenu}>
-          {current && <ProjectSwitcher list={list} current={current} onChange={(id) => { setProjectOverride(id); closeMenu(); }} />}
-          <span className="mono muted">{chainOk ? "chain verified" : "chain broken"}</span>
-          <span className="mono muted">{streamStatus === "open" ? "live" : "reconnecting"}</span>
+          {current && (
+            <ProjectSwitcher
+              id="project-switcher-menu"
+              list={list}
+              current={current}
+              onChange={(id) => { setProjectOverride(id); closeMenu(); }}
+            />
+          )}
+          <Link to="/settings" className="btn ghost" onClick={closeMenu}>
+            <GearSix size={16} weight="regular" aria-hidden="true" /> Settings
+          </Link>
+          <SidebarStatus chainOk={chainOk} connected={streamStatus === "open"} />
           {status.encryption && (
             <button type="button" className="btn ghost" onClick={handleLock}>
               <Lock size={16} weight="regular" aria-hidden="true" /> Lock

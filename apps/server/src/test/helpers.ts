@@ -1,10 +1,10 @@
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { AGENT_ACTIONS, ARGON_FAST, deriveKeys, randomHex, signRequest, type AgentAction } from "@panorama/core";
+import { AGENT_ACTIONS, ARGON_FAST, deriveKeys, randomHex, signRequest, type AgentAction } from "@boomerang/core";
 import { buildApp } from "../app";
 
-export const tempDir = () => mkdtempSync(join(tmpdir(), "pan-srv-"));
+export const tempDir = () => mkdtempSync(join(tmpdir(), "bm-srv-"));
 export const humanKeys = () => deriveKeys("test-password-123", "00".repeat(16), ARGON_FAST);
 const id8 = () => randomHex(4);
 
@@ -27,7 +27,7 @@ export function client(app: any, seed: Uint8Array, actorId: string) {
 
 /** Builds a multipart/form-data body by hand: text fields first, then one file part. */
 export function multipart(fields: Record<string, string>, file: { name: string; mime: string; bytes: Buffer }): { body: Buffer; contentType: string } {
-  const boundary = `panorama-${randomHex(16)}`;
+  const boundary = `boomerang-${randomHex(16)}`;
   const parts: Buffer[] = [];
   for (const [k, v] of Object.entries(fields)) {
     parts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="${k}"\r\n\r\n${v}\r\n`));

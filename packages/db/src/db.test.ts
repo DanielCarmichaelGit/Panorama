@@ -2,7 +2,7 @@ import { chmodSync, existsSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { verifyChain } from "@panorama/core";
+import { verifyChain } from "@boomerang/core";
 import * as d from "./index";
 
 const NOW = "2026-09-21T10:00:00.000Z";
@@ -71,7 +71,7 @@ describe("M5 migration backfill", () => {
     const db = d.openDatabase(join(dir, "p.db"), null);
     d.migrateTo(db, 4); // stop right after M4: no boards table, no tickets.board_id column yet
 
-    db.prepare("insert into projects(id, key, name, next_number, created_at) values(?,?,?,?,?)").run("proj1", "PAN", "Panorama", 2, NOW);
+    db.prepare("insert into projects(id, key, name, next_number, created_at) values(?,?,?,?,?)").run("proj1", "PAN", "Boomerang", 2, NOW);
     db.prepare("insert into lanes(id, project_id, name, position, family) values(?,?,?,?,?)").run("lane1", "proj1", "Backlog", 0, "stone");
     db.prepare("insert into tickets(id, project_id, number, title, lane_id, position, created_at, updated_at) values(?,?,?,?,?,?,?,?)")
       .run("t1", "proj1", 1, "Pre-existing ticket", "lane1", 1, NOW, NOW);
@@ -81,7 +81,7 @@ describe("M5 migration backfill", () => {
     const after = Date.now();
 
     const boards = d.listBoards(db, "proj1");
-    expect(boards).toEqual([{ id: boards[0].id, projectId: "proj1", name: "Panorama", description: null, family: "stone", position: 0, createdAt: boards[0].createdAt }]);
+    expect(boards).toEqual([{ id: boards[0].id, projectId: "proj1", name: "Boomerang", description: null, family: "stone", position: 0, createdAt: boards[0].createdAt }]);
     // The backfill stamps the real time the migration runs, not a fixed literal: assert it
     // parses as an ISO timestamp landing within this test's own run window.
     const createdMs = new Date(boards[0].createdAt).getTime();
@@ -93,10 +93,185 @@ describe("M5 migration backfill", () => {
   });
 });
 
+describe("M6 migration", () => {
+  it("upgrades a database at version 5 with an existing ticket, leaving success_criteria empty and epic_id null", () => {
+    const dir = mkdtempSync(join(tmpdir(), "pan-"));
+    const db = d.openDatabase(join(dir, "p.db"), null);
+    d.migrateTo(db, 5); // stop right after M5: no epics, tags, links, fields tables yet
+
+    db.prepare("insert into projects(id, key, name, next_number, created_at) values(?,?,?,?,?)").run("proj1", "PAN", "Boomerang", 2, NOW);
+    db.prepare("insert into lanes(id, project_id, name, position, family) values(?,?,?,?,?)").run("lane1", "proj1", "Backlog", 0, "stone");
+    db.prepare("insert into boards(id, project_id, name, family, position, created_at) values(?,?,?,?,?,?)").run("board1", "proj1", "Boomerang", "stone", 0, NOW);
+    db.prepare("insert into tickets(id, project_id, board_id, number, title, lane_id, position, created_at, updated_at) values(?,?,?,?,?,?,?,?,?)")
+      .run("t1", "proj1", "board1", 1, "Pre-existing ticket", "lane1", 1, NOW, NOW);
+
+    d.migrate(db); // completes the upgrade to M6
+
+    const t = d.getTicket(db, "t1")!;
+    expect(t.epicId).toBeNull();
+    expect(t.successCriteria).toBe("");
+    expect(t.tagIds).toEqual([]);
+    expect(t.fields).toEqual({});
+    db.close();
+  });
+});
+
+describe("M7 migration", () => {
+  it("upgrades a database at version 6 so existing epics and tags read back with a null colour", () => {
+    const dir = mkdtempSync(join(tmpdir(), "pan-"));
+    const db = d.openDatabase(join(dir, "p.db"), null);
+    d.migrateTo(db, 6); // stop right after M6: epics and tags exist but have no color column yet
+
+    db.prepare("insert into projects(id, key, name, next_number, created_at) values(?,?,?,?,?)").run("proj1", "PAN", "Boomerang", 1, NOW);
+    db.prepare("insert into epics(id, project_id, name, family, position, created_at) values(?,?,?,?,?,?)").run("epic1", "proj1", "Launch", "coral", 1, NOW);
+    db.prepare("insert into tags(id, project_id, name, family, created_at) values(?,?,?,?,?)").run("tag1", "proj1", "backend", "sky", NOW);
+
+    d.migrateTo(db, 7); // applies M7 alone; M8 has its own test below
+
+    expect(db.pragma("user_version", { simple: true })).toBe(7);
+    expect(d.getEpic(db, "epic1")).toMatchObject({ name: "Launch", family: "coral", color: null });
+    expect(d.getTag(db, "tag1")).toMatchObject({ name: "backend", family: "sky", color: null });
+    db.close();
+  });
+});
+
+describe("ticket refs", () => {
+  it("lists id, key, and laneId for every ticket of a project, archived included, and nothing from another project", () => {
+    const { db } = fresh();
+    const { project, lanes } = d.createProject(db, { name: "Panorama", key: "PAN" }, NOW);
+    const { project: other } = d.createProject(db, { name: "Other", key: "OTH" }, NOW);
+    const a = d.createTicket(db, { projectId: project.id, title: "a" }, NOW);
+    const b = d.createTicket(db, { projectId: project.id, title: "b" }, NOW);
+    d.createTicket(db, { projectId: other.id, title: "c" }, NOW);
+    d.archiveTicket(db, b.id, NOW);
+    expect(d.listTicketRefs(db, project.id)).toEqual([{ id: a.id, key: "PAN-1", laneId: lanes[0].id }, { id: b.id, key: "PAN-2", laneId: lanes[0].id }]);
+  });
+});
+
+describe("keyed database migration", () => {
+  it("upgrades an encrypted database from version 7 with every foreign key intact", () => {
+    const dir = mkdtempSync(join(tmpdir(), "pan-"));
+    const key = "ab".repeat(32);
+    const db = d.openDatabase(join(dir, "p.db"), key);
+    d.migrateTo(db, 7);
+    const { project } = d.createProject(db, { name: "Panorama", key: "PAN" }, NOW);
+    const t = d.createTicket(db, { projectId: project.id, title: "x" }, NOW);
+    const field = d.createField(db, { projectId: project.id, name: "Points", key: "points", kind: "number", required: false }, NOW);
+    d.setTicketFields(db, t.id, { points: 3 });
+    d.migrate(db);
+    expect(db.pragma("user_version", { simple: true })).toBe(8);
+    expect(db.pragma("foreign_key_check")).toEqual([]);
+    expect(d.getTicketFields(db, t.id)).toEqual({ points: 3 });
+    expect(d.getField(db, field.id)!.key).toBe("points");
+    db.close();
+    expect(() => d.openDatabase(join(dir, "p.db"), null).prepare("select 1 from projects").get()).toThrow();
+  });
+});
+
+describe("M8 migration", () => {
+  it("rebuilds field_definitions so kind may be file, keeping rows, values, and the foreign key", () => {
+    const dir = mkdtempSync(join(tmpdir(), "pan-"));
+    const db = d.openDatabase(join(dir, "p.db"), null);
+    d.migrateTo(db, 7); // stop right after M7: the kind check still lists five kinds
+    db.prepare("insert into projects(id, key, name, next_number, created_at) values(?,?,?,?,?)").run("proj1", "PAN", "Boomerang", 2, NOW);
+    db.prepare("insert into lanes(id, project_id, name, position, family) values(?,?,?,?,?)").run("lane1", "proj1", "Backlog", 0, "stone");
+    db.prepare("insert into boards(id, project_id, name, family, position, created_at) values(?,?,?,?,?,?)").run("board1", "proj1", "Boomerang", "stone", 0, NOW);
+    db.prepare("insert into tickets(id, project_id, board_id, number, title, lane_id, position, created_at, updated_at) values(?,?,?,?,?,?,?,?,?)")
+      .run("t1", "proj1", "board1", 1, "Pre-existing ticket", "lane1", 1, NOW, NOW);
+    db.prepare("insert into field_definitions(id, project_id, name, key, kind, options, required, position, archived, created_at) values(?,?,?,?,?,?,?,?,?,?)")
+      .run("fd1", "proj1", "Points", "points", "number", "[]", 1, 0, 0, NOW);
+    db.prepare("insert into ticket_field_values(ticket_id, field_id, value) values(?,?,?)").run("t1", "fd1", "3");
+    expect(() => db.prepare("insert into field_definitions(id, project_id, name, key, kind, options, required, position, archived, created_at) values(?,?,?,?,?,?,?,?,?,?)")
+      .run("fd2", "proj1", "Spec", "spec", "file", "[]", 0, 1, 0, NOW)).toThrow(/CHECK constraint/);
+
+    d.migrate(db); // completes the upgrade to M8
+
+    expect(db.pragma("user_version", { simple: true })).toBe(8);
+    expect(d.getField(db, "fd1")).toMatchObject({ key: "points", kind: "number", required: true });
+    expect(d.getTicketFields(db, "t1")).toEqual({ points: 3 });
+    const file = d.createField(db, { projectId: "proj1", name: "Spec", key: "spec", kind: "file", required: false }, NOW);
+    expect(file.kind).toBe("file");
+    d.setTicketFields(db, "t1", { spec: { attachmentId: "att1" } });
+    expect(d.getTicketFields(db, "t1")).toEqual({ points: 3, spec: { attachmentId: "att1" } });
+    expect(() => d.createField(db, { projectId: "proj1", name: "Dup", key: "points", kind: "text", required: false }, NOW)).toThrow("duplicate_key");
+    expect(() => db.prepare("insert into ticket_field_values(ticket_id, field_id, value) values(?,?,?)").run("t1", "ghost", "1")).toThrow(/FOREIGN KEY/);
+    expect(db.pragma("foreign_key_check")).toEqual([]);
+    db.close();
+  });
+});
+
+describe("lane lifecycle", () => {
+  it("appends a new lane after the last non-done lane, before the done lanes", () => {
+    const { db } = fresh();
+    const { project } = d.createProject(db, { name: "Boomerang", key: "PAN" }, NOW);
+    const lane = d.createLane(db, { projectId: project.id, name: "Review", family: "lilac", setsNeedsHuman: true, isDone: false }, NOW);
+    expect(lane).toMatchObject({ projectId: project.id, name: "Review", family: "lilac", setsNeedsHuman: true, isDone: false, position: 5, evidenceRequirements: [] });
+    const names = d.listLanes(db, project.id).map((l) => l.name);
+    expect(names).toEqual(["Backlog", "Ready", "In Progress", "Eval", "Ready for Production", "Review", "Done"]);
+    expect(d.listLanes(db, project.id).map((l) => l.position)).toEqual([0, 1, 2, 3, 4, 5, 6]);
+  });
+
+  it("inserts before the first done lane by position, so a done lane toggled in the middle does not capture new lanes", () => {
+    const { db } = fresh();
+    const { project, lanes } = d.createProject(db, { name: "Boomerang", key: "PAN" }, NOW);
+    d.updateLane(db, lanes[2].id, { isDone: true }); // In Progress becomes a done lane, mid-board
+    const lane = d.createLane(db, { projectId: project.id, name: "Review", family: "lilac", setsNeedsHuman: false, isDone: false }, NOW);
+    expect(lane.position).toBe(2);
+    expect(d.listLanes(db, project.id).map((l) => l.name)).toEqual(["Backlog", "Ready", "Review", "In Progress", "Eval", "Ready for Production", "Done"]);
+  });
+
+  it("appends at the end when the project has no done lane", () => {
+    const { db } = fresh();
+    const { project, lanes } = d.createProject(db, { name: "Boomerang", key: "PAN" }, NOW);
+    for (const l of lanes) d.updateLane(db, l.id, { isDone: false });
+    const lane = d.createLane(db, { projectId: project.id, name: "Archive", family: "stone", setsNeedsHuman: false, isDone: true }, NOW);
+    expect(lane.position).toBe(6);
+    expect(d.listLanes(db, project.id).at(-1)!.id).toBe(lane.id);
+  });
+
+  it("updates a lane's family and flags but never its name", () => {
+    const { db } = fresh();
+    const { lanes } = d.createProject(db, { name: "Boomerang", key: "PAN" }, NOW);
+    const out = d.updateLane(db, lanes[0].id, { family: "coral", setsNeedsHuman: true, isDone: true });
+    expect(out).toMatchObject({ name: "Backlog", family: "coral", setsNeedsHuman: true, isDone: true });
+    expect(d.getLane(db, lanes[0].id)).toEqual(out);
+  });
+
+  it("reorders lanes to the given id list and rejects a list that is not exactly the project's lanes", () => {
+    const { db } = fresh();
+    const { project, lanes } = d.createProject(db, { name: "Boomerang", key: "PAN" }, NOW);
+    const ids = lanes.map((l) => l.id);
+    const reversed = [...ids].reverse();
+    d.reorderLanes(db, project.id, reversed);
+    expect(d.listLanes(db, project.id).map((l) => l.id)).toEqual(reversed);
+    expect(d.listLanes(db, project.id).map((l) => l.position)).toEqual([0, 1, 2, 3, 4, 5]);
+
+    expect(() => d.reorderLanes(db, project.id, ids.slice(1))).toThrow("lane_set_mismatch");
+    expect(() => d.reorderLanes(db, project.id, [...ids, "stranger"])).toThrow("lane_set_mismatch");
+    expect(() => d.reorderLanes(db, project.id, [ids[0], ids[0], ...ids.slice(2)])).toThrow("lane_set_mismatch");
+    expect(d.listLanes(db, project.id).map((l) => l.id)).toEqual(reversed);
+  });
+
+  it("refuses to delete a lane holding tickets, archived ones included, and deletes an empty one", () => {
+    const { db } = fresh();
+    const { project, lanes } = d.createProject(db, { name: "Boomerang", key: "PAN" }, NOW);
+    const t1 = d.createTicket(db, { projectId: project.id, title: "a" }, NOW);
+    d.createTicket(db, { projectId: project.id, title: "b" }, NOW);
+    d.archiveTicket(db, t1.id, NOW);
+
+    expect(d.deleteLane(db, lanes[0].id)).toEqual({ deleted: false, ticketCount: 2 });
+    expect(d.getLane(db, lanes[0].id)).toBeDefined();
+
+    expect(d.deleteLane(db, lanes[1].id)).toEqual({ deleted: true, ticketCount: 0 });
+    expect(d.getLane(db, lanes[1].id)).toBeUndefined();
+    expect(d.listLanes(db, project.id)).toHaveLength(5);
+  });
+});
+
 describe("projects and tickets", () => {
   it("creates a project with the six default lanes", () => {
     const { db } = fresh();
-    const { project, lanes } = d.createProject(db, { name: "Panorama", key: "PAN" }, NOW);
+    const { project, lanes } = d.createProject(db, { name: "Boomerang", key: "PAN" }, NOW);
     expect(lanes.map((l) => l.name)).toEqual(["Backlog", "Ready", "In Progress", "Eval", "Ready for Production", "Done"]);
     expect(lanes[4].setsNeedsHuman).toBe(true);
     expect(lanes[4].evidenceRequirements).toEqual([{ typeId: "et_eval_score", count: 1 }]);
@@ -104,15 +279,15 @@ describe("projects and tickets", () => {
   });
   it("creates a default board named after the project, family stone, and lands new tickets on it", () => {
     const { db } = fresh();
-    const { project, boards } = d.createProject(db, { name: "Panorama", key: "PAN" }, NOW);
-    expect(boards).toEqual([{ id: boards[0].id, projectId: project.id, name: "Panorama", description: null, family: "stone", position: 0, createdAt: NOW }]);
+    const { project, boards } = d.createProject(db, { name: "Boomerang", key: "PAN" }, NOW);
+    expect(boards).toEqual([{ id: boards[0].id, projectId: project.id, name: "Boomerang", description: null, family: "stone", position: 0, createdAt: NOW }]);
     expect(d.listBoards(db, project.id)).toEqual(boards);
     const t = d.createTicket(db, { projectId: project.id, title: "One" }, NOW);
     expect(t.boardId).toBe(boards[0].id);
   });
   it("creates a second board and can put a ticket on it explicitly; listTickets filters by board", () => {
     const { db } = fresh();
-    const { project, boards } = d.createProject(db, { name: "Panorama", key: "PAN" }, NOW);
+    const { project, boards } = d.createProject(db, { name: "Boomerang", key: "PAN" }, NOW);
     const second = d.createBoard(db, { projectId: project.id, name: "Growth", family: "sky" }, NOW);
     expect(second.position).toBe(1);
     expect(d.getBoard(db, second.id)).toEqual(second);
@@ -125,7 +300,7 @@ describe("projects and tickets", () => {
   });
   it("numbers tickets per project, defaults to the first lane, and flags on entry to a needs-human lane", () => {
     const { db } = fresh();
-    const { project, lanes } = d.createProject(db, { name: "Panorama", key: "PAN" }, NOW);
+    const { project, lanes } = d.createProject(db, { name: "Boomerang", key: "PAN" }, NOW);
     const t1 = d.createTicket(db, { projectId: project.id, title: "One" }, NOW);
     const t2 = d.createTicket(db, { projectId: project.id, title: "Two" }, NOW);
     expect([t1.key, t2.key, t1.laneId]).toEqual(["PAN-1", "PAN-2", lanes[0].id]);
@@ -137,7 +312,7 @@ describe("projects and tickets", () => {
   });
   it("applies a lane's entry rules to a ticket created straight into it, the same as a move does", () => {
     const { db } = fresh();
-    const { project, lanes } = d.createProject(db, { name: "Panorama", key: "PAN" }, NOW);
+    const { project, lanes } = d.createProject(db, { name: "Boomerang", key: "PAN" }, NOW);
     const plain = d.createTicket(db, { projectId: project.id, title: "in backlog" }, NOW);
     expect(d.enterLane(db, plain.id, plain.laneId, NOW).flagged).toBe(false);
 
@@ -172,5 +347,41 @@ describe("projects and tickets", () => {
     expect(d.setFlag(db, t.id, "blocked", false, NOW).flags).toEqual([]);
     d.archiveTicket(db, t.id, NOW);
     expect(d.listTickets(db, { projectId: project.id })).toHaveLength(0);
+  });
+  it("round trips epic, tags, success criteria, and fields through toTicket", () => {
+    const { db } = fresh();
+    const { project } = d.createProject(db, { name: "Boomerang", key: "PAN" }, NOW);
+    const epic = d.createEpic(db, { projectId: project.id, name: "Onboarding" }, NOW);
+    const tag = d.createTag(db, { projectId: project.id, name: "Bug" }, NOW);
+    const field = d.createField(db, { projectId: project.id, name: "Severity", key: "severity", kind: "text" }, NOW);
+
+    const created = d.createTicket(
+      db,
+      { projectId: project.id, title: "Full ticket", epicId: epic.id, tagIds: [tag.id], successCriteria: "- [ ] ship it", fields: { [field.key]: "high" } },
+      NOW
+    );
+    expect(created.epicId).toBe(epic.id);
+    expect(created.tagIds).toEqual([tag.id]);
+    expect(created.successCriteria).toBe("- [ ] ship it");
+    expect(created.fields).toEqual({ severity: "high" });
+    expect(d.getTicket(db, created.id)).toEqual(created);
+
+    const updated = d.updateTicket(db, created.id, { epicId: null, tagIds: [], successCriteria: "done", fields: { severity: null } }, NOW);
+    expect(updated.epicId).toBeNull();
+    expect(updated.tagIds).toEqual([]);
+    expect(updated.successCriteria).toBe("done");
+    expect(updated.fields).toEqual({});
+  });
+  it("filters listTickets by epicId and tagId", () => {
+    const { db } = fresh();
+    const { project } = d.createProject(db, { name: "Boomerang", key: "PAN" }, NOW);
+    const epic = d.createEpic(db, { projectId: project.id, name: "Onboarding" }, NOW);
+    const tag = d.createTag(db, { projectId: project.id, name: "Bug" }, NOW);
+    const inEpic = d.createTicket(db, { projectId: project.id, title: "in epic", epicId: epic.id }, NOW);
+    const tagged = d.createTicket(db, { projectId: project.id, title: "tagged", tagIds: [tag.id] }, NOW);
+    d.createTicket(db, { projectId: project.id, title: "plain" }, NOW);
+
+    expect(d.listTickets(db, { projectId: project.id, epicId: epic.id }).map((t) => t.id)).toEqual([inEpic.id]);
+    expect(d.listTickets(db, { projectId: project.id, tagId: tag.id }).map((t) => t.id)).toEqual([tagged.id]);
   });
 });

@@ -11,6 +11,6 @@ const REASONS: Record<ChainReason, string> = {
 
 export const ChainBanner = ({ brokenAt, reason }: { brokenAt: number; reason: ChainReason }) => (
   <div className="banner" role="alert">
-    The event log was changed outside Panorama. {REASONS[reason]} First bad entry: {brokenAt}. Treat ticket history after that point as untrusted.
+    The event log was changed outside Boomerang. {REASONS[reason]} First bad entry: {brokenAt}. Treat ticket history after that point as untrusted.
   </div>
 );

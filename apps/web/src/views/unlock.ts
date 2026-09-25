@@ -1,5 +1,6 @@
-import { ARGON, ARGON_FAST, deriveKeys, randomHex, signText } from "@panorama/core";
+import { ARGON, ARGON_FAST, deriveKeys, randomHex, signText } from "@boomerang/core";
 import { api } from "../lib/api";
+import { ANCHOR_KEY } from "../lib/storage";
 import type { Status } from "../App";
 
 type Call = (method: string, path: string, body: unknown, seed: Uint8Array) => Promise<any>;
@@ -12,7 +13,7 @@ export type ChainState = { ok: true } | { ok: false; brokenAt: number; reason: C
 export interface Anchor { seq: number; headHash: string }
 export interface AnchorStore { read(): Anchor | null; write(a: Anchor): void }
 
-export const ANCHOR_KEY = "pan.anchor";
+export { ANCHOR_KEY } from "../lib/storage";
 
 const browserAnchors: AnchorStore = {
   read() {

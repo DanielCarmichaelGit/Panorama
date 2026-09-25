@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { AGENT_ACTIONS, ARGON_FAST, deriveKeys, randomHex, signRequest, type AgentAction } from "@panorama/core";
+import { AGENT_ACTIONS, ARGON_FAST, deriveKeys, randomHex, signRequest, type AgentAction } from "@boomerang/core";
 import { buildApp } from "./app";
 import { agentIn, client, humanKeys, tempDir } from "./test/helpers";
 

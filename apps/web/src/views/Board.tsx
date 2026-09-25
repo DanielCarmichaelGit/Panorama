@@ -1,15 +1,15 @@
 import { useState } from "react";
-import { useOutletContext, useSearchParams } from "react-router-dom";
+import { useNavigate, useOutletContext, useSearchParams } from "react-router-dom";
 import { DndContext, DragOverlay, PointerSensor, useDroppable, useSensor, useSensors } from "@dnd-kit/core";
 import type { DragEndEvent, DragStartEvent } from "@dnd-kit/core";
-import type { Board as BoardType, EvidenceType, Lane, Project, Ticket } from "@panorama/core";
+import type { Board as BoardType, Epic, EvidenceType, Lane, Project, Tag, Ticket } from "@boomerang/core";
 import { ApiError } from "../lib/api";
-import { useAgents, useBoard, useBoards, useEvidenceTypes, useGates, useMoveTicket } from "../lib/hooks";
+import { useAgents, useBoard, useBoards, useEpics, useEvidenceTypes, useGates, useMoveTicket, useTags } from "../lib/hooks";
 import { BoardCard, BoardCardContent } from "../components/BoardCard";
 import { laneOptionLabel, missingMessage } from "../components/GateList";
-import { LaneRequirements } from "../components/LaneRequirements";
 import { NewBoard } from "../components/NewBoard";
 import { NewTicket } from "../components/NewTicket";
+import { Picker } from "../components/Picker";
 
 const NEW_BOARD_OPTION = "__new";
 
@@ -24,6 +24,15 @@ export function groupByLane(tickets: Ticket[], lanes: Lane[]): Record<string, Ti
   return groups;
 }
 
+/** A ticket matches the arc filter (if set) and carries every selected tag (if any are set). */
+export function filterTickets(tickets: Ticket[], { epicId, tagIds }: { epicId?: string | null; tagIds?: string[] }): Ticket[] {
+  return tickets.filter((t) => {
+    if (epicId && t.epicId !== epicId) return false;
+    if (tagIds && tagIds.length > 0 && !tagIds.every((id) => t.tagIds.includes(id))) return false;
+    return true;
+  });
+}
+
 interface DropError {
   laneId: string;
   message: string;
@@ -35,6 +44,8 @@ function LaneColumn({
   tickets,
   agents,
   types,
+  epics,
+  tags,
   activeId,
   refused,
   busy,
@@ -47,6 +58,8 @@ function LaneColumn({
   tickets: Ticket[];
   agents: ReturnType<typeof useAgents>["data"];
   types: EvidenceType[];
+  epics: Epic[];
+  tags: Tag[];
   activeId: string | null;
   refused: boolean;
   busy: boolean;
@@ -84,7 +97,7 @@ function LaneColumn({
           t.id === activeId ? (
             <div key={t.id} className="bcard-origin" aria-hidden="true" />
           ) : (
-            <BoardCard key={t.id} ticket={t} lanes={lanes} agents={agents ?? []} types={types} />
+            <BoardCard key={t.id} ticket={t} lanes={lanes} agents={agents ?? []} types={types} epics={epics} tags={tags} />
           ),
         )
       )}
@@ -98,12 +111,16 @@ export function Board() {
   const boardsQuery = useBoards(project.id);
   const agents = useAgents().data ?? [];
   const evidenceTypes = useEvidenceTypes().data ?? [];
+  const epicsQuery = useEpics(project.id);
+  const tagsQuery = useTags(project.id);
+  const epics = epicsQuery.data ?? [];
+  const tags = tagsQuery.data ?? [];
   const move = useMoveTicket();
   const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
 
   const [activeId, setActiveId] = useState<string | null>(null);
   const [dropError, setDropError] = useState<DropError | null>(null);
-  const [reqLane, setReqLane] = useState<Lane | null>(null);
   const [showNewBoard, setShowNewBoard] = useState(false);
   const [showNewTicket, setShowNewTicket] = useState(false);
 
@@ -115,8 +132,21 @@ export function Board() {
   const boardList = [...(boardsQuery.data ?? [])].sort((a, b) => a.position - b.position);
   const urlBoardId = searchParams.get("board");
   const selectedBoardId = urlBoardId && boardList.some((b) => b.id === urlBoardId) ? urlBoardId : (boardList[0]?.id ?? "");
+  const epicOptions = epics.filter((e) => !e.archived);
+  const tagOptions = tags.filter((t) => !t.archived);
+  const urlEpicId = searchParams.get("epic");
+  // A stale or foreign id (an arc deleted since, or from another project) is treated as no
+  // filter, the same way an unknown ?board= falls back to the first board above, so the Arc
+  // Picker's placeholder and the filtered result never disagree about whether a filter is set.
+  const epicId = urlEpicId && epics.some((e) => e.id === urlEpicId) ? urlEpicId : null;
+  const tagIds = searchParams.getAll("tag").filter((id) => tags.some((t) => t.id === id));
+  const hasFilters = !!epicId || tagIds.length > 0;
+  // A deep link with a filter waits for the list that validates it; otherwise the board would
+  // flash unfiltered until the arcs or tags arrive.
+  const filtersLoading = (!!urlEpicId && epicsQuery.isPending) || (searchParams.has("tag") && tagsQuery.isPending);
   const allTickets = board.data ?? [];
-  const tickets = allTickets.filter((t) => t.boardId === selectedBoardId);
+  const boardTickets = allTickets.filter((t) => t.boardId === selectedBoardId);
+  const tickets = filterTickets(boardTickets, { epicId, tagIds });
   const groups = groupByLane(tickets, laneList);
   const activeTicket = tickets.find((t) => t.id === activeId) ?? null;
 
@@ -124,6 +154,26 @@ export function Board() {
     if (value === NEW_BOARD_OPTION) { setShowNewBoard(true); return; }
     const next = new URLSearchParams(searchParams);
     next.set("board", value);
+    setSearchParams(next, { replace: true });
+  }
+
+  function selectEpic(id: string | null) {
+    const next = new URLSearchParams(searchParams);
+    if (id) next.set("epic", id); else next.delete("epic");
+    setSearchParams(next, { replace: true });
+  }
+
+  function selectTags(ids: string[]) {
+    const next = new URLSearchParams(searchParams);
+    next.delete("tag");
+    for (const tagId of ids) next.append("tag", tagId);
+    setSearchParams(next, { replace: true });
+  }
+
+  function clearFilters() {
+    const next = new URLSearchParams(searchParams);
+    next.delete("epic");
+    next.delete("tag");
     setSearchParams(next, { replace: true });
   }
 
@@ -167,7 +217,7 @@ export function Board() {
     );
   }
 
-  if (board.isPending || boardsQuery.isPending) {
+  if (board.isPending || boardsQuery.isPending || filtersLoading) {
     return (
       <div className="view">
         <h1>Board</h1>
@@ -190,13 +240,40 @@ export function Board() {
     <div className="view board-view">
       <div className="board-head">
         <h1>Board</h1>
-        <div className="field">
-          <label htmlFor="board-select">Board</label>
-          <select id="board-select" className="input" value={selectedBoardId} onChange={(e) => selectBoard(e.target.value)}>
-            {boardList.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-            <option value={NEW_BOARD_OPTION}>New board</option>
-          </select>
-        </div>
+        <Picker
+          id="board-select"
+          label="Board"
+          swatch
+          options={[
+            ...boardList.map((b) => ({ id: b.id, label: b.name, family: b.family })),
+            { id: NEW_BOARD_OPTION, label: "New board" },
+          ]}
+          value={selectedBoardId}
+          onChange={(id) => id && selectBoard(id)}
+        />
+        <Picker
+          id="board-epic-filter"
+          label="Arc"
+          swatch
+          clearable
+          placeholder="All arcs"
+          options={epicOptions.map((e) => ({ id: e.id, label: e.name, family: e.family, color: e.color }))}
+          value={epicId}
+          onChange={selectEpic}
+        />
+        <Picker
+          id="board-tag-filter"
+          label="Tags"
+          multi
+          swatch
+          placeholder="All tags"
+          options={tagOptions.map((t) => ({ id: t.id, label: t.name, family: t.family, color: t.color }))}
+          values={tagIds}
+          onChange={selectTags}
+        />
+        {hasFilters && (
+          <button type="button" className="btn ghost" onClick={clearFilters}>Clear filters</button>
+        )}
         <div className="spacer" />
         <button type="button" className="btn" onClick={() => setShowNewTicket(true)}>New ticket</button>
       </div>
@@ -219,12 +296,14 @@ export function Board() {
                 tickets={groups[lane.id] ?? []}
                 agents={agents}
                 types={evidenceTypes}
+                epics={epics}
+                tags={tags}
                 activeId={activeId}
                 refused={refused}
                 busy={busy}
                 title={title}
                 error={dropError?.laneId === lane.id ? dropError.message : null}
-                onOpenRequirements={() => setReqLane(lane)}
+                onOpenRequirements={() => navigate("/settings?tab=lanes")}
               />
             );
           })}
@@ -233,13 +312,12 @@ export function Board() {
           {activeTicket && (
             <div className="bcard dragging">
               <div className="bcard-row">
-                <BoardCardContent ticket={activeTicket} lanes={laneList} agents={agents} />
+                <BoardCardContent ticket={activeTicket} lanes={laneList} agents={agents} epics={epics} tags={tags} />
               </div>
             </div>
           )}
         </DragOverlay>
       </DndContext>
-      {reqLane && <LaneRequirements lane={reqLane} types={evidenceTypes} onClose={() => setReqLane(null)} />}
       {showNewBoard && <NewBoard projectId={project.id} onClose={closeNewBoard} />}
       {showNewTicket && <NewTicket projectId={project.id} boardId={selectedBoardId} returnTo="board" onClose={closeNewTicket} />}
     </div>

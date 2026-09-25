@@ -1,4 +1,4 @@
-import { signRequest } from "@panorama/core";
+import { signRequest } from "@boomerang/core";
 import { session } from "./session";
 
 export interface StreamHandlers {
@@ -107,6 +107,19 @@ export async function connectStream(opts: StreamHandlers): Promise<void> {
 
 /** Pure mapping from a stream event to the query keys it should invalidate. */
 export function invalidationsFor(type: string, data: any): unknown[][] {
+  // A link's payload carries fromId/toId, not a ticket id in `data.id` (that is the link's own
+  // id): both ends of the link have a stake in it, since a dependency gate on the "to" ticket
+  // reads links stored on either side of the relationship.
+  if (type === "ticket.linked" || type === "ticket.unlinked") {
+    return [
+      ["links", data.fromId],
+      ["links", data.toId],
+      ["gates", data.fromId],
+      ["gates", data.toId],
+      ["ticket", data.fromId],
+      ["ticket", data.toId],
+    ];
+  }
   if (type.startsWith("ticket.")) {
     return [["queue"], ["tickets"], ["ticket", data.id], ["gates", data.id]];
   }
@@ -121,6 +134,15 @@ export function invalidationsFor(type: string, data: any): unknown[][] {
   }
   if (type.startsWith("board.")) {
     return [["boards", data.projectId]];
+  }
+  if (type.startsWith("epic.")) {
+    return [["epics"]];
+  }
+  if (type.startsWith("tag.")) {
+    return [["tags"]];
+  }
+  if (type.startsWith("field.")) {
+    return [["fields"]];
   }
   return [];
 }

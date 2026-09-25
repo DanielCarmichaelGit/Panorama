@@ -1,0 +1,17 @@
+{
+  "sessionId": "s_20260924T222354_a2401b",
+  "actor": "Daniel Carmichael",
+  "tool": "claude-code",
+  "intent": "unstated",
+  "head": "4a5123484482dd972eb184cb466e31cf79ed8b5433ba845df1ed54a4779c5104",
+  "count": 78,
+  "diffHash": "e2d5802e5d00e747974a84320b7bb1e26ad500b8dc1db3006364e1d256095c09",
+  "files": [
+    "packages/core/src/fields.test.ts",
+    "packages/core/src/links.test.ts",
+    "packages/core/src/links.ts",
+    "packages/core/src/schemas.test.ts"
+  ],
+  "base": "bdef798cca880b4698814b8475de440871f2c7d8",
+  "ts": "2026-09-24T22:30:03.743Z"
+}

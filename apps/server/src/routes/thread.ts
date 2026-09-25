@@ -1,9 +1,10 @@
 import type { FastifyInstance } from "fastify";
-import { AddCommentInput, AddEvidenceInput, checkGate, evaluateEvidence, LaneRequirementsInput } from "@panorama/core";
+import { AddCommentInput, AddEvidenceInput, checkGate, CreateEvidenceTypeInput, evaluateEvidence, LaneRequirementsInput } from "@boomerang/core";
 import {
   addComment,
   addEvidence,
-  appendEvent,
+  createEvidenceType,
+  deleteEvidenceType,
   getActor,
   getAttachment,
   getEvidenceType,
@@ -16,27 +17,60 @@ import {
   setLaneRequirements,
   thread,
   type DB,
-} from "@panorama/db";
+} from "@boomerang/db";
 import { getDb, requireCan } from "../auth";
-import { record } from "../bus";
 import type { Ctx } from "../context";
+import { blockedByReasons } from "../gate";
 import { HttpError } from "../errors";
+import { loadTicket, makeLog } from "./common";
 
 export function threadRoutes(app: FastifyInstance, ctx: Ctx): void {
   const iso = () => ctx.now().toISOString();
-  const load = (db: DB, id: string) => { const t = getTicket(db, id); if (!t || t.archived) throw new HttpError(404, "not_found", "No such ticket"); return t; };
-  const log = (db: DB, req: any, type: string, payload: unknown) => {
-    const ev = appendEvent(db, { actorId: req.actor.id, type, payload, signature: req.sig, now: iso() });
-    record(req, ev);
-    return ev;
-  };
+  const load = loadTicket;
+  const log = makeLog(ctx);
 
   app.get("/api/v1/evidence-types", async (req) => { requireCan(req, "read"); return listEvidenceTypes(getDb(ctx)); });
 
+  // Evidence types are global (every project shares them), so these events carry no
+  // projectId and the stream sends them to every listener (see visibleTo in bus.ts).
+
+  app.post("/api/v1/evidence-types", async (req) => {
+    requireCan(req, "evidence.edit");
+    const db = getDb(ctx); const input = CreateEvidenceTypeInput.parse(req.body);
+    return db.transaction(() => {
+      let type;
+      try {
+        type = createEvidenceType(db, input, iso());
+      } catch (e) {
+        if ((e as Error).message === "duplicate_evidence_type") throw new HttpError(409, "duplicate_evidence_type", "That evidence type name is already used");
+        throw e;
+      }
+      log(db, req, "evidence_type.created", { id: type.id, name: type.name, kind: type.kind, params: type.params, humanOnly: type.humanOnly, needsAttachment: type.needsAttachment });
+      return type;
+    })();
+  });
+
+  app.delete("/api/v1/evidence-types/:id", async (req: any) => {
+    requireCan(req, "evidence.edit");
+    const db = getDb(ctx); const type = getEvidenceType(db, req.params.id);
+    if (!type) throw new HttpError(404, "not_found", "No such evidence type");
+    return db.transaction(() => {
+      const { deleted, lanes, evidenceCount } = deleteEvidenceType(db, type.id);
+      if (!deleted) {
+        const message = lanes.length > 0
+          ? `Remove it from ${lanes.map((l) => l.name).join(", ")} first`
+          : `It is recorded on ${evidenceCount} evidence ${evidenceCount === 1 ? "row" : "rows"}`;
+        throw new HttpError(409, "evidence_type_in_use", message, { lanes, evidenceCount });
+      }
+      log(db, req, "evidence_type.deleted", { id: type.id, name: type.name });
+      return { ok: true };
+    })();
+  });
+
   app.put("/api/v1/lanes/:id/requirements", async (req: any) => {
+    requireCan(req, "lane.edit");
     const db = getDb(ctx); const lane = getLane(db, req.params.id);
     if (!lane) throw new HttpError(404, "not_found", "No such lane");
-    requireCan(req, "lane.edit", lane.projectId);
     const { requirements } = LaneRequirementsInput.parse(req.body);
     // One count per type, or the gate would have two answers for the same requirement.
     const seen = new Set<string>();
@@ -125,7 +159,8 @@ export function threadRoutes(app: FastifyInstance, ctx: Ctx): void {
     const evidence = listEvidence(db, t.id);
     const out: Record<string, { typeId: string; name: string; need: number; have: number }[]> = {};
     for (const lane of listLanes(db, t.projectId)) {
-      out[lane.id] = checkGate(lane.evidenceRequirements, evidence).map((m) => ({ ...m, name: getEvidenceType(db, m.typeId)?.name ?? m.typeId }));
+      const missing = checkGate(lane.evidenceRequirements, evidence).map((m) => ({ ...m, name: getEvidenceType(db, m.typeId)?.name ?? m.typeId }));
+      out[lane.id] = [...missing, ...blockedByReasons(db, t.projectId, t.id, lane)];
     }
     return out;
   });

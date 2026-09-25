@@ -16,3 +16,12 @@ E2E: add a lane and an evidence type, require it on the lane, create a ticket an
 
 ### Task 5: File field kind
 Owner asked how images, files and video fit fields. Add a `file` field kind: the value is `{attachmentId}` referencing an attachment uploaded to the ticket (any type the attachment route accepts). Core: FIELD_KINDS gains `file`; FieldValueSchema accepts `{attachmentId: string}` for it; validateFieldValues checks the kind. Server: PATCH validates that the attachment belongs to the ticket. Web: FieldControl renders an upload control (reuses the attachment upload from NewTicket and TicketPanel) with an image preview for images and a filename link otherwise, Remove clears; NewTicket uploads after create like its attachments do and then PATCHes the field; Settings Fields tab offers the kind with the label "File". Tests at each layer. README field kinds list.
+
+## Milestone 2d: Boomerang (owner decision 2026-09-25)
+Spec: `docs/superpowers/specs/2026-09-25-boomerang-rename-design.md`. Runs after every 2c task has landed, on the same branch, before the final review.
+
+### Task 6: The rename
+Package names, imports, filters, root name, lockfile; env names with PANORAMA fallback; data dir move; storage keys; every user-facing string; docs (README, BRIEF, BRAND, specs' titles, skill copy); demo agent; e2e; launch.json. Acceptance 1 to 3 of the spec.
+
+### Task 7: The boomerang illustration
+`BoomerangScene` per spec section 2 replacing `LaneScene` everywhere, with tests and a screenshot pass at the lock screen, first project and an empty state. Acceptance 4.

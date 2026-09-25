@@ -166,6 +166,14 @@ export function markOutboxAttempt(db: DB, id: string, result: { ok: true; now: s
   else db.prepare("update outbox set attempts = attempts + 1, last_error = ?, next_attempt_at = ? where id = ?").run(result.error, result.nextAttemptAt, id);
   return getOutboxItem(db, id)!;
 }
+/** A next attempt time no clock reaches: a parked row stays for the record but is never due. */
+export const OUTBOX_PARKED_AT = "9999-12-31T00:00:00.000Z";
+/** Sets a row aside without counting an attempt: its destination is archived or gone, so there
+ *  is nothing to deliver to. The row keeps its history and `dueOutbox` never returns it again. */
+export function parkOutbox(db: DB, id: string, error: string): OutboxItem {
+  db.prepare("update outbox set last_error = ?, next_attempt_at = ? where id = ?").run(error, OUTBOX_PARKED_AT, id);
+  return getOutboxItem(db, id)!;
+}
 /** Removes rows delivered before `before`; returns how many went. Undelivered rows are never
  *  purged here: a delivery that gave up is the worker's to flag, not to forget. */
 export const purgeDelivered = (db: DB, before: string): number =>

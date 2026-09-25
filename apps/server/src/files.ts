@@ -13,14 +13,16 @@ export function filePath(dataDir: string, id: string): string {
   return join(dataDir, "files", id);
 }
 
-function encrypt(key: Buffer, bytes: Buffer): Buffer {
+/** AES-256-GCM with a fresh IV, laid out iv | ciphertext | tag. Attachments use it per file;
+ *  a webhook destination's secret is sealed the same way (workers/secrets.ts). */
+export function encrypt(key: Buffer, bytes: Buffer): Buffer {
   const iv = randomBytes(IV_LEN);
   const cipher = createCipheriv("aes-256-gcm", key, iv);
   const ciphertext = Buffer.concat([cipher.update(bytes), cipher.final()]);
   return Buffer.concat([iv, ciphertext, cipher.getAuthTag()]);
 }
 
-function decrypt(key: Buffer, blob: Buffer): Buffer {
+export function decrypt(key: Buffer, blob: Buffer): Buffer {
   const iv = blob.subarray(0, IV_LEN);
   const tag = blob.subarray(blob.length - TAG_LEN);
   const ciphertext = blob.subarray(IV_LEN, blob.length - TAG_LEN);

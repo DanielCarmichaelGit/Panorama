@@ -1,9 +1,9 @@
-import { mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { AGENT_ACTIONS } from "@boomerang/core";
-import { defaultAgentName, loadConfig, loadOrCreateKey, saveKey } from "./config";
+import { defaultAgentName, loadConfig, loadOrCreateKey, readKey, saveKey } from "./config";
 
 const home = () => mkdtempSync(join(tmpdir(), "bm-mcp-home-"));
 
@@ -62,6 +62,36 @@ describe("key file", () => {
     saveKey(path, { ...key, id: "agent-1" });
     expect(loadOrCreateKey(path).key.id).toBe("agent-1");
     expect(statSync(path).mode & 0o777).toBe(0o600);
+  });
+
+  it("sets a drifted key file mode back to 600 and says so", () => {
+    const path = join(home(), ".boomerang-mcp", "k.json");
+    loadOrCreateKey(path);
+    chmodSync(path, 0o644);
+    const warnings: string[] = [];
+    loadOrCreateKey(path, { warn: (line) => warnings.push(line) });
+    expect(statSync(path).mode & 0o777).toBe(0o600);
+    expect(warnings).toEqual([`The key file ${path} was mode 644; it should be 600 and has been set back. Check who else could read it.`]);
+    // Once repaired, a second load has nothing to say.
+    expect((() => { const w: string[] = []; loadOrCreateKey(path, { warn: (l) => w.push(l) }); return w; })()).toEqual([]);
+  });
+
+  it("sets a drifted key directory mode back to 700 and says so", () => {
+    const dir = join(home(), ".boomerang-mcp");
+    const path = join(dir, "k.json");
+    loadOrCreateKey(path);
+    chmodSync(dir, 0o755);
+    const warnings: string[] = [];
+    loadOrCreateKey(path, { warn: (line) => warnings.push(line) });
+    expect(statSync(dir).mode & 0o777).toBe(0o700);
+    expect(warnings).toEqual([`The key directory ${dir} was mode 755; it should be 700 and has been set back. Check who else could read it.`]);
+  });
+
+  it("reads a key without touching it", () => {
+    const path = join(home(), "k.json");
+    expect(readKey(path)).toBeNull();
+    const { key } = loadOrCreateKey(path);
+    expect(Buffer.from(readKey(path)!.seed)).toEqual(Buffer.from(key.seed));
   });
 
   it("refuses a file that is not an agent key rather than overwriting it", () => {

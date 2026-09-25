@@ -1,6 +1,6 @@
 import { publicKeyFromSeed, signRequest } from "@boomerang/core";
 import type { AgentKey, McpConfig } from "./config";
-import { saveKey } from "./config";
+import { readKey, saveKey } from "./config";
 import { BoomerangError } from "./errors";
 
 type Json = Record<string, unknown> | unknown[] | null;
@@ -12,6 +12,7 @@ type Json = Record<string, unknown> | unknown[] | null;
  */
 export class BoomerangClient {
   readonly key: AgentKey;
+  private registering: Promise<string> | null = null;
 
   constructor(readonly config: McpConfig, key: AgentKey, private readonly fetchImpl: typeof fetch = fetch) {
     this.key = key;
@@ -68,24 +69,34 @@ export class BoomerangClient {
   }
 
   /**
-   * Registers this key when it has no id yet and remembers the id in the key file. A key
-   * the server already knows but whose id was lost cannot be recovered without the owner,
-   * so that case says what to do rather than registering a second key.
+   * Registers this key when it has no id yet and remembers the id in the key file. Concurrent
+   * callers share the one registration in flight, so a burst of tool calls sends one POST.
    */
   async ensureRegistered(): Promise<string> {
     if (this.key.id) return this.key.id;
+    this.registering ??= this.register().finally(() => {
+      this.registering = null;
+    });
+    return this.registering;
+  }
+
+  private async register(): Promise<string> {
     const publicKey = await publicKeyFromSeed(this.key.seed);
-    let res: { id: string };
+    let id: string;
     try {
-      res = await this.open<{ id: string }>("POST", "/api/v1/agents/register", { name: this.config.name, publicKey });
+      id = (await this.open<{ id: string }>("POST", "/api/v1/agents/register", { name: this.config.name, publicKey })).id;
     } catch (e) {
-      if (e instanceof BoomerangError && e.code === "duplicate_key") {
-        throw new BoomerangError(409, "duplicate_key", `This key is already registered but ${this.config.keyFile} has lost its id. Remove the file to register a new key.`);
+      if (!(e instanceof BoomerangError) || e.code !== "duplicate_key") throw e;
+      // Another process holding the same key file may have registered it since this one read
+      // the file (two Claude Code sessions starting at once): the id is in the file by now.
+      const fresh = readKey(this.config.keyFile);
+      if (!fresh?.id) {
+        throw new BoomerangError(409, "duplicate_key", `This key is already registered but ${this.config.keyFile} holds no id. Ask the owner to revoke agent ${this.config.name} on the Agents page, then point BOOMERANG_MCP_KEY_FILE at a new path to register a fresh key.`);
       }
-      throw e;
+      id = fresh.id;
     }
-    this.key.id = res.id;
+    this.key.id = id;
     saveKey(this.config.keyFile, this.key);
-    return res.id;
+    return id;
   }
 }

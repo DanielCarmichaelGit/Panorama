@@ -1,5 +1,5 @@
 /// <reference path="../../server/src/types/fastify.d.ts" />
-import { mkdtempSync, readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -8,15 +8,20 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { AGENT_ACTIONS, ARGON_FAST, deriveKeys, signRequest } from "@boomerang/core";
 import { buildApp } from "../../server/src/app";
 import { BoomerangClient } from "./client";
-import { loadConfig, loadOrCreateKey } from "./config";
+import { loadConfig, loadOrCreateKey, readKey } from "./config";
 import { HOWTO_URI } from "./howto";
-import { buildServer } from "./tools";
+import { buildServer, MAX_PAYLOAD_CHARS } from "./tools";
 
 // The real server on a port of its own with a temporary data directory and the fast KDF,
 // the way the e2e harness starts one; the MCP server talks to it over HTTP through the same
 // client code the boomerang-mcp bin uses, and this test drives that through an MCP client.
 
-const tmp = (p: string) => mkdtempSync(join(tmpdir(), p));
+const tempDirs: string[] = [];
+const tmp = (p: string) => {
+  const dir = mkdtempSync(join(tmpdir(), p));
+  tempDirs.push(dir);
+  return dir;
+};
 const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==", "base64");
 
 let app: Awaited<ReturnType<typeof buildApp>>;
@@ -75,6 +80,7 @@ beforeAll(async () => {
 afterAll(async () => {
   await mcp?.close();
   await app?.close();
+  for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
 });
 
 describe("MCP contract", () => {
@@ -214,6 +220,66 @@ describe("MCP contract", () => {
 
     const howto = await mcp.readResource({ uri: HOWTO_URI });
     expect((howto.contents[0] as { text: string }).text).toContain("boomerang_next_ticket");
+  });
+
+  it("raises a flag, and only the owner may clear needs_human", async () => {
+    const raised = await tool("boomerang_set_flag", { ticketId: "DEMO-2", flag: "needs_human", on: true });
+    expect(raised.isError).toBe(false);
+    expect(raised.json.flags).toContain("needs_human");
+    expect(raised.json.message).toBe("DEMO-2 is now flagged needs_human");
+    const cleared = await tool("boomerang_set_flag", { ticketId: "DEMO-2", flag: "needs_human", on: false });
+    expect(cleared.isError).toBe(true);
+    expect(cleared.text).toBe("This key may not perform flag.clear_needs_human (forbidden)");
+    // Any other flag an agent raises it may also lower.
+    expect((await tool("boomerang_set_flag", { ticketId: "DEMO-2", flag: "waiting_on_ci", on: true })).json.flags).toContain("waiting_on_ci");
+    const lowered = await tool("boomerang_set_flag", { ticketId: "DEMO-2", flag: "waiting_on_ci", on: false });
+    expect(lowered.json.flags).not.toContain("waiting_on_ci");
+    expect(lowered.json.message).toBe("DEMO-2 is no longer flagged waiting_on_ci");
+  });
+
+  it("uploads an attachment on its own so a comment can carry it", async () => {
+    const up = await tool("boomerang_upload_attachment", { ticketId: "DEMO-2", filename: "notes.md", mime: "text/markdown", base64: Buffer.from("# Notes\n").toString("base64") });
+    expect(up.isError).toBe(false);
+    expect(up.json).toMatchObject({ filename: "notes.md", mime: "text/markdown", size: 8, id: expect.any(String) });
+    const comment = await tool("boomerang_comment", { ticketId: "DEMO-2", body: "Notes attached.", attachmentIds: [up.json.id] });
+    expect(comment.isError).toBe(false);
+    expect(comment.json.attachmentIds).toEqual([up.json.id]);
+    const view = await tool("boomerang_ticket", { ticketId: "DEMO-2" });
+    expect(view.json.attachments).toEqual([expect.objectContaining({ id: up.json.id, filename: "notes.md", commentId: comment.json.id })]);
+  });
+
+  it("refuses unknown arguments, an unwanted media type and an oversized payload before any request", async () => {
+    const unknown = await tool("boomerang_ticket", { ticketId: "DEMO-1", bogus: 1 });
+    expect(unknown.isError).toBe(true);
+    expect(unknown.text).toMatch(/bogus/);
+    const mime = await tool("boomerang_upload_attachment", { ticketId: "DEMO-2", filename: "run.sh", mime: "application/x-sh", base64: "IyEvYmluL3NoCg==" });
+    expect(mime.isError).toBe(true);
+    expect(mime.text).toMatch(/mime/);
+    const big = await tool("boomerang_add_evidence", { ticketId: "DEMO-2", type: "Test run", payload: { passed: 1, failed: 0, output: "x".repeat(MAX_PAYLOAD_CHARS) } });
+    expect(big.isError).toBe(true);
+    expect(big.text).toContain(`larger than ${MAX_PAYLOAD_CHARS} characters`);
+  });
+
+  it("registers once for a burst of concurrent calls, and picks up an id another process stored", async () => {
+    const config = loadConfig({ BOOMERANG_URL: url, BOOMERANG_AGENT_NAME: "burst-agent" }, tmp("bm-mcp-home-"), "host");
+    const { key } = loadOrCreateKey(config.keyFile);
+    let registrations = 0;
+    const counting: typeof fetch = (input, init) => {
+      if (init?.method === "POST" && String(input).endsWith("/api/v1/agents/register")) registrations += 1;
+      return fetch(input, init);
+    };
+    const burst = new BoomerangClient(config, key, counting);
+    const results = await Promise.allSettled([burst.call("GET", "/api/v1/me"), burst.call("GET", "/api/v1/me"), burst.call("GET", "/api/v1/me")]);
+    expect(results.map((r) => r.status)).toEqual(["rejected", "rejected", "rejected"]);
+    expect(results.map((r) => (r as PromiseRejectedResult).reason.code)).toEqual(["pending", "pending", "pending"]);
+    expect(registrations).toBe(1);
+    expect(readKey(config.keyFile)!.id).toBe(key.id);
+
+    // A second process that read the file before the first registered gets duplicate_key
+    // from the server and continues with the id the first one stored.
+    const stale = new BoomerangClient(config, { seed: key.seed, id: null }, counting);
+    expect(await stale.ensureRegistered()).toBe(key.id);
+    expect(registrations).toBe(2);
   });
 
   it("reports a locked server as one sentence", async () => {

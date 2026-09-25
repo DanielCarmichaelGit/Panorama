@@ -50,6 +50,10 @@ export function describeError(e: unknown, ctx: { name: string; url: string; keyF
       .map((i) => `- ${(i.path ?? []).join(".") || "body"}: ${i.message ?? "invalid"}`);
     return [e.message, ...issues].join("\n");
   }
-  if (e.details !== undefined && e.details !== null) return `${e.message} (${e.code}: ${JSON.stringify(e.details)})`;
+  if (e.details !== undefined && e.details !== null) return `${e.message} (${e.code}: ${clip(JSON.stringify(e.details))})`;
   return `${e.message} (${e.code})`;
 }
+
+/** Details are for a person to skim, so an unusually large blob is cut at 2 KB. */
+const DETAILS_LIMIT = 2048;
+const clip = (s: string) => (s.length > DETAILS_LIMIT ? `${s.slice(0, DETAILS_LIMIT)}... (${s.length - DETAILS_LIMIT} more characters)` : s);

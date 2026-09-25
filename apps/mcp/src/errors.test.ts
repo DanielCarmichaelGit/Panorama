@@ -46,6 +46,12 @@ describe("describeError", () => {
     );
   });
 
+  it("cuts oversized details at 2 KB", () => {
+    const out = describeError(new BoomerangError(400, "validation", "Bad field values", { issues: "x".repeat(5000) }), ctx);
+    expect(out.length).toBeLessThan(2200);
+    expect(out).toMatch(/\.\.\. \(\d+ more characters\)\)$/);
+  });
+
   it("explains an unreachable server and passes local refusals through", () => {
     const down = new TypeError("fetch failed");
     (down as { cause?: unknown }).cause = { code: "ECONNREFUSED" };

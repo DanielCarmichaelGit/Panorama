@@ -1,4 +1,4 @@
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { AGENT_ACTIONS, type Scopes } from "@boomerang/core";
 
@@ -47,6 +47,8 @@ export interface AgentKey {
 interface KeyFileShape { version: 1; seed: string; id: string | null }
 
 const HEX_SEED = /^[0-9a-f]{64}$/;
+const FILE_MODE = 0o600;
+const DIR_MODE = 0o700;
 
 function parseKeyFile(path: string, text: string): AgentKey {
   let parsed: Partial<KeyFileShape>;
@@ -61,18 +63,49 @@ function parseKeyFile(path: string, text: string): AgentKey {
   return { seed: hexToBytes(parsed.seed), id: parsed.id ?? null };
 }
 
+/** Reads the key file without creating or repairing anything; null when there is none. */
+export function readKey(path: string): AgentKey | null {
+  return existsSync(path) ? parseKeyFile(path, readFileSync(path, "utf8")) : null;
+}
+
 /** Writes the key with owner-only permissions: a new file is created at mode 600 and its
  *  directory at 700, and an existing file is set back to 600 in case it drifted. */
 export function saveKey(path: string, key: AgentKey): void {
-  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+  mkdirSync(dirname(path), { recursive: true, mode: DIR_MODE });
   const body: KeyFileShape = { version: 1, seed: bytesToHex(key.seed), id: key.id };
-  writeFileSync(path, JSON.stringify(body, null, 2) + "\n", { mode: 0o600 });
-  chmodSync(path, 0o600);
+  writeFileSync(path, JSON.stringify(body, null, 2) + "\n", { mode: FILE_MODE });
+  chmodSync(path, FILE_MODE);
+}
+
+const octal = (mode: number) => (mode & 0o777).toString(8).padStart(3, "0");
+
+/**
+ * The key file must be readable by its owner alone, and so must its directory. A mode that
+ * drifted (a copy, a backup restore, a careless chmod) is set back and reported on stderr
+ * through `warn`, rather than left as it is or made a reason not to start.
+ */
+function repairModes(path: string, warn: (line: string) => void): void {
+  const dir = dirname(path);
+  for (const [target, mode, what] of [[path, FILE_MODE, "key file"], [dir, DIR_MODE, "key directory"]] as const) {
+    const actual = statSync(target).mode & 0o777;
+    if (actual === mode) continue;
+    chmodSync(target, mode);
+    warn(`The ${what} ${target} was mode ${octal(actual)}; it should be ${octal(mode)} and has been set back. Check who else could read it.`);
+  }
 }
 
 /** Reads the key file, or generates a fresh seed and writes one when there is none yet. */
-export function loadOrCreateKey(path: string, random: (n: number) => Uint8Array = (n) => crypto.getRandomValues(new Uint8Array(n))): { key: AgentKey; created: boolean } {
-  if (existsSync(path)) return { key: parseKeyFile(path, readFileSync(path, "utf8")), created: false };
+export function loadOrCreateKey(
+  path: string,
+  opts: { random?: (n: number) => Uint8Array; warn?: (line: string) => void } = {}
+): { key: AgentKey; created: boolean } {
+  const random = opts.random ?? ((n) => crypto.getRandomValues(new Uint8Array(n)));
+  const warn = opts.warn ?? ((line) => process.stderr.write(`boomerang-mcp: ${line}\n`));
+  const existing = readKey(path);
+  if (existing) {
+    repairModes(path, warn);
+    return { key: existing, created: false };
+  }
   const key: AgentKey = { seed: random(32), id: null };
   saveKey(path, key);
   return { key, created: true };

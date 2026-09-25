@@ -1,0 +1,22 @@
+{
+  "sessionId": "s_20260925T041033_5ef1d1",
+  "actor": "Daniel Carmichael",
+  "tool": "cli",
+  "intent": "milestone 3 task 7 mcp",
+  "head": "c6de7a9825f605390d8c48756ba6042ed817d3f53d85d7776077fe27dd4a3ae8",
+  "count": 80,
+  "diffHash": "6c56e3c7dc894aeefd33858fd38fd94a85fef61d253a0ea81718d01cace0b291",
+  "files": [
+    "README.md",
+    "apps/mcp/src/client.ts",
+    "apps/mcp/src/config.test.ts",
+    "apps/mcp/src/config.ts",
+    "apps/mcp/src/contract.test.ts",
+    "apps/mcp/src/errors.test.ts",
+    "apps/mcp/src/errors.ts",
+    "apps/mcp/src/howto.ts",
+    "apps/mcp/src/tools.ts"
+  ],
+  "base": "f8fe9dade7a66dbaaf240bc3655646a1240c4f42",
+  "ts": "2026-09-25T04:35:49.888Z"
+}

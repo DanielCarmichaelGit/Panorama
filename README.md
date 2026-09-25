@@ -91,7 +91,7 @@ pnpm --filter @boomerang/mcp build
 claude mcp add boomerang -- node "$(pwd)/apps/mcp/dist/main.js"
 ```
 
-`pnpm --filter @boomerang/mcp start` runs the same server from source through tsx, and `claude mcp add boomerang -- pnpm --dir "$(pwd)" --filter @boomerang/mcp start` registers it that way instead. Either form works from any project once Claude Code can find the path.
+`pnpm --filter @boomerang/mcp start` runs the same server from source through tsx, and `claude mcp add boomerang -- pnpm --dir "$(pwd)" --filter @boomerang/mcp start` registers it that way instead. Either form works from any project once Claude Code can find the path. Claude Code records that absolute path, so the repository and its `node_modules` must stay where they are, and after pulling changes run the build again so `dist/main.js` matches the server.
 
 On its first start the server generates a key for the agent, stores it in `~/.boomerang-mcp/<name>.json` with owner-only permissions (the file holds only that seed and the id the server assigns, never your password), and registers the agent as `pending`. Then the approval step: open the Agents view, approve the new agent and set its scopes. Until you do, every tool answers "Waiting for the owner to approve agent <name> on the Agents page"; `boomerang_status` shows the scopes the agent asked for. While Boomerang is locked the tools answer "Boomerang is locked. Ask the owner to unlock it."
 

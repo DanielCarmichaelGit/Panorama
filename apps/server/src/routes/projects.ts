@@ -3,6 +3,7 @@ import { CreateBoardInput, CreateLaneInput, CreateProjectInput, LaneOrderInput, 
 import { appendEvent, createBoard, createLane, createProject, deleteLane, getLane, getProject, listBoards, listLanes, listProjects, reorderLanes, updateLane, type DB } from "@panorama/db";
 import { getDb, inScope, requireCan } from "../auth";
 import { record } from "../bus";
+import { changedKeys } from "../changed";
 import type { Ctx } from "../context";
 import { HttpError } from "../errors";
 
@@ -76,7 +77,7 @@ export function projectRoutes(app: FastifyInstance, ctx: Ctx): void {
         throw new HttpError(400, "validation", "A project needs one done lane", { laneId: lane.id });
       }
       const out = updateLane(db, lane.id, patch);
-      log(db, req, "lane.updated", { id: lane.id, projectId: lane.projectId, changed: Object.keys(patch), patch });
+      log(db, req, "lane.updated", { id: lane.id, projectId: lane.projectId, changed: changedKeys(lane, patch), patch });
       return out;
     })();
   });

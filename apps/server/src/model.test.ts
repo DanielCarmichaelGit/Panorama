@@ -94,6 +94,53 @@ describe("colour on epics and tags", () => {
   });
 });
 
+describe("changed[] reflects real differences", () => {
+  it("lists only the tag fields whose value differs, and still logs a no-op patch with changed []", async () => {
+    const w = await world();
+    const tag = (await w.human("POST", "/api/v1/tags", { projectId: w.project.id, name: "backend", family: "sky" })).json;
+    await w.human("PATCH", `/api/v1/tags/${tag.id}`, { name: "backend", family: "sky", color: "#B9DDF5" });
+    await w.human("PATCH", `/api/v1/tags/${tag.id}`, { name: "backend", family: "sky", color: "#b9ddf5" });
+    const evs = listEvents(w.app.ctx.db!).filter((e) => e.type === "tag.updated");
+    expect(evs).toHaveLength(2);
+    expect(evs[0].payload).toEqual({ id: tag.id, projectId: w.project.id, changed: ["color"], patch: { name: "backend", family: "sky", color: "#b9ddf5" } });
+    expect(evs[1].payload).toMatchObject({ id: tag.id, changed: [] });
+  });
+
+  it("gives epic.updated and field.updated a changed[] computed the same way, deep-equal on select options", async () => {
+    const w = await world();
+    const epic = (await w.human("POST", "/api/v1/epics", { projectId: w.project.id, name: "Launch", description: "Ship it" })).json;
+    await w.human("PATCH", `/api/v1/epics/${epic.id}`, { name: "Launch", description: "Ship it", color: "#f6c1b4" });
+    const options = [{ value: "s", label: "Small" }, { value: "l", label: "Large" }];
+    const field = (await w.human("POST", "/api/v1/fields", { projectId: w.project.id, name: "Size", key: "size", kind: "select", options })).json;
+    await w.human("PATCH", `/api/v1/fields/${field.id}`, { name: "Size", options: [...options], required: true });
+    await w.human("PATCH", `/api/v1/fields/${field.id}`, { options: [...options, { value: "xl", label: "Extra large" }] });
+
+    const events = listEvents(w.app.ctx.db!);
+    expect(events.find((e) => e.type === "epic.updated")!.payload).toEqual({ id: epic.id, projectId: w.project.id, changed: ["color"], patch: { name: "Launch", description: "Ship it", color: "#f6c1b4" } });
+    const fieldEvents = events.filter((e) => e.type === "field.updated");
+    expect(fieldEvents[0].payload).toMatchObject({ id: field.id, projectId: w.project.id, changed: ["required"] });
+    expect(fieldEvents[1].payload).toMatchObject({ id: field.id, changed: ["options"] });
+  });
+
+  it("compares lane flags and ticket values against the row, tagIds as a set and fields per key", async () => {
+    const w = await world();
+    const lane = w.lanes[0];
+    await w.human("PATCH", `/api/v1/lanes/${lane.id}`, { family: "stone", setsNeedsHuman: true });
+    await w.human("POST", "/api/v1/fields", { projectId: w.project.id, name: "Points", key: "points", kind: "number" });
+    const a = (await w.human("POST", "/api/v1/tags", { projectId: w.project.id, name: "a" })).json;
+    const b = (await w.human("POST", "/api/v1/tags", { projectId: w.project.id, name: "b" })).json;
+    const t = (await w.human("POST", "/api/v1/tickets", { projectId: w.project.id, title: "x", tagIds: [a.id, b.id], fields: { points: 3 } })).json;
+    await w.human("PATCH", `/api/v1/tickets/${t.id}`, { title: "x", tagIds: [b.id, a.id], fields: { points: 3 }, dueDate: "2026-10-01" });
+    await w.human("PATCH", `/api/v1/tickets/${t.id}`, { tagIds: [a.id], fields: { points: 4 } });
+
+    const events = listEvents(w.app.ctx.db!);
+    expect(events.find((e) => e.type === "lane.updated")!.payload).toEqual({ id: lane.id, projectId: w.project.id, changed: ["setsNeedsHuman"], patch: { family: "stone", setsNeedsHuman: true } });
+    const ticketEvents = events.filter((e) => e.type === "ticket.updated");
+    expect(ticketEvents[0].payload).toEqual({ id: t.id, projectId: w.project.id, changed: ["dueDate"] });
+    expect(ticketEvents[1].payload).toEqual({ id: t.id, projectId: w.project.id, changed: ["tagIds", "fields"] });
+  });
+});
+
 describe("lane lifecycle", () => {
   it("adds a lane before the done lanes, logs lane.created, and refuses a duplicate name and an agent", async () => {
     const w = await world();

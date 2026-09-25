@@ -3,6 +3,7 @@ import { checkGate, CreateTicketInput, FlagInput, type Lane, MoveTicketInput, Up
 import { appendEvent, archiveTicket, createTicket, enterLane, getActor, getBoard, getEpic, getEvidenceType, getLane, getProject, getTag, getTicket, listEvidence, listFields, listLanes, listTickets, moveTicket, queue, setCurrentTicket, setFlag, updateTicket, type DB } from "@panorama/db";
 import { getDb, inScope, requireCan } from "../auth";
 import { record } from "../bus";
+import { changedKeys, sameMergedRecord, sameSet } from "../changed";
 import type { Ctx } from "../context";
 import { blockedByReasons } from "../gate";
 import { HttpError } from "../errors";
@@ -105,7 +106,7 @@ export function ticketRoutes(app: FastifyInstance, ctx: Ctx): void {
       const fieldCheck = validateFieldValues(defs, patch.fields, { requireAll: false });
       if (!fieldCheck.ok) throw new HttpError(400, "validation", "Bad field values", { issues: fieldCheck.issues });
     }
-    const changed = Object.keys(patch);
+    const changed = changedKeys(t, patch, { tagIds: sameSet, fields: sameMergedRecord });
     return db.transaction(() => {
       const out = updateTicket(db, t.id, patch, iso());
       log(db, req, "ticket.updated", { id: t.id, projectId: t.projectId, changed });

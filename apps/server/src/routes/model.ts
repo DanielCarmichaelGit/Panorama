@@ -24,6 +24,7 @@ import {
 } from "@panorama/db";
 import { getDb, requireCan } from "../auth";
 import { record } from "../bus";
+import { changedKeys } from "../changed";
 import type { Ctx } from "../context";
 import { HttpError } from "../errors";
 
@@ -70,7 +71,7 @@ export function modelRoutes(app: FastifyInstance, ctx: Ctx): void {
     const patch = UpdateEpicInput.parse(req.body);
     return db.transaction(() => {
       const out = updateEpic(db, epic.id, patch, iso());
-      log(db, req, "epic.updated", { id: epic.id, projectId: epic.projectId, patch });
+      log(db, req, "epic.updated", { id: epic.id, projectId: epic.projectId, changed: changedKeys(epic, patch), patch });
       return out;
     })();
   });
@@ -114,7 +115,7 @@ export function modelRoutes(app: FastifyInstance, ctx: Ctx): void {
         if ((e as Error).message === "duplicate_tag") throw new HttpError(409, "duplicate_tag", "That tag name is already used in this project");
         throw e;
       }
-      log(db, req, "tag.updated", { id: tag.id, projectId: tag.projectId, changed: Object.keys(patch), patch });
+      log(db, req, "tag.updated", { id: tag.id, projectId: tag.projectId, changed: changedKeys(tag, patch), patch });
       return out;
     })();
   });
@@ -213,7 +214,7 @@ export function modelRoutes(app: FastifyInstance, ctx: Ctx): void {
     }
     return db.transaction(() => {
       const out = updateField(db, field.id, patch);
-      log(db, req, "field.updated", { id: field.id, projectId: field.projectId, patch });
+      log(db, req, "field.updated", { id: field.id, projectId: field.projectId, changed: changedKeys(field, patch), patch });
       return out;
     })();
   });

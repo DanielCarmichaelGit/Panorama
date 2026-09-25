@@ -24,6 +24,10 @@ const SERVE_AS_IS = new Set([
   "application/pdf", "application/json", "text/plain", "text/markdown",
 ]);
 
+// The image types a browser may render inline: the ones served with their own content-type.
+// svg is an image but is served as octet-stream (it can carry script), so it is not one.
+const IMAGE_MIME = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
+
 const MAX_FILENAME = 200;
 
 export function attachmentRoutes(app: FastifyInstance, ctx: Ctx): void {
@@ -87,13 +91,24 @@ export function attachmentRoutes(app: FastifyInstance, ctx: Ctx): void {
     }
   });
 
-  app.get("/api/v1/attachments/:id", async (req: any, reply) => {
-    const db = getDb(ctx);
-    const att = getAttachment(db, req.params.id);
+  const loadReadable = (db: DB, req: any, id: string) => {
+    const att = getAttachment(db, id);
     if (!att) throw new HttpError(404, "not_found", "No such attachment");
     const t = getTicket(db, att.ticketId);
     if (!t) throw new HttpError(404, "not_found", "No such attachment");
     requireCan(req, "read", t.projectId);
+    return att;
+  };
+
+  /** What a file field needs to render its value: the name, and whether it can preview inline. */
+  app.get("/api/v1/attachments/:id/meta", async (req: any) => {
+    const att = loadReadable(getDb(ctx), req, req.params.id);
+    return { id: att.id, ticketId: att.ticketId, filename: att.filename, mime: att.mime, size: att.size, isImage: IMAGE_MIME.has(att.mime) };
+  });
+
+  app.get("/api/v1/attachments/:id", async (req: any, reply) => {
+    const db = getDb(ctx);
+    const att = loadReadable(db, req, req.params.id);
 
     const bytes = await readFile(ctx.dataDir, ctx.fileKey, att.id);
     const contentType = SERVE_AS_IS.has(att.mime) ? att.mime : "application/octet-stream";

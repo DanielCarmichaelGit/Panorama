@@ -1,9 +1,15 @@
 import { z } from "zod";
 
-export const FIELD_KINDS = ["text", "number", "date", "select", "checkbox"] as const;
+export const FIELD_KINDS = ["text", "number", "date", "select", "checkbox", "file"] as const;
 export type FieldKind = (typeof FIELD_KINDS)[number];
 
-export type FieldValue = string | number | boolean | null;
+/** A file field holds one of the ticket's own attachments by id (milestone 2c, task 5); the
+ *  server checks the attachment belongs to the ticket, core only checks the shape. */
+export interface FileFieldValue { attachmentId: string }
+export type FieldValue = string | number | boolean | FileFieldValue | null;
+
+export const isFileValue = (v: unknown): v is FileFieldValue =>
+  typeof v === "object" && v !== null && !Array.isArray(v) && Object.keys(v).length === 1 && typeof (v as FileFieldValue).attachmentId === "string" && (v as FileFieldValue).attachmentId.length > 0;
 
 export interface FieldDefinition {
   id: string;
@@ -18,7 +24,8 @@ export interface FieldDefinition {
   createdAt: string;
 }
 
-export const FieldValueSchema = z.union([z.string(), z.number(), z.boolean(), z.null()]);
+export const FileFieldValueSchema = z.object({ attachmentId: z.string().min(1) }).strict();
+export const FieldValueSchema = z.union([z.string(), z.number(), z.boolean(), FileFieldValueSchema, z.null()]);
 
 const FieldOption = z.object({ value: z.string().min(1).max(60), label: z.string().min(1).max(60) }).strict();
 
@@ -85,6 +92,9 @@ export function validateFieldValues(
         break;
       case "checkbox":
         if (typeof value !== "boolean") issues.push({ key, message: "must be true or false" });
+        break;
+      case "file":
+        if (!isFileValue(value)) issues.push({ key, message: "must be an attachment reference {attachmentId}" });
         break;
     }
   }

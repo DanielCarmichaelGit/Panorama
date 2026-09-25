@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { FieldDefinitionInput, UpdateFieldInput, validateFieldValues, type FieldDefinition } from "./index";
+import { FIELD_KINDS, FieldDefinitionInput, FieldValueSchema, UpdateFieldInput, validateFieldValues, type FieldDefinition } from "./index";
 
 const def = (over: Partial<FieldDefinition> = {}): FieldDefinition => ({
   id: "fd1",
@@ -38,6 +38,19 @@ describe("FieldDefinitionInput", () => {
   it("rejects a key that does not match the slug pattern", () => {
     expect(FieldDefinitionInput.safeParse({ projectId: "p1", name: "Notes", key: "Notes", kind: "text" }).success).toBe(false);
     expect(FieldDefinitionInput.safeParse({ projectId: "p1", name: "Notes", key: "1notes", kind: "text" }).success).toBe(false);
+  });
+});
+
+describe("file kind", () => {
+  it("is one of the kinds, takes no options, and its value schema accepts {attachmentId} or null only", () => {
+    expect(FIELD_KINDS).toContain("file");
+    expect(FieldDefinitionInput.safeParse({ projectId: "p1", name: "Spec", key: "spec", kind: "file" }).success).toBe(true);
+    expect(FieldDefinitionInput.safeParse({ projectId: "p1", name: "Spec", key: "spec", kind: "file", options: [{ value: "a", label: "A" }] }).success).toBe(false);
+    expect(FieldValueSchema.safeParse({ attachmentId: "att1" }).success).toBe(true);
+    expect(FieldValueSchema.safeParse(null).success).toBe(true);
+    expect(FieldValueSchema.safeParse({ attachmentId: "" }).success).toBe(false);
+    expect(FieldValueSchema.safeParse({ attachmentId: "att1", filename: "x" }).success).toBe(false);
+    expect(FieldValueSchema.safeParse({}).success).toBe(false);
   });
 });
 
@@ -101,6 +114,16 @@ describe("validateFieldValues", () => {
     expect(validateFieldValues(requiredDefs, { severity: null }, { requireAll: true }).ok).toBe(false);
     expect(validateFieldValues(requiredDefs, {}, { requireAll: false })).toEqual({ ok: true });
     expect(validateFieldValues(requiredDefs, { severity: "low" }, { requireAll: true })).toEqual({ ok: true });
+  });
+  it("accepts {attachmentId} for a file field, rejects any other shape, and counts null or missing as empty", () => {
+    const file = def({ key: "spec", kind: "file", options: [], required: true });
+    expect(validateFieldValues([file], { spec: { attachmentId: "att1" } }, { requireAll: true })).toEqual({ ok: true });
+    expect(validateFieldValues([file], { spec: null }, { requireAll: false })).toEqual({ ok: true });
+    expect(validateFieldValues([file], { spec: "att1" }, { requireAll: false })).toEqual({ ok: false, issues: [{ key: "spec", message: "must be an attachment reference {attachmentId}" }] });
+    expect(validateFieldValues([file], { spec: { attachmentId: "" } }, { requireAll: false })).toEqual({ ok: false, issues: [{ key: "spec", message: "must be an attachment reference {attachmentId}" }] });
+    expect(validateFieldValues([file], { spec: { attachmentId: "att1", extra: 1 } as never }, { requireAll: false }).ok).toBe(false);
+    expect(validateFieldValues([file], {}, { requireAll: true })).toEqual({ ok: false, issues: [{ key: "spec", message: "is required" }] });
+    expect(validateFieldValues([file], { spec: null }, { requireAll: true })).toEqual({ ok: false, issues: [{ key: "spec", message: "is required" }] });
   });
   it("does not require an archived field even when requireAll is set", () => {
     const requiredArchivedDefs = [def({ required: true, archived: true })];

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ARGON_FAST, deriveKeys, verifyChain } from "@panorama/core";
 import { listEvents } from "@panorama/db";
-import { client, setupApp } from "./test/helpers";
+import { client, multipart, setupApp } from "./test/helpers";
 
 async function world() {
   const s = await setupApp();
@@ -378,6 +378,66 @@ describe("ticket create and patch with the extended model", () => {
 
     const refetched = (await w.human("GET", `/api/v1/tickets/${t.id}`)).json;
     expect(refetched.epicId).toBe(null);
+  });
+});
+
+describe("file fields", () => {
+  const png = Buffer.from("89504e470d0a1a0a0000000d49484452", "hex");
+  const upload = (w: any, ticketId: string, name = "shot.png") => w.human("POST", "/api/v1/attachments", undefined, multipart({ ticketId }, { name, mime: "image/png", bytes: png }));
+
+  it("accepts one of the ticket's own attachments, refuses another ticket's, and clears with null", async () => {
+    const w = await world();
+    await w.human("POST", "/api/v1/fields", { projectId: w.project.id, name: "Spec", key: "spec", kind: "file" });
+    const t = (await w.agent("POST", "/api/v1/tickets", { projectId: w.project.id, title: "x" })).json;
+    const other = (await w.agent("POST", "/api/v1/tickets", { projectId: w.project.id, title: "y" })).json;
+    const own = (await upload(w, t.id)).json;
+    const foreign = (await upload(w, other.id)).json;
+
+    const refused = await w.agent("PATCH", `/api/v1/tickets/${t.id}`, { fields: { spec: { attachmentId: foreign.id } } });
+    expect(refused.status).toBe(400);
+    expect(refused.json.error.code).toBe("validation");
+    expect(refused.json.error.message).toBe("That attachment does not belong to this ticket");
+    expect(refused.json.error.details).toEqual({ key: "spec", attachmentId: foreign.id });
+    expect((await w.agent("PATCH", `/api/v1/tickets/${t.id}`, { fields: { spec: { attachmentId: "ghost" } } })).status).toBe(400);
+    expect((await w.agent("PATCH", `/api/v1/tickets/${t.id}`, { fields: { spec: "not an object" } })).status).toBe(400);
+
+    const ok = await w.agent("PATCH", `/api/v1/tickets/${t.id}`, { fields: { spec: { attachmentId: own.id } } });
+    expect(ok.status).toBe(200);
+    expect(ok.json.fields).toEqual({ spec: { attachmentId: own.id } });
+    expect((await w.human("GET", `/api/v1/tickets/${t.id}`)).json.fields).toEqual({ spec: { attachmentId: own.id } });
+    expect((await w.agent("PATCH", `/api/v1/tickets/${t.id}`, { fields: { spec: null } })).json.fields).toEqual({});
+  });
+
+  it("enforces a required file field at create for the human like other kinds, and refuses any file value on create", async () => {
+    const w = await world();
+    await w.human("POST", "/api/v1/fields", { projectId: w.project.id, name: "Spec", key: "spec", kind: "file", required: true });
+    const missing = await w.human("POST", "/api/v1/tickets", { projectId: w.project.id, title: "no spec" });
+    expect(missing.status).toBe(400);
+    expect(missing.json.error.details.issues).toEqual([{ key: "spec", message: "is required" }]);
+    expect((await w.agent("POST", "/api/v1/tickets", { projectId: w.project.id, title: "agent may omit it" })).status).toBe(200);
+    // A brand new ticket has no attachments yet, so no attachment can belong to it.
+    const t = (await w.agent("POST", "/api/v1/tickets", { projectId: w.project.id, title: "holder" })).json;
+    const att = (await upload(w, t.id)).json;
+    const stolen = await w.human("POST", "/api/v1/tickets", { projectId: w.project.id, title: "with someone else's file", fields: { spec: { attachmentId: att.id } } });
+    expect(stolen.status).toBe(400);
+    expect(stolen.json.error.message).toBe("That attachment does not belong to this ticket");
+  });
+
+  it("serves attachment metadata with isImage to the ticket's readers", async () => {
+    const w = await world();
+    const t = (await w.agent("POST", "/api/v1/tickets", { projectId: w.project.id, title: "x" })).json;
+    const img = (await upload(w, t.id)).json;
+    const txt = (await w.human("POST", "/api/v1/attachments", undefined, multipart({ ticketId: t.id }, { name: "notes.md", mime: "text/markdown", bytes: Buffer.from("# hi") }))).json;
+    const meta = await w.agent("GET", `/api/v1/attachments/${img.id}/meta`);
+    expect(meta.status).toBe(200);
+    expect(meta.json).toEqual({ id: img.id, ticketId: t.id, filename: "shot.png", mime: "image/png", size: png.length, isImage: true });
+    expect((await w.agent("GET", `/api/v1/attachments/${txt.id}/meta`)).json).toMatchObject({ filename: "notes.md", mime: "text/markdown", isImage: false });
+    expect((await w.human("GET", "/api/v1/attachments/ghost/meta")).status).toBe(404);
+
+    const other = (await w.human("POST", "/api/v1/projects", { name: "Other", key: "OTH" })).json;
+    const ot = (await w.human("POST", "/api/v1/tickets", { projectId: other.project.id, title: "elsewhere" })).json;
+    const oa = (await upload(w, ot.id)).json;
+    expect((await w.agent("GET", `/api/v1/attachments/${oa.id}/meta`)).status).toBe(403);
   });
 });
 

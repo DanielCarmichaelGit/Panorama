@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
-import { checkGate, CreateTicketInput, FlagInput, type Lane, MoveTicketInput, UpdateTicketInput, validateFieldValues } from "@panorama/core";
-import { appendEvent, archiveTicket, createTicket, enterLane, getActor, getBoard, getEpic, getEvidenceType, getLane, getProject, getTag, getTicket, listEvidence, listFields, listLanes, listTickets, moveTicket, queue, setCurrentTicket, setFlag, updateTicket, type DB } from "@panorama/db";
+import { checkGate, CreateTicketInput, type FieldDefinition, type FieldValue, FlagInput, isFileValue, type Lane, MoveTicketInput, UpdateTicketInput, validateFieldValues } from "@panorama/core";
+import { appendEvent, archiveTicket, createTicket, enterLane, getActor, getAttachment, getBoard, getEpic, getEvidenceType, getLane, getProject, getTag, getTicket, listEvidence, listFields, listLanes, listTickets, moveTicket, queue, setCurrentTicket, setFlag, updateTicket, type DB } from "@panorama/db";
 import { getDb, inScope, requireCan } from "../auth";
 import { record } from "../bus";
 import { changedKeys, sameMergedRecord, sameSet } from "../changed";
@@ -28,6 +28,20 @@ export function ticketRoutes(app: FastifyInstance, ctx: Ctx): void {
     const ev = appendEvent(db, { actorId: req.actor.id, type, payload, signature: req.sig, now: iso() });
     record(req, ev);
     return ev;
+  };
+  /**
+   * A file field may only name one of the ticket's own attachments. Core has checked the
+   * shape; this checks ownership. On create there is no ticket yet, so no attachment can
+   * belong to it and any file value is refused: upload after create, then PATCH the field.
+   */
+  const requireOwnAttachments = (db: DB, defs: FieldDefinition[], values: Record<string, FieldValue>, ticketId: string | null) => {
+    for (const def of defs) {
+      if (def.kind !== "file" || def.archived) continue;
+      const value = values[def.key];
+      if (!isFileValue(value)) continue;
+      const att = getAttachment(db, value.attachmentId);
+      if (!att || att.ticketId !== ticketId) throw new HttpError(400, "validation", "That attachment does not belong to this ticket", { key: def.key, attachmentId: value.attachmentId });
+    }
   };
 
   app.get("/api/v1/tickets", async (req: any) => {
@@ -67,6 +81,7 @@ export function ticketRoutes(app: FastifyInstance, ctx: Ctx): void {
     const defs = listFields(db, input.projectId, { includeArchived: true });
     const fieldCheck = validateFieldValues(defs, input.fields ?? {}, { requireAll: req.actor.kind === "human" });
     if (!fieldCheck.ok) throw new HttpError(400, "validation", "Bad field values", { issues: fieldCheck.issues });
+    requireOwnAttachments(db, defs, input.fields ?? {}, null);
     // Creating into a lane is entering it, so the same gate applies. A brand new ticket carries
     // no evidence at all, so every requirement the lane has is missing by definition.
     const lane = input.laneId ? getLane(db, input.laneId)! : listLanes(db, input.projectId)[0];
@@ -105,6 +120,7 @@ export function ticketRoutes(app: FastifyInstance, ctx: Ctx): void {
       const defs = listFields(db, t.projectId, { includeArchived: true });
       const fieldCheck = validateFieldValues(defs, patch.fields, { requireAll: false });
       if (!fieldCheck.ok) throw new HttpError(400, "validation", "Bad field values", { issues: fieldCheck.issues });
+      requireOwnAttachments(db, defs, patch.fields, t.id);
     }
     const changed = changedKeys(t, patch, { tagIds: sameSet, fields: sameMergedRecord });
     return db.transaction(() => {

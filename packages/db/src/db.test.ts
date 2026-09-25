@@ -126,11 +126,43 @@ describe("M7 migration", () => {
     db.prepare("insert into epics(id, project_id, name, family, position, created_at) values(?,?,?,?,?,?)").run("epic1", "proj1", "Launch", "coral", 1, NOW);
     db.prepare("insert into tags(id, project_id, name, family, created_at) values(?,?,?,?,?)").run("tag1", "proj1", "backend", "sky", NOW);
 
-    d.migrate(db); // completes the upgrade to M7
+    d.migrateTo(db, 7); // applies M7 alone; M8 has its own test below
 
     expect(db.pragma("user_version", { simple: true })).toBe(7);
     expect(d.getEpic(db, "epic1")).toMatchObject({ name: "Launch", family: "coral", color: null });
     expect(d.getTag(db, "tag1")).toMatchObject({ name: "backend", family: "sky", color: null });
+    db.close();
+  });
+});
+
+describe("M8 migration", () => {
+  it("rebuilds field_definitions so kind may be file, keeping rows, values, and the foreign key", () => {
+    const dir = mkdtempSync(join(tmpdir(), "pan-"));
+    const db = d.openDatabase(join(dir, "p.db"), null);
+    d.migrateTo(db, 7); // stop right after M7: the kind check still lists five kinds
+    db.prepare("insert into projects(id, key, name, next_number, created_at) values(?,?,?,?,?)").run("proj1", "PAN", "Panorama", 2, NOW);
+    db.prepare("insert into lanes(id, project_id, name, position, family) values(?,?,?,?,?)").run("lane1", "proj1", "Backlog", 0, "stone");
+    db.prepare("insert into boards(id, project_id, name, family, position, created_at) values(?,?,?,?,?,?)").run("board1", "proj1", "Panorama", "stone", 0, NOW);
+    db.prepare("insert into tickets(id, project_id, board_id, number, title, lane_id, position, created_at, updated_at) values(?,?,?,?,?,?,?,?,?)")
+      .run("t1", "proj1", "board1", 1, "Pre-existing ticket", "lane1", 1, NOW, NOW);
+    db.prepare("insert into field_definitions(id, project_id, name, key, kind, options, required, position, archived, created_at) values(?,?,?,?,?,?,?,?,?,?)")
+      .run("fd1", "proj1", "Points", "points", "number", "[]", 1, 0, 0, NOW);
+    db.prepare("insert into ticket_field_values(ticket_id, field_id, value) values(?,?,?)").run("t1", "fd1", "3");
+    expect(() => db.prepare("insert into field_definitions(id, project_id, name, key, kind, options, required, position, archived, created_at) values(?,?,?,?,?,?,?,?,?,?)")
+      .run("fd2", "proj1", "Spec", "spec", "file", "[]", 0, 1, 0, NOW)).toThrow(/CHECK constraint/);
+
+    d.migrate(db); // completes the upgrade to M8
+
+    expect(db.pragma("user_version", { simple: true })).toBe(8);
+    expect(d.getField(db, "fd1")).toMatchObject({ key: "points", kind: "number", required: true });
+    expect(d.getTicketFields(db, "t1")).toEqual({ points: 3 });
+    const file = d.createField(db, { projectId: "proj1", name: "Spec", key: "spec", kind: "file", required: false }, NOW);
+    expect(file.kind).toBe("file");
+    d.setTicketFields(db, "t1", { spec: { attachmentId: "att1" } });
+    expect(d.getTicketFields(db, "t1")).toEqual({ points: 3, spec: { attachmentId: "att1" } });
+    expect(() => d.createField(db, { projectId: "proj1", name: "Dup", key: "points", kind: "text", required: false }, NOW)).toThrow("duplicate_key");
+    expect(() => db.prepare("insert into ticket_field_values(ticket_id, field_id, value) values(?,?,?)").run("t1", "ghost", "1")).toThrow(/FOREIGN KEY/);
+    expect(db.pragma("foreign_key_check")).toEqual([]);
     db.close();
   });
 });

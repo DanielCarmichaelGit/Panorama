@@ -109,8 +109,28 @@ const M7 = `
 alter table epics add column color text;
 alter table tags add column color text;
 `;
+// The file field kind (2c, task 5): field_definitions.kind carries a CHECK listing the kinds,
+// and SQLite cannot alter a CHECK in place, so the table is rebuilt with "file" in the list.
+// ticket_field_values references field_definitions(id), and dropping a referenced table with
+// foreign keys on is refused while child rows exist, so the child is rebuilt alongside it:
+// both new tables are filled, the old pair dropped (child first), and the new pair renamed
+// into place. A rename rewrites the references other tables hold, so the child ends up
+// pointing at the renamed parent. Nothing else references either table.
+const M8 = `
+create table field_definitions_new(id text primary key, project_id text not null references projects(id), name text not null, key text not null,
+  kind text not null check(kind in('text','number','date','select','checkbox','file')), options text not null default '[]', required integer not null default 0,
+  position integer not null, archived integer not null default 0, created_at text not null, unique(project_id, key));
+insert into field_definitions_new select id, project_id, name, key, kind, options, required, position, archived, created_at from field_definitions;
+create table ticket_field_values_new(ticket_id text not null references tickets(id), field_id text not null references field_definitions_new(id),
+  value text not null, primary key(ticket_id, field_id));
+insert into ticket_field_values_new select ticket_id, field_id, value from ticket_field_values;
+drop table ticket_field_values;
+drop table field_definitions;
+alter table field_definitions_new rename to field_definitions;
+alter table ticket_field_values_new rename to ticket_field_values;
+`;
 type Migration = string | ((db: DB) => void);
-const MIGRATIONS: Migration[] = [M1, M2, M3, M4, M5, M6, M7];
+const MIGRATIONS: Migration[] = [M1, M2, M3, M4, M5, M6, M7, M8];
 
 /** Applies migrations up to (not including index) `version`. Exported so a test can stop a
  *  fresh database at M4, seed pre-boards data, then call `migrate` to exercise the M5 backfill

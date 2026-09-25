@@ -408,17 +408,19 @@ describe("file fields", () => {
     expect((await w.agent("PATCH", `/api/v1/tickets/${t.id}`, { fields: { spec: null } })).json.fields).toEqual({});
   });
 
-  it("enforces a required file field at create for the human like other kinds, and refuses any file value on create", async () => {
+  it("does not check a required file field at create (the attachment can only exist after the ticket), but still checks other kinds, and refuses any file value on create", async () => {
     const w = await world();
     await w.human("POST", "/api/v1/fields", { projectId: w.project.id, name: "Spec", key: "spec", kind: "file", required: true });
-    const missing = await w.human("POST", "/api/v1/tickets", { projectId: w.project.id, title: "no spec" });
+    expect((await w.human("POST", "/api/v1/tickets", { projectId: w.project.id, title: "no spec yet" })).status).toBe(200);
+    await w.human("POST", "/api/v1/fields", { projectId: w.project.id, name: "Points", key: "points", kind: "number", required: true });
+    const missing = await w.human("POST", "/api/v1/tickets", { projectId: w.project.id, title: "no points" });
     expect(missing.status).toBe(400);
-    expect(missing.json.error.details.issues).toEqual([{ key: "spec", message: "is required" }]);
+    expect(missing.json.error.details.issues).toEqual([{ key: "points", message: "is required" }]);
     expect((await w.agent("POST", "/api/v1/tickets", { projectId: w.project.id, title: "agent may omit it" })).status).toBe(200);
     // A brand new ticket has no attachments yet, so no attachment can belong to it.
     const t = (await w.agent("POST", "/api/v1/tickets", { projectId: w.project.id, title: "holder" })).json;
     const att = (await upload(w, t.id)).json;
-    const stolen = await w.human("POST", "/api/v1/tickets", { projectId: w.project.id, title: "with someone else's file", fields: { spec: { attachmentId: att.id } } });
+    const stolen = await w.human("POST", "/api/v1/tickets", { projectId: w.project.id, title: "with someone else's file", fields: { points: 1, spec: { attachmentId: att.id } } });
     expect(stolen.status).toBe(400);
     expect(stolen.json.error.message).toBe("That attachment does not belong to this ticket");
   });

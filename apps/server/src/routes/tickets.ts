@@ -77,9 +77,11 @@ export function ticketRoutes(app: FastifyInstance, ctx: Ctx): void {
     // successCriteria is human-only (criteria.edit), whether or not it is present on this input.
     if (input.successCriteria !== undefined) requireCan(req, "criteria.edit", input.projectId);
     // Required fields are enforced for the human's dialog only: an agent may create with fields
-    // missing, leaving the ticket to show "Needs fields" in the panel.
+    // missing, leaving the ticket to show "Needs fields" in the panel. A required file field is
+    // never checked at create, for anyone: its attachment can only exist once the ticket does
+    // (upload after create, then PATCH), so the panel's "Needs fields" chip carries it instead.
     const defs = listFields(db, input.projectId, { includeArchived: true });
-    const fieldCheck = validateFieldValues(defs, input.fields ?? {}, { requireAll: req.actor.kind === "human" });
+    const fieldCheck = validateFieldValues(defs.map((d) => (d.kind === "file" ? { ...d, required: false } : d)), input.fields ?? {}, { requireAll: req.actor.kind === "human" });
     if (!fieldCheck.ok) throw new HttpError(400, "validation", "Bad field values", { issues: fieldCheck.issues });
     requireOwnAttachments(db, defs, input.fields ?? {}, null);
     // Creating into a lane is entering it, so the same gate applies. A brand new ticket carries

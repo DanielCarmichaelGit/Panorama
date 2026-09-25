@@ -1,8 +1,7 @@
 import { useState } from "react";
 import type { EvidenceType, Lane, LaneRequirement } from "@panorama/core";
 import { useEvidenceTypes, useSetLaneRequirements } from "../../lib/hooks";
-import { merge } from "../LaneRequirements";
-import { RequirementRows } from "../RequirementRows";
+import { merge, RequirementRows } from "../RequirementRows";
 import { TabState } from "./TabState";
 
 function LaneRow({ lane, types }: { lane: Lane; types: EvidenceType[] }) {

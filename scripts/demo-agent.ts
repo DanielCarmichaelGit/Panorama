@@ -1,5 +1,11 @@
 import { publicKeyFromSeed, signRequest } from "@panorama/core";
 
+// A worked example of an agent talking to Panorama over REST. It generates a key, registers,
+// waits for a human to approve it, then walks one ticket through the model: a tag, a blocking
+// dependency and the gate refusal it causes, a gated move refused for missing evidence, the
+// evidence itself, and finally the move succeeding. PANORAMA_URL points it at a server (default
+// 127.0.0.1:4400) and AGENT_NAME names the key it registers (default demo-agent).
+
 const BASE = process.env.PANORAMA_URL ?? "http://127.0.0.1:4400";
 const NAME = process.env.AGENT_NAME ?? "demo-agent";
 const seed = crypto.getRandomValues(new Uint8Array(32));
@@ -31,6 +37,40 @@ const lane = (name: string) => lanes.find((l: any) => l.name === name).id;
 const t = (await call("POST", "/api/v1/tickets", { projectId: project.id, title: "Demo: wire outbox retries", metadata: { tokens: 18422 } })).json;
 console.log(`Created ${t.key}`);
 await call("POST", `/api/v1/tickets/${t.id}/move`, { laneId: lane("In Progress") });
+
+// Tags are defined by a human in Settings (POST /api/v1/tags needs tag.edit, which no agent key
+// carries), so the agent applies the project's "demo" tag when one exists and says so when not.
+// Applying a tag is a ticket update, which the agent's ticket.update scope covers.
+const tags = (await call("GET", `/api/v1/tags?projectId=${project.id}`)).json as { id: string; name: string; archived: boolean }[];
+const demoTag = tags.find((tag) => !tag.archived && tag.name.toLowerCase() === "demo");
+if (demoTag) {
+  const tagged = await call("PATCH", `/api/v1/tickets/${t.id}`, { tagIds: [demoTag.id] });
+  if (tagged.status !== 200) throw new Error(`tagging failed: ${JSON.stringify(tagged.json)}`);
+  console.log(`Tagged ${t.key} with "${demoTag.name}"`);
+} else {
+  console.log(`No "demo" tag in ${project.name} yet: tags are created by a human in Settings, so ${t.key} stays untagged`);
+}
+
+// A second ticket that blocks the first. While the link stands, the first ticket cannot enter
+// Done from any surface, and the gate names the blocker alongside whatever evidence is missing.
+const blocker = (await call("POST", "/api/v1/tickets", { projectId: project.id, title: "Demo: land the retry schema" })).json;
+const linked = await call("POST", `/api/v1/tickets/${blocker.id}/links`, { toId: t.id, kind: "blocks" });
+if (linked.status !== 200) throw new Error(`link failed: ${JSON.stringify(linked.json)}`);
+console.log(`Created ${blocker.key}, which blocks ${t.key}`);
+
+const blocked = await call("POST", `/api/v1/tickets/${t.id}/move`, { laneId: lane("Done") });
+if (blocked.status !== 422) throw new Error(`expected the dependency gate to refuse Done, got ${blocked.status}: ${JSON.stringify(blocked.json)}`);
+const reasons = blocked.json.error.details.missing as { typeId: string; name: string }[];
+if (!reasons.some((m) => m.typeId === "blocked_by" && m.name === `Blocked by ${blocker.key}`)) {
+  throw new Error(`the refusal did not name ${blocker.key}: ${JSON.stringify(reasons)}`);
+}
+for (const m of reasons) console.log(`Gate refused Done: ${m.name}`);
+
+// Removing the link goes through the ticket's own links route (ticket.update); a ticket itself
+// an agent may never delete, so the blocker ticket stays behind in Backlog.
+const unlinked = await call("DELETE", `/api/v1/tickets/${t.id}/links/${linked.json.id}`);
+if (unlinked.status !== 200) throw new Error(`unlink failed: ${JSON.stringify(unlinked.json)}`);
+console.log(`Removed the link: ${t.key} is no longer blocked by ${blocker.key}`);
 
 const refused = await call("POST", `/api/v1/tickets/${t.id}/move`, { laneId: lane("Ready for Production") });
 if (refused.status !== 422) throw new Error(`expected a gate refusal, got ${refused.status}: ${JSON.stringify(refused.json)}`);

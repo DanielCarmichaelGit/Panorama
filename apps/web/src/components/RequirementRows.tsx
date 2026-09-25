@@ -2,6 +2,21 @@ import type { EvidenceType, LaneRequirement } from "@panorama/core";
 import { Picker } from "./Picker";
 
 /**
+ * One row per evidence type, in the order the rows were first given. Two rows can end up on the
+ * same type once a row's type is changed, and the server refuses that outright, so the larger of
+ * the two counts wins: it is the one that satisfies both rows. Applied by the Lanes tab on save.
+ */
+export function merge(rows: LaneRequirement[]): LaneRequirement[] {
+  const out: LaneRequirement[] = [];
+  for (const row of rows) {
+    const seen = out.find((r) => r.typeId === row.typeId);
+    if (seen) seen.count = Math.max(seen.count, row.count);
+    else out.push({ ...row });
+  }
+  return out;
+}
+
+/**
  * One row per evidence type requirement: a Picker for the type and a count input. Shared by the
  * Settings Lanes tab (rendered inline, one editor per lane) so both surfaces edit a lane's
  * evidence requirements the same way, entirely through Pickers rather than a native select.

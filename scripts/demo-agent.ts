@@ -66,11 +66,11 @@ if (!reasons.some((m) => m.typeId === "blocked_by" && m.name === `Blocked by ${b
 }
 for (const m of reasons) console.log(`Gate refused Done: ${m.name}`);
 
-// Removing the link goes through the ticket's own links route (ticket.update); a ticket itself
-// an agent may never delete, so the blocker ticket stays behind in Backlog.
+// Only the owner can remove a blocks link: an agent may add one but never lift the block that
+// gates its own ticket, so the delete is refused and the link stands until a human removes it.
 const unlinked = await call("DELETE", `/api/v1/tickets/${t.id}/links/${linked.json.id}`);
-if (unlinked.status !== 200) throw new Error(`unlink failed: ${JSON.stringify(unlinked.json)}`);
-console.log(`Removed the link: ${t.key} is no longer blocked by ${blocker.key}`);
+if (unlinked.status !== 403) throw new Error(`expected the unlink to be refused for an agent, got ${unlinked.status}: ${JSON.stringify(unlinked.json)}`);
+console.log(`Could not remove the link myself (${unlinked.json.error.message}); ${t.key} stays blocked by ${blocker.key} until the owner removes it`);
 
 // The 422 lists every unmet requirement, and a requirement carries a description when the lane's
 // owner wrote one ("A run of the eval suite at or above the threshold"): that is what tells an

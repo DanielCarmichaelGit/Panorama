@@ -72,10 +72,13 @@ const unlinked = await call("DELETE", `/api/v1/tickets/${t.id}/links/${linked.js
 if (unlinked.status !== 200) throw new Error(`unlink failed: ${JSON.stringify(unlinked.json)}`);
 console.log(`Removed the link: ${t.key} is no longer blocked by ${blocker.key}`);
 
+// The 422 lists every unmet requirement, and a requirement carries a description when the lane's
+// owner wrote one ("A run of the eval suite at or above the threshold"): that is what tells an
+// agent what to provide next, so it is printed alongside the count.
 const refused = await call("POST", `/api/v1/tickets/${t.id}/move`, { laneId: lane("Ready for Production") });
 if (refused.status !== 422) throw new Error(`expected a gate refusal, got ${refused.status}: ${JSON.stringify(refused.json)}`);
-for (const m of refused.json.error.details.missing) {
-  console.log(`Gate refused: ${m.name}, ${m.have} of ${m.need}`);
+for (const m of refused.json.error.details.missing as { name: string; need: number; have: number; description?: string }[]) {
+  console.log(`Gate refused: ${m.name}, ${m.have} of ${m.need}${m.description ? `. It should show: ${m.description}` : ""}`);
 }
 
 await call("POST", "/api/v1/comments", { ticketId: t.id, body: "## Test run\n\nAll 212 tests pass." });

@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import type { Icon } from "@phosphor-icons/react";
 import { ApiError } from "../../lib/api";
-import { LaneScene } from "../../lib/iso";
+import { BoomerangScene } from "../../lib/iso";
 
 /**
  * The building blocks of a Settings tab (spec section 5): one list per tab, rows that show and
@@ -176,11 +176,11 @@ export function RowError({ message }: { message: string }) {
   return <p className="error row-error" role="alert">{message}</p>;
 }
 
-/** One line of muted text, with the 96px lane mark when the list is empty for a reason worth a picture. */
+/** One line of muted text, with the 96px boomerang mark when the list is empty for a reason worth a picture. */
 export function EmptyRow({ children, mark }: { children: React.ReactNode; mark?: boolean }) {
   return (
     <li className="settings-empty">
-      {mark && <LaneScene />}
+      {mark && <BoomerangScene compact />}
       <p className="muted">{children}</p>
     </li>
   );

@@ -1,7 +1,7 @@
 import { ArrowsClockwise, Eye, EyeSlash, Info } from "@phosphor-icons/react";
 import { useState } from "react";
 import type { Status } from "../App";
-import { LaneScene } from "../lib/iso";
+import { BoomerangScene } from "../lib/iso";
 import { generatePassword } from "../lib/password";
 import { setupFlow, unlockFlow, type ChainState } from "./unlock";
 
@@ -43,7 +43,7 @@ export function LockScreen({ status, onDone }: { status: Status; onDone: (seed: 
         {err && <p className="error" role="alert">{err}</p>}
         <button className="btn" disabled={busy || !pw}>{busy ? "Working" : first ? "Create" : "Unlock"}</button>
       </form>
-      <div className="art"><LaneScene settle /></div>
+      <div className="art"><BoomerangScene /></div>
     </main>
   );
 }

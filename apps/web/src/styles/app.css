@@ -22,8 +22,11 @@ a{color:var(--accent)}
 .error{color:var(--coral-ink);background:var(--coral-top);border-radius:var(--r-input);padding:.5rem .7rem}
 .skip{position:absolute;left:-9999px}.skip:focus{left:var(--gutter);top:8px;z-index:var(--z-toast);background:var(--surface);padding:.5rem}
 @media (prefers-reduced-motion:reduce){*{transition-duration:0ms!important;animation-duration:0ms!important;transition-delay:0ms!important;animation-delay:0ms!important}}
-@keyframes iso-settle{from{transform:translateY(-12px);opacity:0}to{transform:none;opacity:1}}
-.iso-settle{animation:iso-settle 500ms var(--ease-in) both}
+@keyframes bm-swoop{from{transform:translate(-21px,-12px);opacity:0}to{transform:none;opacity:1}}
+@keyframes bm-streak{from{opacity:0;transform:translate(8px,4px)}to{opacity:1;transform:none}}
+.bm-swoop{animation:bm-swoop 500ms var(--ease-in) both}
+.bm-streak-in{animation:bm-streak 400ms var(--ease-in) both}
+@media (prefers-reduced-motion:reduce){.bm-swoop,.bm-streak-in{animation:none}}
 .lock{min-height:100%;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);align-items:center;gap:var(--gutter);padding:var(--gutter);max-width:1080px;margin:0 auto}
 .lock form{max-width:380px}
 .lock .art{display:flex;justify-content:center}
@@ -377,7 +380,7 @@ a{color:var(--accent)}
 
 /* Sidebar brand, project row, status card (owner request 2026-09-25) */
 .brand{display:flex;align-items:center;gap:.5rem;padding:.25rem .45rem .9rem;font-weight:700;font-size:.9375rem;letter-spacing:-.01em;color:var(--text)}
-.brand-glyph{display:inline-flex;width:20px;height:20px;flex:none}
+.brand-glyph{display:inline-flex;align-items:center;width:20px;height:20px;flex:none}.brand-glyph .iso-scene{width:20px;max-width:20px}
 .collapsed .brand{justify-content:center;padding:.25rem 0 .75rem}
 .side .switcher{margin-bottom:.75rem}
 .proj-row{display:flex;align-items:center;gap:.6rem;width:100%;min-height:44px;padding:.35rem .5rem;border-radius:var(--r-input);border:1px solid var(--line);background:var(--surface);color:var(--text);text-align:left;font:inherit}

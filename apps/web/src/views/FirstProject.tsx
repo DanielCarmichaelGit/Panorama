@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { LaneScene } from "../lib/iso";
+import { BoomerangScene } from "../lib/iso";
 import { useCreateProject } from "../lib/hooks";
 
 // The key prefixes every ticket (FIRETOWER-1). It is the name in capitals with spaces as
@@ -39,7 +39,7 @@ export function FirstProject() {
         {create.isError && <p className="error" role="alert">{create.error instanceof Error ? create.error.message : "Could not create the project."}</p>}
         <button className="btn" disabled={!name.trim() || !key.trim() || create.isPending}>{create.isPending ? "Creating" : "Create project"}</button>
       </form>
-      <div className="art"><LaneScene /></div>
+      <div className="art"><BoomerangScene /></div>
     </main>
   );
 }

@@ -101,13 +101,13 @@ Live changes (an agent moves a ticket while you watch): the row or card slides t
 
 If a behaviour is not here it does not exist. If a control has no behaviour it does not ship.
 
-## Signature element: the isometric block scene
+## Signature element: the boomerang
 
-- **What:** lanes drawn as stone platforms with tickets as pastel blocks stacked on them, one block coral. All isometric art in the product comes from one `isoBox(x, y, z, w, d, h, family)` helper using the three face tones above, 30 degree projection, flat fills, no gradients, no outlines, no glow.
-- **Where:** lock screen, empty states (Queue, Board, Epics, Automations, Agents), first-run onboarding, epic cover thumbnails. Never inside working views that have data.
-- **What it does:** on the lock screen and onboarding, blocks settle from 12px above their resting place, 500ms each on the entrance curve, staggered 40ms, once. Everywhere else it is static.
-- **At 375px:** scales to container width, capped at 240px tall.
-- **Reduced motion:** the resting frame, which is the finished illustration.
+- **What:** a boomerang mid-swoop with a tail of wind, drawn as an extruded isometric solid in the sky family (top face `sky-top`, the visible sides `sky-left` and `sky-right`, a 1px `sky-ink` silhouette), a coral band on the leading tip, a ground shadow (`stone-top` at 60 percent) and three to five tapered wind streaks in `stone-left` and `sky-top` at 30 to 60 percent following its arc. All of it comes from one component, `BoomerangScene` in `apps/web/src/lib/iso.tsx`, built from a few plan points through the same 30 degree projection as the block helpers, so faces share their edges exactly. Flat fills, no gradients, no glow.
+- **Where:** lock screen, first-run onboarding, empty states (Queue, Agents, the Settings lists) and the sidebar mark. Never inside working views that have data.
+- **What it does:** on mount it eases in along its arc from 24px behind its resting point, 500ms on the entrance curve, and the streaks fade in staggered 40ms, once. Transform and opacity only. No loop.
+- **Sizes:** scales to its container: up to 420px on the lock screen, 96px in Settings empty rows and 20px in the sidebar mark, where `compact` keeps two streaks and drops the shadow.
+- **Reduced motion:** the resting frame, which is the finished illustration; no animation class is applied.
 
 ## Icons
 

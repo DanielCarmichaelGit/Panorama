@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useOutletContext } from "react-router-dom";
 import { CaretDown, CaretRight } from "@phosphor-icons/react";
 import { AGENT_ACTIONS, type Actor, type AgentAction, type Lane, type Project, type Scopes } from "@boomerang/core";
-import { LaneScene } from "../lib/iso";
+import { BoomerangScene } from "../lib/iso";
 import { useAgents, useApproveAgent, useProjects, useRevokeAgent, useTickets } from "../lib/hooks";
 import { isPickerOpen } from "../lib/keys";
 import { useFocusTrap } from "../lib/useFocusTrap";
@@ -193,7 +193,7 @@ export function Agents() {
     return (
       <div className="view">
         <div className="empty">
-          <LaneScene />
+          <BoomerangScene />
           <h1>No agents yet</h1>
           <p className="muted">Register an agent key to see it here.</p>
           <p className="muted">An agent registers itself with its own key. You approve it here before it can touch anything.</p>

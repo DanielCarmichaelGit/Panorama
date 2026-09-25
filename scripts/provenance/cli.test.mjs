@@ -1,12 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { repoRoot, readSession, paths } from "./lib.mjs";
+import { repoRoot, readSession, verifySession, paths } from "./lib.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = repoRoot(HERE);
@@ -462,4 +462,47 @@ test("hook.mjs ignores unrecognised PostToolUse tools and still exits cleanly", 
   const entries = readSession(root, id);
   assert.equal(entries.length, 1);
   assert.equal(entries[0].type, "start");
+});
+
+// Two hook invocations from parallel tool calls used to interleave: each
+// read the session tail, computed the same seq and prev, and appended,
+// leaving two entries with one seq and a chain that no longer verified.
+// Appends are now serialised per session with a lock file next to the
+// session file; twenty concurrent `note` commands must land as twenty
+// consecutive entries.
+test("twenty concurrent note commands append twenty consecutive entries to one session", async (t) => {
+  const root = makeRepo(t);
+  cli(root, ["start", "concurrent appends"]);
+  const id = fs.readFileSync(paths(root).current, "utf8").trim();
+
+  const runs = [];
+  for (let i = 0; i < 20; i += 1) {
+    runs.push(
+      new Promise((resolve, reject) => {
+        execFile(
+          "node",
+          [path.join(root, "scripts", "provenance", "cli.mjs"), "note", `concurrent note ${i}`],
+          { cwd: root, encoding: "utf8" },
+          (err, stdout, stderr) => (err ? reject(new Error(`note ${i} failed: ${stderr}`)) : resolve(stdout))
+        );
+      })
+    );
+  }
+  await Promise.all(runs);
+
+  const entries = readSession(root, id);
+  assert.equal(entries.length, 21, "expected the start entry plus twenty notes");
+  assert.deepEqual(
+    entries.map((e) => e.seq),
+    Array.from({ length: 21 }, (_, i) => i + 1)
+  );
+  const notes = entries.slice(1).map((e) => e.text);
+  assert.equal(new Set(notes).size, 20, "every note should be recorded exactly once");
+
+  const verified = verifySession(entries);
+  assert.equal(verified.ok, true, `chain broken at seq ${verified.brokenAt}`);
+  assert.equal(verified.count, 21);
+
+  const lock = path.join(paths(root).sessions, `${id}.jsonl.lock`);
+  assert.equal(fs.existsSync(lock), false, "the lock file must be removed after every append");
 });

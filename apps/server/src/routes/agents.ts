@@ -7,6 +7,8 @@ import { record } from "../bus";
 import type { Ctx } from "../context";
 import { ENGINE_ACTOR_ID } from "../engine/actor";
 import { HttpError } from "../errors";
+import { stopActorTimers } from "../services/timers";
+import { actingAs } from "./common";
 
 /** Whether two scopes share at least one project ("*" counts as sharing every project). An
  *  agent should not learn about another agent it never works alongside, so this gates what one
@@ -62,6 +64,7 @@ export function agentRoutes(app: FastifyInstance, ctx: Ctx): void {
     if (!target || target.kind !== "agent" || target.id === ENGINE_ACTOR_ID) throw new HttpError(404, "not_found", "No such agent");
     const scopes = type === "agent.approved" ? ApproveAgentInput.parse(req.body).scopes : null;
     db.transaction(() => {
+      if (type === "agent.revoked") stopActorTimers(actingAs(ctx, db, req), id);
       setActorStatus(db, id, type === "agent.approved" ? "active" : "revoked", scopes);
       const ev = appendEvent(db, { actorId: req.actor.id, type, payload: { id, scopes }, signature: req.sig, now: ctx.now().toISOString() });
       record(req, ev);

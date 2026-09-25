@@ -27,6 +27,8 @@ const ACTION_LABELS: Record<AgentAction, string> = {
   "comment.add": "Comment",
   "evidence.add": "Attach evidence",
   "attachment.add": "Upload files",
+  "timer.use": "Track time",
+  "cost.report": "Report cost",
 };
 
 function ApproveDialog({ agent, onClose }: { agent: Actor; onClose: () => void }) {

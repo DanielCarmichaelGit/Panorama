@@ -744,3 +744,19 @@ test("parseTrailers extracts all three trailers", () => {
   assert.equal(trailers.head, "b".repeat(64));
   assert.equal(trailers.diff, "c".repeat(64));
 });
+
+test("appendEntry takes over a stale lock older than thirty seconds and removes it afterwards", (t) => {
+  const root = makeRepo(t);
+  const { id } = startSession(root, { actor: "tester", tool: "cli", intent: "stale lock" });
+  const lock = path.join(paths(root).sessions, `${id}.jsonl.lock`);
+  fs.writeFileSync(lock, "dead process\n", "utf8");
+  const old = (Date.now() - 60_000) / 1000;
+  fs.utimesSync(lock, old, old);
+
+  const started = Date.now();
+  const entry = appendEntry(root, id, { type: "note", text: "after a crash" });
+  assert.ok(Date.now() - started < 4000, "a stale lock should be taken over, not waited out");
+  assert.equal(entry.seq, 2);
+  assert.equal(fs.existsSync(lock), false, "the stale lock should be gone once the append completes");
+  assert.equal(verifySession(readSession(root, id)).ok, true);
+});

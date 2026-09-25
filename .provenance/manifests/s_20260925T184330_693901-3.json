@@ -1,0 +1,24 @@
+{
+  "sessionId": "s_20260925T184330_693901",
+  "actor": "Daniel Carmichael",
+  "tool": "cli",
+  "intent": "milestone 3 task 6 timers cost, resumed after concurrent PostToolUse hooks broke session s_20260925T044227_5440a4 at seq 56",
+  "head": "1e507427258fe8d188fd532866c208f81c95fca832c8a0a140f8cc2a029657b0",
+  "count": 3,
+  "diffHash": "9f4e9eb1def87c3adc357e1facb456e920e2c4fdc626d88d59421a09e8b63b26",
+  "files": [
+    "apps/mcp/src/contract.test.ts",
+    "apps/mcp/src/howto.ts",
+    "apps/mcp/src/tools.ts",
+    "apps/server/src/app.ts",
+    "apps/server/src/metrics.test.ts",
+    "apps/server/src/routes/agents.ts",
+    "apps/server/src/routes/metrics.ts",
+    "apps/server/src/routes/tickets.ts",
+    "apps/web/src/views/Agents.tsx",
+    "packages/core/src/permissions.ts",
+    "packages/db/src/metrics.ts"
+  ],
+  "base": "63f20a9c4ec9092c3d78de333abaf860af0a7cbd",
+  "ts": "2026-09-25T18:43:30.860Z"
+}

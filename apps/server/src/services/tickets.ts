@@ -4,6 +4,7 @@ import { addComment, createTicket, enterLane, getActor, getAttachment, getBoard,
 import { changedKeys, sameMergedRecord, sameSet } from "../changed";
 import { HttpError } from "../errors";
 import { blockedByReasons } from "../gate";
+import { stopTicketTimers } from "./timers";
 
 /**
  * The ticket operations behind the routes, as functions of who is acting rather than of a
@@ -144,6 +145,8 @@ export function moveTicketAs(a: Acting, t: Ticket, laneId: string): Ticket {
     const { ticket, flagged } = moveTicket(db, t.id, laneId, a.now());
     if (a.kind === "agent") setCurrentTicket(db, a.actor.id, lane.isDone ? null : t.id);
     a.log("ticket.moved", { id: t.id, projectId: t.projectId, from: t.laneId, to: laneId });
+    // Done means the work stopped: every open timer on the ticket closes with the move.
+    if (lane.isDone) stopTicketTimers(a, t);
     if (flagged) a.log("ticket.flag_set", { id: t.id, projectId: t.projectId, flag: "needs_human", cause: "lane" });
     return ticket;
   })();

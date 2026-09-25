@@ -29,15 +29,22 @@ export const BUNDLED_PRICES: PriceTable = bundled;
  *  listed here fall back to alphabetical order. `scripts/prices-update.mjs` states the same rule. */
 export const PROVIDER_PRIORITY = ["anthropic", "openai", "google", "xai", "mistral", "deepseek", "meta"] as const;
 
-/** What an agent reports after a turn. Tokens are whole and non-negative; the model is whatever
- *  the agent calls it, matched loosely against the table (see `findPrice`). */
+/** The most tokens one field of one report may carry: fifty million, far above any single turn
+ *  a model can take today, so a typo or a misplaced total cannot put a nonsense figure on a
+ *  ticket. A report is per turn; a day's worth arrives as many reports. */
+export const MAX_TOKENS_PER_FIELD = 50_000_000;
+const tokens = z.number().int().nonnegative().max(MAX_TOKENS_PER_FIELD);
+
+/** What an agent reports after a turn. Tokens are whole, non-negative and capped per field; the
+ *  model is whatever the agent calls it, matched loosely against the table (see `findPrice`).
+ *  The route and the MCP tool both validate with this schema. */
 export const CostInput = z
   .object({
     model: z.string().min(1).max(120),
-    inputTokens: z.number().int().nonnegative(),
-    outputTokens: z.number().int().nonnegative(),
-    cacheReadTokens: z.number().int().nonnegative().optional(),
-    cacheWriteTokens: z.number().int().nonnegative().optional(),
+    inputTokens: tokens,
+    outputTokens: tokens,
+    cacheReadTokens: tokens.optional(),
+    cacheWriteTokens: tokens.optional(),
   })
   .strict();
 export type CostInput = z.infer<typeof CostInput>;

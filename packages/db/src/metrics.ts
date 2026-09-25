@@ -59,6 +59,15 @@ export function timerTotalsByProject(db: DB, projectId: string, period: Period, 
   return sumTimers(db.prepare(`select tm.* from timers tm join tickets t on t.id = tm.ticket_id where t.project_id = ?${clause}`).all(...args).map(toTimer), now);
 }
 
+/** The project's timers with the epic and board of their ticket, so a rollup can group time the
+ *  way it groups cost. Like `timerTotalsByProject`, a timer belongs to the period it began in. */
+export function listProjectTimers(db: DB, projectId: string, period?: Period): (Timer & { epicId: string | null; boardId: string | null })[] {
+  const args: unknown[] = [projectId];
+  const clause = inPeriod("tm.started_at", period, args);
+  return (db.prepare(`select tm.*, t.epic_id, t.board_id from timers tm join tickets t on t.id = tm.ticket_id where t.project_id = ?${clause} order by tm.started_at, tm.id`).all(...args) as any[])
+    .map((r) => ({ ...toTimer(r), epicId: r.epic_id ?? null, boardId: r.board_id ?? null }));
+}
+
 /** What an agent reported for a turn plus the estimate made from the bundled table at write
  *  time: `usd` null when the model was unknown, `priceDate` the table's date. Satisfies
  *  `PricedFigure` from @boomerang/core, so `sumEstimates` and `formatEstimate` take it as is. */

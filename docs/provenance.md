@@ -73,6 +73,10 @@ read `-`) and it never fails the range on its own account.
   appending entries to the session in progress. With no session open, the
   hook starts one, taking its intent from the first prompt (or "unstated"
   for a tool event before any prompt).
+- **Concurrent appends** (parallel tool calls firing several hooks at
+  once) are serialised by an exclusive lock file next to the session file
+  (`<id>.jsonl.lock`, waited on for up to 5 seconds, taken over when older
+  than 30 seconds), so seq and prev are always computed from the true tail.
 - **Any other agent, or a human**: the CLI, `pnpm provenance <start|note|
   prompt|tool|status|end>`.
 - **Git hooks**, installed by `pnpm provenance install`

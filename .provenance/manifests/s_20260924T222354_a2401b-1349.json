@@ -1,0 +1,14 @@
+{
+  "sessionId": "s_20260924T222354_a2401b",
+  "actor": "Daniel Carmichael",
+  "tool": "claude-code",
+  "intent": "unstated",
+  "head": "4bcefc5762ebb117c508d93421ff0e0d4c1b366fb5e8c562f540895a8b58017a",
+  "count": 1349,
+  "diffHash": "a658a788fd1317662be7495455a1b4847b20e1708c26ee1cf9f9a1f713ef017b",
+  "files": [
+    "docs/superpowers/specs/2026-09-24-settings-refresh-design.md"
+  ],
+  "base": "c38b68ca6651d5542deab723d3a918737e4c8af6",
+  "ts": "2026-09-25T01:50:16.409Z"
+}

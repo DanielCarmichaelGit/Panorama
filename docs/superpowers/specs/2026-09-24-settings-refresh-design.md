@@ -18,10 +18,10 @@ Every coloured thing (arc, tag, lane, board) keeps its `family` (coral, sky, lil
 
 Lanes can be added and removed, never renamed (names are part of the event history and agents match on them).
 
-- `POST /api/v1/projects/:id/lanes` `{name, family, setsNeedsHuman, isDone}`: appends after the last lane that is not a done lane, or at the end if there is none. Name unique per project (case-insensitive ASCII), 1 to 40 characters. Human only (`lane.edit`). Event `lane.created`.
+- `POST /api/v1/projects/:id/lanes` `{name, family, setsNeedsHuman, isDone}`: inserts immediately before the first done lane by position, or at the end if there is none. Name unique per project (case-insensitive ASCII), 1 to 40 characters. Human only (`lane.edit`). Event `lane.created`.
 - `PATCH /api/v1/lanes/:id` `{family?, setsNeedsHuman?, isDone?}`: no name. Event `lane.updated` with `changed[]`.
 - `PUT /api/v1/projects/:id/lanes/order` `{ids}`: the full ordered list of the project's lane ids. Event `lane.reordered`.
-- `DELETE /api/v1/lanes/:id`: refused (409 `lane_in_use`) while any ticket, archived or not, is in the lane; the message says how many and to move them first. Refused (409 `last_lane`) when it is the project's only lane. Event `lane.deleted`. Requirements go with it.
+- `DELETE /api/v1/lanes/:id`: refused (409 `lane_in_use`) while any ticket, archived or not, is in the lane; the message says how many and to move them first. Refused (409 `last_lane`) when it is the project's only lane, and (409 `last_done_lane`) when it is the only done lane: a project always keeps one done lane, so a PATCH that would clear `isDone` on the last one is refused too. Event `lane.deleted`. Requirements go with it.
 - The gate on move and on create is unchanged.
 
 ## 4. Evidence types

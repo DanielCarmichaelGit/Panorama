@@ -282,6 +282,52 @@ describe("MCP contract", () => {
     expect(registrations).toBe(2);
   });
 
+  it("owns a timer: start, refuse a second start, stop with the duration, refuse a stop with none open", async () => {
+    const started = await tool("boomerang_timer_start", { ticketId: "DEMO-2" });
+    expect(started.isError).toBe(false);
+    expect(started.json).toMatchObject({ key: "DEMO-2", startedAt: expect.any(String), stoppedAt: null, message: expect.stringContaining("Timer running on DEMO-2") });
+    const again = await tool("boomerang_timer_start", { ticketId: "DEMO-2" });
+    expect(again.isError).toBe(true);
+    expect(again.text).toBe("You already have a timer running on this ticket (timer_open)");
+
+    const stopped = await tool("boomerang_timer_stop", { ticketId: "DEMO-2" });
+    expect(stopped.isError).toBe(false);
+    expect(stopped.json.seconds).toEqual(expect.any(Number));
+    expect(stopped.json.message).toBe(`Timer on DEMO-2 stopped after ${stopped.json.duration}`);
+    const none = await tool("boomerang_timer_stop", { ticketId: "DEMO-2" });
+    expect(none.isError).toBe(true);
+    expect(none.text).toBe("You have no timer running on this ticket (timer_not_open)");
+  });
+
+  it("reports cost and answers with the ~$ estimate and its price date, keeping an unknown model as tokens only", async () => {
+    const priced = await tool("boomerang_report_cost", { ticketId: "DEMO-2", model: "claude-fable-5-1", inputTokens: 200_000, outputTokens: 30_000, cacheReadTokens: 800_000, note: "first turn" });
+    expect(priced.isError).toBe(false);
+    expect(priced.json).toMatchObject({ key: "DEMO-2", model: "claude-fable-5-1", tokens: 1_030_000, usd: expect.any(Number), priceDate: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/), note: "first turn" });
+    expect(priced.json.estimate).toMatch(/^~\$\d/);
+    expect(priced.json.message).toBe(`DEMO-2: ${priced.json.estimate} for this turn (estimate at ${priced.json.priceDate} prices; actual can be lower)`);
+
+    const unknown = await tool("boomerang_report_cost", { ticketId: "DEMO-2", model: "acme/mystery-9", inputTokens: 10, outputTokens: 5 });
+    expect(unknown.isError).toBe(false);
+    expect(unknown.json).toMatchObject({ usd: null, estimate: "no price", tokens: 15 });
+    expect(unknown.json.message).toBe(`No price for acme/mystery-9 in the table dated ${unknown.json.priceDate}: 15 tokens recorded on DEMO-2 without a figure`);
+
+    const bad = await tool("boomerang_report_cost", { ticketId: "DEMO-2", model: "claude-fable-5-1", inputTokens: -1, outputTokens: 0 });
+    expect(bad.isError).toBe(true);
+    expect(bad.text).toMatch(/inputTokens/);
+
+    const metrics = await tool("boomerang_ticket_metrics", { ticketId: "DEMO-2" });
+    expect(metrics.isError).toBe(false);
+    expect(metrics.json).toMatchObject({ key: "DEMO-2", estimate: true, priceDate: priced.json.priceDate, openTimers: 0, entries: 2, unpriced: 1, usd: null, known: priced.json.usd, time: expect.stringMatching(/s$/) });
+    expect(metrics.json.tokens).toEqual({ input: 200_010, output: 30_005, cacheRead: 800_000, cacheWrite: 0, total: 1_030_015 });
+    expect(metrics.json.spend).toBe(`at least ${priced.json.estimate} from the priced entries; 1 entry is from a model the price table dated ${priced.json.priceDate} does not know, so the total is tokens only (1030015)`);
+    expect(metrics.json.byModel.map((x: any) => [x.model, x.usd === null, x.spend.startsWith("~$")])).toEqual([["claude-fable-5-1", false, true], ["acme/mystery-9", true, false]]);
+    expect(metrics.json.byActor).toHaveLength(1);
+    expect(metrics.json.byActor[0]).toMatchObject({ actorId: (await tool("boomerang_status")).json.agent.id, name: agentName, entries: 2, seconds: expect.any(Number) });
+
+    const howto = await mcp.readResource({ uri: HOWTO_URI });
+    expect((howto.contents[0] as { text: string }).text).toContain("boomerang_report_cost after each turn");
+  });
+
   it("reports a locked server as one sentence", async () => {
     expect((await human("POST", "/api/v1/lock")).status).toBe(200);
     const locked = await tool("boomerang_projects");

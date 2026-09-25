@@ -1,13 +1,10 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
-import type { Attachment, Comment, Epic, Evidence, EvidenceType, FieldDefinition, Lane, Project, Tag, Ticket, TicketLink } from "@boomerang/core";
+import { formatEstimate, type Attachment, type Comment, type Epic, type Evidence, type EvidenceType, type FieldDefinition, type Lane, type Project, type Tag, type Ticket, type TicketLink } from "@boomerang/core";
 import type { BoomerangClient } from "./client";
 import { BoomerangError, describeError, ToolRefusal, type GateEntry } from "./errors";
 import { HOWTO, HOWTO_URI } from "./howto";
-
-// TODO(milestone 3, task 6): boomerang_start_timer, boomerang_stop_timer and boomerang_report_cost
-// join this list once the server has POST /tickets/:id/timer/start, .../timer/stop and .../cost.
 
 // The server's limits, mirrored here so an oversized or unwanted upload is refused before it
 // is decoded or sent: apps/server/src/app.ts allows one 50 MiB file per upload and
@@ -56,6 +53,41 @@ function resolve<T extends { id: string; name: string }>(items: T[], ref: string
 }
 
 const text = (data: unknown): CallToolResult => ({ content: [{ type: "text", text: typeof data === "string" ? data : JSON.stringify(data, null, 2) }] });
+
+/** `1h 02m 05s`, `2m 05s`, `45s`: whole seconds, the way the server measures them. */
+export function describeDuration(seconds: number): string {
+  const s = Math.max(0, Math.round(seconds));
+  const h = Math.floor(s / 3600); const m = Math.floor((s % 3600) / 60); const r = s % 60;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  if (h > 0) return `${h}h ${pad(m)}m ${pad(r)}s`;
+  if (m > 0) return `${m}m ${pad(r)}s`;
+  return `${r}s`;
+}
+
+/** What the server answers about a ticket's, an actor's, or a model's cost. `usd` is null as
+ *  soon as one entry came from a model the price table does not know; `known` is the priced
+ *  subtotal. Every figure is an estimate (`estimate: true` rides beside it on the wire). */
+interface TokenFigures { tokens: { input: number; output: number; cacheRead: number; cacheWrite: number; total: number }; usd: number | null; known: number; unpriced: number; entries: number }
+interface TimeFigures { seconds: number; openTimers: number }
+interface TicketMetrics extends TokenFigures, TimeFigures {
+  ticketId: string;
+  estimate: true;
+  priceDate: string;
+  byModel: ({ model: string } & TokenFigures)[];
+  byActor: ({ actorId: string; name: string } & TokenFigures & TimeFigures)[];
+}
+interface CostEntryOut {
+  id: string; ticketId: string; actorId: string; model: string; inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number;
+  usd: number | null; priceDate: string; note: string | null; createdAt: string; estimate: true;
+}
+
+/** The sentence beside a figure: "~$9.40" and the words the owner asked for, or the tokens only
+ *  when a model was unknown. `known` is quoted when a total is incomplete. */
+const describeCost = (f: { usd: number | null; known: number; unpriced: number; tokens: { total: number } }, priceDate: string): string => {
+  if (f.usd !== null) return `${formatEstimate(f.usd)} (estimate at ${priceDate} prices; actual can be lower)`;
+  const known = f.known > 0 ? `at least ${formatEstimate(f.known)} from the priced entries; ` : "";
+  return `${known}${f.unpriced} ${f.unpriced === 1 ? "entry is" : "entries are"} from a model the price table dated ${priceDate} does not know, so the total is tokens only (${f.tokens.total})`;
+};
 
 export function buildServer(client: BoomerangClient): McpServer {
   const server = new McpServer({ name: "boomerang", version: "0.1.0" });
@@ -512,6 +544,87 @@ export function buildServer(client: BoomerangClient): McpServer {
       run(async () => {
         const me = await client.call<{ id: string; lastSeen: string | null; currentTicketId: string | null }>("GET", "/api/v1/me");
         return { ok: true, id: me.id, lastSeen: me.lastSeen, currentTicketId: me.currentTicketId };
+      })
+  );
+
+  server.registerTool(
+    "boomerang_timer_start",
+    {
+      title: "Start timer",
+      description: "Starts this agent's timer on a ticket; the server measures the time. One open timer per ticket per agent: starting twice is refused until boomerang_timer_stop. A timer left running stops on its own when the ticket enters a done lane.",
+      inputSchema: z.object({ ticketId: ticketRef }).strict(),
+    },
+    ({ ticketId }) =>
+      run(async () => {
+        const t = await loadTicket(ticketId);
+        const timer = await client.call<{ id: string; ticketId: string; actorId: string; startedAt: string; stoppedAt: null }>("POST", `/api/v1/tickets/${t.id}/timer/start`);
+        return { ...timer, key: t.key, message: `Timer running on ${t.key} since ${timer.startedAt}` };
+      })
+  );
+
+  server.registerTool(
+    "boomerang_timer_stop",
+    {
+      title: "Stop timer",
+      description: "Stops this agent's timer on a ticket and answers with the seconds it ran. Refused when no timer of yours is open on that ticket.",
+      inputSchema: z.object({ ticketId: ticketRef }).strict(),
+    },
+    ({ ticketId }) =>
+      run(async () => {
+        const t = await loadTicket(ticketId);
+        const timer = await client.call<{ id: string; ticketId: string; actorId: string; startedAt: string; stoppedAt: string; seconds: number }>("POST", `/api/v1/tickets/${t.id}/timer/stop`);
+        return { ...timer, key: t.key, duration: describeDuration(timer.seconds), message: `Timer on ${t.key} stopped after ${describeDuration(timer.seconds)}` };
+      })
+  );
+
+  server.registerTool(
+    "boomerang_report_cost",
+    {
+      title: "Report cost",
+      description: "Records what one turn cost on a ticket: the model and the token counts your harness reports, cache reads and writes separately when it gives them. Boomerang prices the tokens from its bundled table (never fetched) and answers with an estimate such as ~$0.12 and the date of the prices behind it; an unknown model is kept as tokens only. Call it after each turn.",
+      inputSchema: z
+        .object({
+          ticketId: ticketRef,
+          model: z.string().min(1).max(120).describe("The model id as your harness names it, such as claude-fable-5-1"),
+          inputTokens: z.number().int().nonnegative(),
+          outputTokens: z.number().int().nonnegative(),
+          cacheReadTokens: z.number().int().nonnegative().optional(),
+          cacheWriteTokens: z.number().int().nonnegative().optional(),
+          note: z.string().max(2000).optional().describe("What the turn was for"),
+        })
+        .strict(),
+    },
+    ({ ticketId, ...body }) =>
+      run(async () => {
+        const t = await loadTicket(ticketId);
+        const e = await client.call<CostEntryOut>("POST", `/api/v1/tickets/${t.id}/cost`, body);
+        const tokens = e.inputTokens + e.outputTokens + e.cacheReadTokens + e.cacheWriteTokens;
+        const message = e.usd === null
+          ? `No price for ${e.model} in the table dated ${e.priceDate}: ${tokens} tokens recorded on ${t.key} without a figure`
+          : `${t.key}: ${formatEstimate(e.usd)} for this turn (estimate at ${e.priceDate} prices; actual can be lower)`;
+        return { id: e.id, ticketId: e.ticketId, key: t.key, model: e.model, tokens, usd: e.usd, estimate: formatEstimate(e.usd), priceDate: e.priceDate, note: e.note, createdAt: e.createdAt, message };
+      })
+  );
+
+  server.registerTool(
+    "boomerang_ticket_metrics",
+    {
+      title: "Ticket metrics",
+      description: "What a ticket has cost so far: time on timers, tokens by kind, the estimated spend with its price date, and the same broken down by model and by actor. Every dollar figure is an estimate; a model the table does not know leaves the total as tokens only.",
+      inputSchema: z.object({ ticketId: ticketRef }).strict(),
+    },
+    ({ ticketId }) =>
+      run(async () => {
+        const t = await loadTicket(ticketId);
+        const m = await client.call<TicketMetrics>("GET", `/api/v1/tickets/${t.id}/metrics`);
+        return {
+          ...m,
+          key: t.key,
+          time: describeDuration(m.seconds),
+          spend: describeCost(m, m.priceDate),
+          byModel: m.byModel.map((x) => ({ ...x, spend: describeCost(x, m.priceDate) })),
+          byActor: m.byActor.map((x) => ({ ...x, time: describeDuration(x.seconds), spend: describeCost(x, m.priceDate) })),
+        };
       })
   );
 

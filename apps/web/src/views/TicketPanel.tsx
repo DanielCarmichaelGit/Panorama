@@ -23,6 +23,7 @@ import {
 import { AddEvidence } from "../components/AddEvidence";
 import { Chip } from "../components/Chip";
 import { Composer } from "../components/Composer";
+import { CostBlock } from "../components/CostBlock";
 import { FieldControl, isFieldEmpty } from "../components/FieldControl";
 import { GateList, laneOptionLabel, nextLane } from "../components/GateList";
 import { Picker, type PickerOption } from "../components/Picker";
@@ -488,6 +489,8 @@ export function TicketPanel({ id, onClose }: { id: string; onClose: () => void }
         />
         {activeFields.map((f) => <FieldRow key={f.id} ticket={t} def={f} />)}
       </div>
+
+      <CostBlock ticketId={t.id} />
 
       <Picker
         id="tp-lane"

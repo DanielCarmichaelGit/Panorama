@@ -112,6 +112,15 @@ describe("invalidationsFor", () => {
     expect(invalidationsFor("project.created", {})).toEqual([["lanes"], ["projects"], ["gates"]]);
   });
 
+  it("invalidates the ticket's and the project's metrics on timer.started, timer.stopped, and cost.added", () => {
+    for (const type of ["timer.started", "timer.stopped", "cost.added"]) {
+      const keys = invalidationsFor(type, { ticketId: "t1", actorId: "a1", projectId: "p1" });
+      expect(keys).toContainEqual(["metrics", "ticket", "t1"]);
+      expect(keys).toContainEqual(["metrics", "project", "p1"]);
+      expect(keys).not.toContainEqual(["ticket", undefined]);
+    }
+  });
+
   it("invalidates epics, tags, and fields on their own events", () => {
     expect(invalidationsFor("epic.archived", {})).toEqual([["epics"]]);
     expect(invalidationsFor("tag.created", {})).toEqual([["tags"]]);

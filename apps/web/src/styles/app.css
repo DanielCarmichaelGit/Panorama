@@ -402,6 +402,25 @@ a{color:var(--accent)}
 .collapsed .side-status{padding:8px 0;justify-items:center;border-color:transparent}
 .sheet .side-status{margin-bottom:0}
 
+/* Metrics (milestone 3): the figures row, agent card totals, the arc hint, the ticket's Cost block */
+.figures{display:flex;align-items:center;gap:1rem;flex-wrap:wrap;margin:0 0 1.25rem}
+.figure{display:inline-flex;align-items:baseline;gap:.3rem;font-size:.8125rem}
+.figure .mono{font-size:.8125rem}
+.figures .picker{width:auto;margin:0}
+.figures .picker-trigger{width:auto;padding:.3rem .6rem;font-size:.8125rem;font-weight:600;gap:.35rem}
+.agent-totals{margin:0;gap:.6rem}
+.agent-totals .figure,.agent-totals .figure .mono{font-size:.75rem}
+.picker-trigger-hint{display:inline-flex;align-items:baseline;gap:.5rem;flex:none;margin-left:.25rem}
+.cost-block{margin:0 0 1.75rem}
+.cost-block h2{margin-bottom:.6rem}
+.cost-block .figures{margin-bottom:.75rem}
+.cost-block .running{display:flex;align-items:center;gap:.5rem;margin:0 0 .75rem;font-size:.8125rem;color:var(--sky-ink)}
+.cost-block .running .dot{width:8px;height:8px;border-radius:var(--r-pill);background:var(--sky-right);flex:none}
+.cost-block .settings-list{margin-bottom:.75rem}
+.cost-block .settings-row{min-height:34px;padding:.2rem .9rem}
+.cost-block .row-facts{display:flex;align-items:center;gap:.9rem;justify-content:flex-end;flex-wrap:wrap}
+.cost-block .row-actions{display:none}
+
 /* Scrollbars: thin, rounded, in the line colour, so they belong to the page */
 *{scrollbar-width:thin;scrollbar-color:var(--line) transparent}
 *:hover{scrollbar-color:var(--stone-right) transparent}

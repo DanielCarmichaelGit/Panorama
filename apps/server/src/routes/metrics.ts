@@ -154,7 +154,12 @@ export function metricsRoutes(app: FastifyInstance, ctx: Ctx): void {
         return { actorId, name: getActor(db, actorId)?.name ?? actorId, ...figures(timers.filter((x) => x.actorId === actorId), c, nowMs) };
       })
       .sort((a, b) => bySpend(a, b) || b.seconds - a.seconds || a.actorId.localeCompare(b.actorId));
-    return { ticketId: t.id, estimate: true, priceDate: priceDate ?? BUNDLED_PRICES.date, ...figures(timers, total, nowMs), byModel, byActor };
+    // The open timers by name, oldest first, so the panel can say who is on the clock and since when.
+    const running = timers
+      .filter((x) => x.stoppedAt === null)
+      .sort((a, b) => a.startedAt.localeCompare(b.startedAt))
+      .map((x) => ({ actorId: x.actorId, name: getActor(db, x.actorId)?.name ?? x.actorId, startedAt: x.startedAt }));
+    return { ticketId: t.id, estimate: true, priceDate: priceDate ?? BUNDLED_PRICES.date, ...figures(timers, total, nowMs), byModel, byActor, running };
   });
 
   app.get("/api/v1/metrics", async (req: any) => {

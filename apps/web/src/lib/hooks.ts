@@ -25,6 +25,7 @@ import type {
   UpdateLaneInput,
 } from "@boomerang/core";
 import { api } from "./api";
+import type { MetricsGroupBy, MetricsPeriod } from "./metrics";
 import { session } from "./session";
 import { connectStream, invalidationsFor } from "./stream";
 
@@ -156,6 +157,53 @@ export const usePrefetchGates = () => {
   return (ticketId: string) =>
     qc.prefetchQuery({ queryKey: ["gates", ticketId], queryFn: gatesQueryFn(ticketId), staleTime: 10_000 });
 };
+
+/** The same figures on a ticket, an actor, an arc, a board and a project, as the server measures them. */
+export interface Figures {
+  /** Whole seconds on timers, an open one counting up to the server's now. */
+  seconds: number;
+  openTimers: number;
+  tokens: { input: number; output: number; cacheRead: number; cacheWrite: number; total: number };
+  /** The estimate, null as soon as one entry could not be priced. */
+  usd: number | null;
+  /** The subtotal of the priced entries, so the UI can still say "at least". */
+  known: number;
+  unpriced: number;
+  entries: number;
+}
+
+export interface TicketMetrics extends Figures {
+  ticketId: string;
+  estimate: true;
+  priceDate: string;
+  byModel: ({ model: string } & Omit<Figures, "seconds" | "openTimers">)[];
+  byActor: ({ actorId: string; name: string } & Figures)[];
+  /** The open timers, oldest first. */
+  running: { actorId: string; name: string; startedAt: string }[];
+}
+
+export interface ProjectMetrics {
+  projectId: string;
+  estimate: true;
+  priceDate: string;
+  period: { kind: MetricsPeriod; from: string | null; to: string | null };
+  groupBy: MetricsGroupBy;
+  total: Figures;
+  groups: ({ id: string; name: string } & Figures)[];
+}
+
+// Metrics keys: ["metrics", "ticket", ticketId] and ["metrics", "project", projectId, period,
+// groupBy]. The stream invalidates by the ticket key and by the project prefix on timer.started,
+// timer.stopped and cost.added, so every period and grouping on screen refetches together.
+export const useTicketMetrics = (ticketId: string | undefined) =>
+  useQuery({ queryKey: ["metrics", "ticket", ticketId], queryFn: () => api<TicketMetrics>("GET", `/api/v1/tickets/${ticketId}/metrics`), enabled: !!ticketId });
+
+export const useProjectMetrics = (projectId: string | undefined, period: MetricsPeriod, groupBy: MetricsGroupBy) =>
+  useQuery({
+    queryKey: ["metrics", "project", projectId, period, groupBy],
+    queryFn: () => api<ProjectMetrics>("GET", `/api/v1/metrics?projectId=${encodeURIComponent(projectId ?? "")}&period=${period}&groupBy=${groupBy}`),
+    enabled: !!projectId,
+  });
 
 export const useAddComment = () => {
   const qc = useQueryClient();

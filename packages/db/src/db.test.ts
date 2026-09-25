@@ -146,10 +146,19 @@ describe("lane lifecycle", () => {
     expect(d.listLanes(db, project.id).map((l) => l.position)).toEqual([0, 1, 2, 3, 4, 5, 6]);
   });
 
-  it("appends at the end when every lane is a done lane", () => {
+  it("inserts before the first done lane by position, so a done lane toggled in the middle does not capture new lanes", () => {
     const { db } = fresh();
     const { project, lanes } = d.createProject(db, { name: "Panorama", key: "PAN" }, NOW);
-    for (const l of lanes) d.updateLane(db, l.id, { isDone: true });
+    d.updateLane(db, lanes[2].id, { isDone: true }); // In Progress becomes a done lane, mid-board
+    const lane = d.createLane(db, { projectId: project.id, name: "Review", family: "lilac", setsNeedsHuman: false, isDone: false }, NOW);
+    expect(lane.position).toBe(2);
+    expect(d.listLanes(db, project.id).map((l) => l.name)).toEqual(["Backlog", "Ready", "Review", "In Progress", "Eval", "Ready for Production", "Done"]);
+  });
+
+  it("appends at the end when the project has no done lane", () => {
+    const { db } = fresh();
+    const { project, lanes } = d.createProject(db, { name: "Panorama", key: "PAN" }, NOW);
+    for (const l of lanes) d.updateLane(db, l.id, { isDone: false });
     const lane = d.createLane(db, { projectId: project.id, name: "Archive", family: "stone", setsNeedsHuman: false, isDone: true }, NOW);
     expect(lane.position).toBe(6);
     expect(d.listLanes(db, project.id).at(-1)!.id).toBe(lane.id);

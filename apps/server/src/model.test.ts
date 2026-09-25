@@ -129,6 +129,27 @@ describe("lane lifecycle", () => {
     expect(ev!.payload).toEqual({ id: lane.id, projectId: w.project.id, changed: ["family", "isDone"], patch: { family: "coral", isDone: true } });
   });
 
+  it("keeps one done lane: refuses to clear isDone on the only done lane, or to delete it", async () => {
+    const w = await world();
+    const done = w.lanes.find((l: any) => l.name === "Done");
+    const clear = await w.human("PATCH", `/api/v1/lanes/${done.id}`, { isDone: false });
+    expect(clear.status).toBe(400);
+    expect(clear.json.error.code).toBe("validation");
+    expect(clear.json.error.message).toBe("A project needs one done lane");
+    expect((await w.human("PATCH", `/api/v1/lanes/${done.id}`, { isDone: true, family: "coral" })).status).toBe(200);
+
+    const del = await w.human("DELETE", `/api/v1/lanes/${done.id}`);
+    expect(del.status).toBe(409);
+    expect(del.json.error.code).toBe("last_done_lane");
+    expect(del.json.error.message).toBe("Add another done lane first");
+
+    // With a second done lane both are allowed again.
+    await w.human("PATCH", `/api/v1/lanes/${w.lanes[3].id}`, { isDone: true });
+    expect((await w.human("PATCH", `/api/v1/lanes/${done.id}`, { isDone: false })).status).toBe(200);
+    expect((await w.human("DELETE", `/api/v1/lanes/${done.id}`)).status).toBe(200);
+    expect((await w.human("GET", `/api/v1/projects/${w.project.id}/lanes`)).json.filter((l: any) => l.isDone).map((l: any) => l.name)).toEqual(["Eval"]);
+  });
+
   it("reorders lanes from the full id list, refusing a partial list and an agent", async () => {
     const w = await world();
     const ids = w.lanes.map((l: any) => l.id);
@@ -162,17 +183,19 @@ describe("lane lifecycle", () => {
     expect((await w.agent("DELETE", `/api/v1/lanes/${w.lanes[1].id}`)).status).toBe(403);
     expect((await w.human("DELETE", "/api/v1/lanes/missing")).status).toBe(404);
 
-    for (const lane of w.lanes.slice(1)) expect((await w.human("DELETE", `/api/v1/lanes/${lane.id}`)).status).toBe(200);
-    expect((await w.human("GET", `/api/v1/projects/${w.project.id}/lanes`)).json.map((l: any) => l.id)).toEqual([backlog.id]);
+    const done = w.lanes.at(-1);
+    for (const lane of w.lanes.slice(1, -1)) expect((await w.human("DELETE", `/api/v1/lanes/${lane.id}`)).status).toBe(200);
+    expect((await w.human("GET", `/api/v1/projects/${w.project.id}/lanes`)).json.map((l: any) => l.id)).toEqual([backlog.id, done.id]);
 
+    // A project whose only lane is its done lane refuses as last_lane, the broader rule.
     const other = (await w.human("POST", "/api/v1/projects", { name: "Other", key: "OTH" })).json;
-    for (const lane of other.lanes.slice(1)) await w.human("DELETE", `/api/v1/lanes/${lane.id}`);
-    const last = await w.human("DELETE", `/api/v1/lanes/${other.lanes[0].id}`);
+    for (const lane of other.lanes.slice(0, -1)) expect((await w.human("DELETE", `/api/v1/lanes/${lane.id}`)).status).toBe(200);
+    const last = await w.human("DELETE", `/api/v1/lanes/${other.lanes.at(-1).id}`);
     expect(last.status).toBe(409);
     expect(last.json.error.code).toBe("last_lane");
 
     const deleted = listEvents(w.app.ctx.db!).filter((e) => e.type === "lane.deleted");
-    expect(deleted).toHaveLength(10);
+    expect(deleted).toHaveLength(9);
     expect(deleted[0].payload).toEqual({ id: w.lanes[1].id, projectId: w.project.id, name: "Ready" });
   });
 });

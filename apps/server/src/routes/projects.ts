@@ -19,6 +19,8 @@ export function projectRoutes(app: FastifyInstance, ctx: Ctx): void {
   const loadProject = (db: DB, id: string) => {
     if (!getProject(db, id)) throw new HttpError(404, "not_found", "No such project");
   };
+  const isOnlyDoneLane = (db: DB, lane: { id: string; projectId: string }) =>
+    !listLanes(db, lane.projectId).some((l) => l.isDone && l.id !== lane.id);
   const loadLane = (db: DB, id: string) => {
     const lane = getLane(db, id);
     if (!lane) throw new HttpError(404, "not_found", "No such lane");
@@ -54,10 +56,10 @@ export function projectRoutes(app: FastifyInstance, ctx: Ctx): void {
     loadProject(db, projectId);
     requireCan(req, "lane.edit", projectId);
     const input = CreateLaneInput.parse(req.body);
-    if (listLanes(db, projectId).some((l) => asciiLower(l.name) === asciiLower(input.name))) {
-      throw new HttpError(400, "validation", `A lane named ${input.name} already exists in this project`, { name: input.name });
-    }
     return db.transaction(() => {
+      if (listLanes(db, projectId).some((l) => asciiLower(l.name) === asciiLower(input.name))) {
+        throw new HttpError(400, "validation", `A lane named ${input.name} already exists in this project`, { name: input.name });
+      }
       const lane = createLane(db, { projectId, ...input }, ctx.now().toISOString());
       log(db, req, "lane.created", { id: lane.id, projectId, name: lane.name, family: lane.family, setsNeedsHuman: lane.setsNeedsHuman, isDone: lane.isDone, position: lane.position });
       return lane;
@@ -69,6 +71,10 @@ export function projectRoutes(app: FastifyInstance, ctx: Ctx): void {
     requireCan(req, "lane.edit", lane.projectId);
     const patch = UpdateLaneInput.parse(req.body);
     return db.transaction(() => {
+      // A project always keeps one done lane: the gate on Done and the queue both lean on it.
+      if (patch.isDone === false && lane.isDone && isOnlyDoneLane(db, lane)) {
+        throw new HttpError(400, "validation", "A project needs one done lane", { laneId: lane.id });
+      }
       const out = updateLane(db, lane.id, patch);
       log(db, req, "lane.updated", { id: lane.id, projectId: lane.projectId, changed: Object.keys(patch), patch });
       return out;
@@ -96,8 +102,9 @@ export function projectRoutes(app: FastifyInstance, ctx: Ctx): void {
   app.delete("/api/v1/lanes/:id", async (req: any) => {
     const db = getDb(ctx); const lane = loadLane(db, req.params.id);
     requireCan(req, "lane.edit", lane.projectId);
-    if (listLanes(db, lane.projectId).length === 1) throw new HttpError(409, "last_lane", "A project keeps at least one lane");
     return db.transaction(() => {
+      if (listLanes(db, lane.projectId).length === 1) throw new HttpError(409, "last_lane", "A project keeps at least one lane");
+      if (lane.isDone && isOnlyDoneLane(db, lane)) throw new HttpError(409, "last_done_lane", "Add another done lane first");
       const { deleted, ticketCount } = deleteLane(db, lane.id);
       if (!deleted) throw new HttpError(409, "lane_in_use", `Move its ${ticketCount} ${ticketCount === 1 ? "ticket" : "tickets"} first`, { ticketCount });
       log(db, req, "lane.deleted", { id: lane.id, projectId: lane.projectId, name: lane.name });

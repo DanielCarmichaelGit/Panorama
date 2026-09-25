@@ -30,15 +30,16 @@ export function setLaneRequirements(db: DB, laneId: string, requirements: LaneRe
   return getLane(db, laneId)!;
 }
 
-/** A new lane lands after the last lane that is not a done lane (so the done lanes stay at
- *  the end of the board), or at the end when every lane is a done lane. Rows after it shift
- *  down one position. Name uniqueness is the route's job: it has the message to give. */
+/** A new lane lands immediately before the first done lane by position (so the done lanes
+ *  stay at the end of the board, and a done lane toggled mid-board does not capture new
+ *  lanes behind it), or at the end when the project has no done lane. Rows from that
+ *  position on shift down one. Name uniqueness is the route's job: it has the message to give. */
 export function createLane(db: DB, input: { projectId: string; name: string; family: Family; setsNeedsHuman: boolean; isDone: boolean }, now: string): Lane {
   void now; // lanes have no created_at column: kept for symmetry with the other create* functions
   const id = randomUUID();
-  const lastActive = db.prepare("select max(position) m from lanes where project_id = ? and is_done = 0").get(input.projectId) as { m: number | null };
+  const firstDone = db.prepare("select min(position) m from lanes where project_id = ? and is_done = 1").get(input.projectId) as { m: number | null };
   const count = (db.prepare("select count(*) n from lanes where project_id = ?").get(input.projectId) as { n: number }).n;
-  const position = lastActive.m === null ? count : lastActive.m + 1;
+  const position = firstDone.m === null ? count : firstDone.m;
   db.prepare("update lanes set position = position + 1 where project_id = ? and position >= ?").run(input.projectId, position);
   db.prepare("insert into lanes(id, project_id, name, position, family, sets_needs_human, is_done, evidence_requirements) values(?,?,?,?,?,?,?,'[]')")
     .run(id, input.projectId, input.name, position, input.family, input.setsNeedsHuman ? 1 : 0, input.isDone ? 1 : 0);

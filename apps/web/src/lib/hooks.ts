@@ -5,6 +5,8 @@ import type {
   Attachment,
   Board,
   Comment,
+  CreateEvidenceTypeInput,
+  CreateLaneInput,
   CreateTicketInput,
   Epic,
   Evidence,
@@ -20,6 +22,7 @@ import type {
   Tag,
   Ticket,
   TicketLink,
+  UpdateLaneInput,
 } from "@panorama/core";
 import { api } from "./api";
 import { session } from "./session";
@@ -129,6 +132,8 @@ export interface GateMiss {
   name: string;
   need: number;
   have: number;
+  /** What the evidence should show, as written on the lane requirement. */
+  description?: string;
 }
 
 const gatesQueryFn = (ticketId: string) => () => api<Record<string, GateMiss[]>>("GET", `/api/v1/tickets/${ticketId}/gates`);
@@ -247,6 +252,83 @@ export const useSetLaneRequirements = () => {
     mutationFn: (v: { id: string; requirements: LaneRequirement[] }) =>
       api<Lane>("PUT", `/api/v1/lanes/${v.id}/requirements`, { requirements: v.requirements }),
     onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["lanes"] });
+      qc.invalidateQueries({ queryKey: ["gates"] });
+    },
+  });
+};
+
+/**
+ * Human only: adds a lane, placed by the server just before the first done lane. The lane list
+ * feeds the Board, the panel's lane Picker, and every gate, so those caches move too.
+ */
+export const useCreateLane = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { projectId: string } & CreateLaneInput) => {
+      const { projectId, ...body } = v;
+      return api<Lane>("POST", `/api/v1/projects/${projectId}/lanes`, body);
+    },
+    onSuccess: (_, v) => {
+      qc.invalidateQueries({ queryKey: ["lanes", v.projectId] });
+      qc.invalidateQueries({ queryKey: ["gates"] });
+    },
+  });
+};
+
+/** Human only: changes a lane's family or flags (never its name). Done and needs-human flags shape the queue. */
+export const useUpdateLane = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { id: string; projectId: string; patch: UpdateLaneInput }) => api<Lane>("PATCH", `/api/v1/lanes/${v.id}`, v.patch),
+    onSuccess: (_, v) => {
+      qc.invalidateQueries({ queryKey: ["lanes", v.projectId] });
+      qc.invalidateQueries({ queryKey: ["gates"] });
+      qc.invalidateQueries({ queryKey: ["queue"] });
+    },
+  });
+};
+
+/** Human only: sets the full lane order of a project. `ids` lists every lane exactly once. */
+export const useReorderLanes = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { projectId: string; ids: string[] }) => api<Lane[]>("PUT", `/api/v1/projects/${v.projectId}/lanes/order`, { ids: v.ids }),
+    onSuccess: (_, v) => {
+      qc.invalidateQueries({ queryKey: ["lanes", v.projectId] });
+      qc.invalidateQueries({ queryKey: ["gates"] });
+    },
+  });
+};
+
+/** Human only: deletes an empty lane. The server answers 409 (lane_in_use, last_lane, last_done_lane) when it cannot. */
+export const useDeleteLane = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { id: string; projectId: string }) => api<{ ok: boolean }>("DELETE", `/api/v1/lanes/${v.id}`),
+    onSuccess: (_, v) => {
+      qc.invalidateQueries({ queryKey: ["lanes", v.projectId] });
+      qc.invalidateQueries({ queryKey: ["gates"] });
+    },
+  });
+};
+
+/** Human only: adds a global evidence type. `params.threshold` only with kind eval_score. */
+export const useCreateEvidenceType = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: CreateEvidenceTypeInput) => api<EvidenceType>("POST", "/api/v1/evidence-types", v),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["evidence-types"] }),
+  });
+};
+
+/** Human only: deletes an evidence type no lane requires and no evidence row records (409 evidence_type_in_use otherwise). */
+export const useDeleteEvidenceType = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api<{ ok: boolean }>("DELETE", `/api/v1/evidence-types/${id}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["evidence-types"] });
       qc.invalidateQueries({ queryKey: ["lanes"] });
       qc.invalidateQueries({ queryKey: ["gates"] });
     },

@@ -34,17 +34,19 @@ test("a ticket through the full dialog: required field, arc, tags, dependency, p
   // Settings: a required text field, then an arc. The Fields tab is the default one.
   await page.getByRole("link", { name: "Settings" }).click();
   await expect(page.getByRole("tab", { name: "Fields" })).toHaveAttribute("aria-selected", "true");
+  await page.getByRole("button", { name: "Add field" }).click();
   await page.getByLabel("Name", { exact: true }).fill("Customer");
   await expect(page.getByLabel("Key")).toHaveValue("customer");
   await page.getByLabel("Required").check();
-  await page.getByRole("button", { name: "Create field" }).click();
+  await page.getByRole("button", { name: "Save" }).click();
   const customerRow = page.locator(".settings-row", { hasText: "Customer" });
   await expect(customerRow).toBeVisible();
   await expect(customerRow.getByText("Required")).toBeVisible();
 
   await page.getByRole("tab", { name: "Arcs" }).click();
+  await page.getByRole("button", { name: "Add arc" }).click();
   await page.getByLabel("Name", { exact: true }).fill("Launch");
-  await page.getByRole("button", { name: "Create arc" }).click();
+  await page.getByRole("button", { name: "Save" }).click();
   await expect(page.locator(".settings-row", { hasText: "Launch" })).toBeVisible();
 
   // A first ticket for the second one to depend on, created through the same dialog from the

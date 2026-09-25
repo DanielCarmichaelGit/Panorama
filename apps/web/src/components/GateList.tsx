@@ -73,10 +73,16 @@ export function GateList({ lane, missing, types, actions }: { lane: Lane | null;
         <div className="gate-list">
           {lane.evidenceRequirements.map((r) => {
             const miss = missing.find((m) => m.typeId === r.typeId);
+            // What the evidence should show: the gate's own copy first, the lane's requirement
+            // as a fallback (both carry it once the requirement was written with one).
+            const description = miss?.description ?? r.description;
             return miss ? (
               <div className="unmet" key={r.typeId}>
                 <Circle size={16} weight="regular" aria-hidden="true" />
-                <span>{miss.name ?? typeName(types, r.typeId)}, {miss.have} of {miss.need}</span>
+                <span className="gate-text">
+                  <span>{miss.name ?? typeName(types, r.typeId)}, {miss.have} of {miss.need}</span>
+                  {description && <span className="muted gate-desc">{description}</span>}
+                </span>
               </div>
             ) : (
               <div className="met" key={r.typeId}>

@@ -40,6 +40,25 @@ describe("GateList", () => {
     expect(screen.getByLabelText("met")).toBeTruthy();
   });
 
+  it("shows what an unmet requirement should show, under its name", () => {
+    const reviewLane = lane({ id: "l2", name: "Review", evidenceRequirements: [{ typeId: "et_test_run", count: 1 }] });
+    render(
+      <GateList
+        lane={reviewLane}
+        missing={[{ typeId: "et_test_run", name: "Test run", need: 1, have: 0, description: "Show that the issue reproduces" }]}
+        types={types}
+      />,
+    );
+    expect(screen.getByText("Test run, 0 of 1")).toBeTruthy();
+    expect(screen.getByText("Show that the issue reproduces")).toBeTruthy();
+  });
+
+  it("falls back to the lane requirement's own description when the gate entry carries none", () => {
+    const reviewLane = lane({ id: "l2", name: "Review", evidenceRequirements: [{ typeId: "et_test_run", count: 1, description: "A markdown file explaining what needs to be done" }] });
+    render(<GateList lane={reviewLane} missing={[{ typeId: "et_test_run", name: "Test run", need: 1, have: 0 }]} types={types} />);
+    expect(screen.getByText("A markdown file explaining what needs to be done")).toBeTruthy();
+  });
+
   it("says no evidence required when the lane has no requirements", () => {
     render(<GateList lane={lane({ evidenceRequirements: [] })} missing={[]} types={types} />);
     expect(screen.getByText("No evidence required.")).toBeTruthy();

@@ -8,7 +8,7 @@ import type { ColorValue } from "./ColorField";
 
 afterEach(cleanup);
 
-function Harness(props: { initial?: ColorValue; onChange?: (next: ColorValue) => void; presets?: boolean; disabled?: boolean }) {
+function Harness(props: { initial?: ColorValue; onChange?: (next: ColorValue) => void; presets?: boolean; custom?: boolean; disabled?: boolean }) {
   const [value, setValue] = useState<ColorValue>(props.initial ?? { family: "coral", color: null });
   return (
     <ColorField
@@ -17,6 +17,7 @@ function Harness(props: { initial?: ColorValue; onChange?: (next: ColorValue) =>
       family={value.family}
       color={value.color}
       presets={props.presets}
+      custom={props.custom}
       disabled={props.disabled}
       onChange={(next) => {
         setValue(next);
@@ -54,6 +55,13 @@ describe("ColorField", () => {
     render(<Harness presets={false} />);
     const names = screen.getAllByRole("button").map((b) => b.getAttribute("aria-label"));
     expect(names).toEqual(["Coral", "Sky", "Lilac", "Mint", "Stone", "Custom colour"]);
+  });
+
+  it("offers only the families when custom is off, for family-only things like lanes", () => {
+    render(<Harness presets={false} custom={false} />);
+    const names = screen.getAllByRole("button").map((b) => b.getAttribute("aria-label"));
+    expect(names).toEqual(["Coral", "Sky", "Lilac", "Mint", "Stone"]);
+    expect(screen.queryByLabelText("Hex")).toBeNull();
   });
 
   it("marks the family swatch pressed when there is no colour, and nothing else", () => {

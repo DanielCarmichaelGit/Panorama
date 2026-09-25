@@ -1,200 +1,168 @@
 // Arcs are epics in the API. Every user-facing string here says arc; the hooks, routes, query
 // keys, and this file's name keep the API's word.
 import { useMemo, useState } from "react";
+import { Archive, PencilSimple } from "@phosphor-icons/react";
 import type { Epic } from "@panorama/core";
-import { useCreateEpic, useEpics, useUpdateEpic } from "../../lib/hooks";
-import { swapNeighbour } from "../../lib/reorder";
+import { useCreateEpic, useEpics, useTickets, useUpdateEpic } from "../../lib/hooks";
 import { Chip } from "../Chip";
 import { ColorField, type ColorValue } from "../ColorField";
+import { Count, EmptyRow, FocusInput, RowAction, RowConfirm, RowError, RowForm, SettingsList, SettingsRow, SettingsSection, errorMessage } from "./primitives";
 import { TabState } from "./TabState";
 
-function NewEpicForm({ projectId }: { projectId: string }) {
-  const create = useCreateEpic();
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [colour, setColour] = useState<ColorValue>({ family: "stone", color: null });
+const NEW = "new";
 
-  const canCreate = name.trim() !== "" && !create.isPending;
+interface ArcDraft extends ColorValue {
+  name: string;
+  description: string;
+}
 
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!canCreate) return;
-    try {
-      await create.mutateAsync({
-        projectId,
-        name: name.trim(),
-        description: description.trim() || undefined,
-        family: colour.family,
-        color: colour.color ?? undefined,
-      });
-      setName("");
-      setDescription("");
-    } catch {
-      // create.error renders below
-    }
-  }
-
+function ArcForm({
+  id,
+  initial,
+  busy,
+  error,
+  onSave,
+  onClose,
+}: {
+  id: string;
+  initial: ArcDraft;
+  busy: boolean;
+  error: string | null;
+  onSave: (v: ArcDraft) => void;
+  onClose: () => void;
+}) {
+  const [name, setName] = useState(initial.name);
+  const [description, setDescription] = useState(initial.description);
+  const [colour, setColour] = useState<ColorValue>({ family: initial.family, color: initial.color });
   return (
-    <form className="inline-form" onSubmit={submit}>
-      <h2>New arc</h2>
-      <div className="field">
-        <label htmlFor="ne-name">Name</label>
-        <input id="ne-name" className="input" value={name} onChange={(e) => setName(e.target.value)} />
+    <RowForm
+      label={initial.name ? `Edit ${initial.name}` : "New arc"}
+      onSubmit={() => onSave({ name: name.trim(), description: description.trim(), ...colour })}
+      onCancel={onClose}
+      canSave={name.trim() !== ""}
+      busy={busy}
+      error={error}
+    >
+      <div className="row-form-grid">
+        <div className="field">
+          <label htmlFor={`${id}-name`}>Name</label>
+          <FocusInput id={`${id}-name`} className="input" value={name} onChange={(e) => setName(e.target.value)} />
+        </div>
+        <div className="field">
+          <label htmlFor={`${id}-description`}>Description</label>
+          <input id={`${id}-description`} className="input" value={description} onChange={(e) => setDescription(e.target.value)} />
+        </div>
       </div>
-      <div className="field">
-        <label htmlFor="ne-description">Description</label>
-        <textarea id="ne-description" className="input" value={description} onChange={(e) => setDescription(e.target.value)} />
-      </div>
-      <ColorField id="ne-colour" label="Colour" family={colour.family} color={colour.color} onChange={setColour} />
-      {create.isError && <p className="error" role="alert">{create.error instanceof Error ? create.error.message : "Could not create the arc."}</p>}
-      <button type="submit" className="btn" disabled={!canCreate}>{create.isPending ? "Creating" : "Create arc"}</button>
-    </form>
+      <ColorField id={`${id}-colour`} label="Colour" family={colour.family} color={colour.color} onChange={setColour} />
+    </RowForm>
   );
 }
 
-function EpicRow({
-  epic,
-  index,
-  count,
-  onMove,
-  moveError,
-}: {
-  epic: Epic;
-  index: number;
-  count: number;
-  onMove: (dir: -1 | 1) => void;
-  moveError?: string;
-}) {
+function NewArcForm({ projectId, onClose }: { projectId: string; onClose: () => void }) {
+  const create = useCreateEpic();
+  return (
+    <ArcForm
+      id="ne"
+      initial={{ name: "", description: "", family: "stone", color: null }}
+      busy={create.isPending}
+      error={create.isError ? errorMessage(create.error, "Could not create the arc.") : null}
+      onSave={(v) => create.mutate({ projectId, name: v.name, description: v.description || undefined, family: v.family, color: v.color ?? undefined }, { onSuccess: onClose })}
+      onClose={onClose}
+    />
+  );
+}
+
+function ArcRow({ epic, count, expanded, onExpand, onClose }: { epic: Epic; count: number; expanded: boolean; onExpand: () => void; onClose: () => void }) {
   const update = useUpdateEpic();
-  const [editing, setEditing] = useState(false);
   const [confirming, setConfirming] = useState(false);
-  const [name, setName] = useState(epic.name);
-  const [description, setDescription] = useState(epic.description ?? "");
-  const [colour, setColour] = useState<ColorValue>({ family: epic.family, color: epic.color });
-
-  function startEdit() {
-    setName(epic.name);
-    setDescription(epic.description ?? "");
-    setColour({ family: epic.family, color: epic.color });
-    update.reset();
-    setEditing(true);
-  }
-
-  const canSave = name.trim() !== "" && !update.isPending;
-
-  // The colour reaches the server on Save only; the native picker fires on every drag step.
-  async function save(e: React.FormEvent) {
-    e.preventDefault();
-    if (!canSave) return;
-    try {
-      await update.mutateAsync({
-        id: epic.id,
-        patch: { name: name.trim(), description: description.trim() || null, family: colour.family, color: colour.color },
-      });
-      setEditing(false);
-    } catch {
-      // update.error renders below
-    }
-  }
-
-  function doArchive() {
-    update.mutate({ id: epic.id, patch: { archived: true } }, { onSuccess: () => setConfirming(false) });
-  }
-
-  if (editing) {
-    return (
-      <form className="inline-form" onSubmit={save}>
-        <div className="field">
-          <label htmlFor={`ee-name-${epic.id}`}>Name</label>
-          <input id={`ee-name-${epic.id}`} className="input" value={name} onChange={(e) => setName(e.target.value)} />
-        </div>
-        <div className="field">
-          <label htmlFor={`ee-description-${epic.id}`}>Description</label>
-          <textarea id={`ee-description-${epic.id}`} className="input" value={description} onChange={(e) => setDescription(e.target.value)} />
-        </div>
-        <ColorField id={`ee-colour-${epic.id}`} label="Colour" family={colour.family} color={colour.color} onChange={setColour} />
-        {update.isError && <p className="error" role="alert">{update.error instanceof Error ? update.error.message : "Could not save the arc."}</p>}
-        <div className="modal-actions">
-          <button type="button" className="btn ghost" onClick={() => { update.reset(); setEditing(false); }}>Cancel</button>
-          <button type="submit" className="btn" disabled={!canSave}>{update.isPending ? "Saving" : "Save"}</button>
-        </div>
-      </form>
-    );
-  }
 
   return (
-    <div className="settings-row">
-      <Chip family={epic.family} color={epic.color}>{epic.name}</Chip>
-      {epic.description && <span className="muted">{epic.description}</span>}
-      <div className="spacer" />
-      {moveError && <p className="error" role="alert">{moveError}</p>}
-      {update.isError && (
-        <p className="error" role="alert">{update.error instanceof Error ? update.error.message : "Could not archive the arc."}</p>
-      )}
-      {confirming ? (
-        <span className="confirm-row">
-          Archive {epic.name}? Tickets keep it, but it will not appear as an option.
-          <button type="button" className="btn ghost" onClick={doArchive}>Archive</button>
-          <button type="button" className="btn ghost" onClick={() => setConfirming(false)}>Keep</button>
-        </span>
-      ) : (
+    <SettingsRow
+      identity={<Chip family={epic.family} color={epic.color}>{epic.name}</Chip>}
+      facts={
         <>
-          <button type="button" className="btn ghost" onClick={() => onMove(-1)} disabled={index === 0}>Move up</button>
-          <button type="button" className="btn ghost" onClick={() => onMove(1)} disabled={index === count - 1}>Move down</button>
-          <button type="button" className="btn ghost" onClick={startEdit}>Edit</button>
-          <button type="button" className="btn ghost" onClick={() => setConfirming(true)}>Archive</button>
+          {epic.description && <span className="row-truncate">{epic.description}</span>}
+          <Count n={count} noun="ticket" />
         </>
+      }
+      actions={
+        !confirming && (
+          <>
+            <RowAction icon={PencilSimple} label="Edit" onClick={() => { update.reset(); onExpand(); }} />
+            <RowAction icon={Archive} label="Archive" onClick={() => { update.reset(); setConfirming(true); }} />
+          </>
+        )
+      }
+      expanded={expanded}
+    >
+      {!expanded && update.isError && <RowError message={errorMessage(update.error, "Could not archive the arc.")} />}
+      {confirming && (
+        <RowConfirm
+          question={`Archive ${epic.name}?`}
+          note="Tickets keep it, but it will not appear as an option."
+          action="Archive"
+          busy={update.isPending}
+          onConfirm={() => update.mutate({ id: epic.id, patch: { archived: true } }, { onSuccess: () => setConfirming(false) })}
+          onCancel={() => setConfirming(false)}
+        />
       )}
-    </div>
+      {expanded && (
+        // The colour reaches the server on Save only; the native picker fires on every drag step.
+        <ArcForm
+          key={epic.id}
+          id={`ee-${epic.id}`}
+          initial={{ name: epic.name, description: epic.description ?? "", family: epic.family, color: epic.color }}
+          busy={update.isPending}
+          error={update.isError ? errorMessage(update.error, "Could not save the arc.") : null}
+          onSave={(v) => update.mutate({ id: epic.id, patch: { name: v.name, description: v.description || null, family: v.family, color: v.color } }, { onSuccess: onClose })}
+          onClose={onClose}
+        />
+      )}
+    </SettingsRow>
   );
 }
 
 /**
- * Settings tab for the project's arcs: create, reorder, edit (name, description, colour), and
- * archive. Archiving keeps the arc on tickets already carrying it but drops it from new
- * assignment and this list.
+ * Settings tab for the project's arcs: add, edit (name, description, colour), and archive.
+ * Archiving keeps the arc on tickets already carrying it but drops it from new assignment and
+ * this list. The ticket count beside each arc comes from the project's open tickets.
  */
 export function EpicsTab({ projectId }: { projectId: string }) {
   const epics = useEpics(projectId);
-  const update = useUpdateEpic();
-  const [moveError, setMoveError] = useState<{ id: string; message: string } | null>(null);
+  const tickets = useTickets(projectId);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const list = useMemo(
     () => [...(epics.data ?? [])].filter((e) => !e.archived).sort((a, b) => a.position - b.position),
     [epics.data],
   );
-
-  async function move(epic: Epic, dir: -1 | 1) {
-    const pair = swapNeighbour(list, list.findIndex((e) => e.id === epic.id), dir);
-    if (!pair) return;
-    setMoveError(null);
-    try {
-      await Promise.all(pair.map((p) => update.mutateAsync({ id: p.id, patch: { position: p.position } })));
-    } catch {
-      setMoveError({ id: epic.id, message: "Could not reorder" });
-      epics.refetch();
-    }
-  }
+  const counts = useMemo(() => {
+    const out = new Map<string, number>();
+    for (const t of tickets.data ?? []) if (t.epicId) out.set(t.epicId, (out.get(t.epicId) ?? 0) + 1);
+    return out;
+  }, [tickets.data]);
 
   const state = TabState({ query: epics, label: "arcs" });
   if (state) return state;
 
+  const close = () => setExpandedId(null);
+
   return (
-    <div>
-      {list.length === 0 && <p className="muted">No arcs yet. Add one to group related tickets.</p>}
-      <NewEpicForm projectId={projectId} />
-      <div className="settings-list">
-        {list.map((e, i) => (
-          <EpicRow
-            key={e.id}
-            epic={e}
-            index={i}
-            count={list.length}
-            onMove={(dir) => move(e, dir)}
-            moveError={moveError?.id === e.id ? moveError.message : undefined}
-          />
+    <SettingsSection
+      description="Arcs group tickets into a body of work. Give each a colour so its tickets stand out on the board."
+      action={<button type="button" className="btn" onClick={() => setExpandedId(NEW)} disabled={expandedId === NEW}>Add arc</button>}
+    >
+      <SettingsList label="Arcs">
+        {expandedId === NEW && (
+          <li className="settings-row" data-expanded="true">
+            <NewArcForm projectId={projectId} onClose={close} />
+          </li>
+        )}
+        {list.length === 0 && expandedId !== NEW && <EmptyRow mark>No arcs yet. Add one to group related tickets.</EmptyRow>}
+        {list.map((e) => (
+          <ArcRow key={e.id} epic={e} count={counts.get(e.id) ?? 0} expanded={expandedId === e.id} onExpand={() => setExpandedId(e.id)} onClose={close} />
         ))}
-      </div>
-    </div>
+      </SettingsList>
+    </SettingsSection>
   );
 }

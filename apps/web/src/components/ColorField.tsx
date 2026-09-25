@@ -17,6 +17,8 @@ export interface ColorFieldProps {
   onChange: (next: ColorValue) => void;
   /** Show the seven BRAND.md presets between the families and Custom. Default true. */
   presets?: boolean;
+  /** Offer the Custom swatch (native colour input and hex field). Default true; false for family-only things like lanes. */
+  custom?: boolean;
   disabled?: boolean;
 }
 
@@ -38,7 +40,7 @@ function isPreset(color: string | null): boolean {
  * The swatches are one roving tab stop: arrows, Home and End move between them, Enter or Space
  * selects. See section 2 of docs/superpowers/specs/2026-09-24-settings-refresh-design.md.
  */
-export function ColorField({ id, label, family, color, onChange, presets = true, disabled }: ColorFieldProps): JSX.Element {
+export function ColorField({ id, label, family, color, onChange, presets = true, custom: allowCustom = true, disabled }: ColorFieldProps): JSX.Element {
   const custom = color !== null && !isPreset(color);
   const [customOpen, setCustomOpen] = useState(custom);
   const [draft, setDraft] = useState(color ?? "");
@@ -52,7 +54,7 @@ export function ColorField({ id, label, family, color, onChange, presets = true,
   const swatches: Swatch[] = [
     ...FAMILIES.map((f): Swatch => ({ kind: "family", key: `family-${f}`, family: f })),
     ...(presets ? PRESET_COLORS.map((hex, i): Swatch => ({ kind: "preset", key: `preset-${i}`, hex })) : []),
-    { kind: "custom", key: CUSTOM_KEY },
+    ...(allowCustom ? [{ kind: "custom", key: CUSTOM_KEY } as Swatch] : []),
   ];
 
   function isPressed(s: Swatch): boolean {
@@ -169,7 +171,7 @@ export function ColorField({ id, label, family, color, onChange, presets = true,
     return undefined;
   }
 
-  const showCustom = customOpen || custom;
+  const showCustom = allowCustom && (customOpen || custom);
   // The native picker opens on the current colour, or on the family top when there is none yet.
   const draftRgb = parseHex(draft);
   const nativeValue = color ?? (draftRgb ? toHex(draftRgb) : FAMILY[family].top.toLowerCase());

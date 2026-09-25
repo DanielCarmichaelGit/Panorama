@@ -58,8 +58,10 @@ export type RuleRunOutcome = "applied" | "skipped" | "refused" | "error";
 export interface RuleRun { id: string; ruleId: string; ticketId: string | null; eventSeq: number; firedAt: string; outcome: RuleRunOutcome; detail: Record<string, unknown> }
 const toRun = (r: any): RuleRun => ({ id: r.id, ruleId: r.rule_id, ticketId: r.ticket_id, eventSeq: r.event_seq, firedAt: r.fired_at, outcome: r.outcome, detail: JSON.parse(r.detail) });
 
-export function addRuleRun(db: DB, run: { ruleId: string; ticketId: string | null; eventSeq: number; outcome: RuleRunOutcome; detail: Record<string, unknown> }, now: string): RuleRun {
-  const id = randomUUID();
+/** `id` may be supplied so the events a fire produces can cite their run before its row is
+ *  written (the outcome is only known once the actions have run). */
+export function addRuleRun(db: DB, run: { id?: string; ruleId: string; ticketId: string | null; eventSeq: number; outcome: RuleRunOutcome; detail: Record<string, unknown> }, now: string): RuleRun {
+  const id = run.id ?? randomUUID();
   db.prepare("insert into rule_runs(id, rule_id, ticket_id, event_seq, fired_at, outcome, detail) values(?,?,?,?,?,?,?)")
     .run(id, run.ruleId, run.ticketId, run.eventSeq, now, run.outcome, JSON.stringify(run.detail));
   return toRun(db.prepare("select * from rule_runs where id = ?").get(id));

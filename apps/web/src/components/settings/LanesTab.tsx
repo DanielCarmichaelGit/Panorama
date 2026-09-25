@@ -5,7 +5,7 @@ import { useCreateLane, useDeleteLane, useEvidenceTypes, useLanes, useReorderLan
 import { Chip } from "../Chip";
 import { ColorField, type ColorValue } from "../ColorField";
 import { merge, RequirementRows, toRequirements, type RequirementRow } from "../RequirementRows";
-import { Count, EmptyRow, FocusInput, RowAction, RowConfirm, RowError, RowForm, SettingsList, SettingsRow, SettingsSection, errorMessage } from "./primitives";
+import { Count, EmptyRow, RowAction, RowConfirm, RowError, RowForm, SettingsList, SettingsRow, SettingsSection, errorMessage } from "./primitives";
 import { TabState } from "./TabState";
 
 const NEW = "new";
@@ -66,7 +66,7 @@ function NewLaneForm({ projectId, onClose }: { projectId: string; onClose: () =>
       <div className="row-form-grid">
         <div className="field">
           <label htmlFor="nl-name">Name</label>
-          <FocusInput id="nl-name" className="input" value={name} maxLength={40} onChange={(e) => setName(e.target.value)} />
+          <input id="nl-name" className="input" value={name} maxLength={40} onChange={(e) => setName(e.target.value)} />
         </div>
       </div>
       <LaneFlags id="nl" family={family} setsNeedsHuman={setsNeedsHuman} isDone={isDone} onFamily={(v) => setFamily(v.family)} onNeedsHuman={setNeedsHuman} onDone={setDone} />

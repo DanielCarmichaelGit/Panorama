@@ -6,7 +6,7 @@ import type { Epic } from "@panorama/core";
 import { useCreateEpic, useEpics, useTickets, useUpdateEpic } from "../../lib/hooks";
 import { Chip } from "../Chip";
 import { ColorField, type ColorValue } from "../ColorField";
-import { Count, EmptyRow, FocusInput, RowAction, RowConfirm, RowError, RowForm, SettingsList, SettingsRow, SettingsSection, errorMessage } from "./primitives";
+import { Count, EmptyRow, RowAction, RowConfirm, RowError, RowForm, SettingsList, SettingsRow, SettingsSection, errorMessage } from "./primitives";
 import { TabState } from "./TabState";
 
 const NEW = "new";
@@ -46,7 +46,7 @@ function ArcForm({
       <div className="row-form-grid">
         <div className="field">
           <label htmlFor={`${id}-name`}>Name</label>
-          <FocusInput id={`${id}-name`} className="input" value={name} onChange={(e) => setName(e.target.value)} />
+          <input id={`${id}-name`} className="input" value={name} onChange={(e) => setName(e.target.value)} />
         </div>
         <div className="field">
           <label htmlFor={`${id}-description`}>Description</label>

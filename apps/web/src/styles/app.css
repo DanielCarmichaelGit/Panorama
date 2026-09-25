@@ -61,6 +61,16 @@ a{color:var(--accent)}
 .side .nav-item[aria-current="page"]{background:var(--accent);color:var(--on-accent)}
 .side .foot{margin-top:auto;display:grid;gap:6px}
 .side .foot .nav-item{margin-top:4px}
+.side-status{display:grid;gap:4px;padding:0 .7rem .35rem}
+.side-status-row{display:flex;align-items:center;gap:.45rem;min-height:20px;font-size:.75rem;font-weight:500;color:var(--muted);cursor:default}
+.side-status-row svg{flex:none}
+.side-status-ok{color:var(--mint-ink)}
+.side-status-bad{color:var(--coral-ink)}
+.side-status-dot{width:6px;height:6px;margin:0 5px;border-radius:var(--r-pill);background:var(--stone-right);flex:none}
+.side-status-dot.on{background:var(--mint-right)}
+.collapsed .side-status{padding:0;justify-items:center}
+.collapsed .side-status-row{justify-content:center;width:44px}
+.sheet .side-status{padding:0}
 .collapse-btn{justify-self:end;width:28px;height:28px;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--line);border-radius:var(--r-input);background:var(--surface);color:var(--muted);cursor:pointer;transition:color var(--dur) var(--ease),border-color var(--dur) var(--ease)}
 .collapse-btn:hover{color:var(--text);border-color:var(--muted)}
 .collapsed .collapse-btn{justify-self:center}
@@ -290,12 +300,14 @@ a{color:var(--accent)}
 .row-form .input{min-height:34px;padding:.3rem .6rem;font-size:.875rem;line-height:1.4}
 .row-form .field{margin:0;gap:.25rem}
 .row-form .field label,.row-form .picker-label,.row-form .swatch-field legend,.row-form .options-label{font-size:.75rem;font-weight:600}
+.field-help{margin:0;font-size:.75rem;line-height:1.4;color:var(--muted)}
 .row-form .picker{gap:.25rem}
 .row-form .swatch-field{margin:0}
 .row-form .color-swatches{padding:2px 4px}
 .row-form .color-native{width:34px;height:34px}
 .row-form .checkbox-row{margin:0;font-size:.875rem}
-.row-form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(11rem,1fr));gap:.6rem .9rem;align-items:end;max-width:48rem}
+.row-form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(11rem,1fr));gap:.6rem .9rem;align-items:start;max-width:48rem}
+.row-form-grid>.checkbox-row{margin-top:1.45rem;min-height:34px}
 .row-form-checks{display:flex;gap:1.25rem;flex-wrap:wrap}
 .row-form-actions{display:flex;gap:.5rem}
 .row-form-reqs{display:grid;gap:.5rem}

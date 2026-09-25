@@ -4,7 +4,7 @@ import { EVIDENCE_KINDS, type EvidenceKind, type EvidenceType } from "@panorama/
 import { useCreateEvidenceType, useDeleteEvidenceType, useEvidenceTypes, useLanes } from "../../lib/hooks";
 import { Chip } from "../Chip";
 import { Picker } from "../Picker";
-import { EmptyRow, FocusInput, RowAction, RowConfirm, RowError, RowForm, SettingsList, SettingsRow, SettingsSection, errorMessage } from "./primitives";
+import { EmptyRow, RowAction, RowConfirm, RowError, RowForm, SettingsList, SettingsRow, SettingsSection, errorMessage } from "./primitives";
 import { TabState } from "./TabState";
 
 const NEW = "new";
@@ -49,7 +49,7 @@ function NewTypeForm({ onClose }: { onClose: () => void }) {
       <div className="row-form-grid">
         <div className="field">
           <label htmlFor="net-name">Name</label>
-          <FocusInput id="net-name" className="input" value={name} maxLength={60} onChange={(e) => setName(e.target.value)} />
+          <input id="net-name" className="input" value={name} maxLength={60} onChange={(e) => setName(e.target.value)} />
         </div>
         <Picker id="net-kind" label="Kind" options={EVIDENCE_KINDS.map((k) => ({ id: k, label: KIND_LABELS[k] }))} value={kind} onChange={(v) => v && setKind(v as EvidenceKind)} />
         {kind === "eval_score" && (

@@ -47,5 +47,5 @@ test("first run, agent approval, clearing the queue", async ({ page }) => {
   await expect(page.getByRole("alert")).toContainText("does not match");
   await page.getByLabel("Password", { exact: true }).fill("a-long-test-password");
   await page.getByRole("button", { name: "Unlock" }).click();
-  await expect(page.getByText("chain verified")).toBeVisible();
+  await expect(page.getByText("History intact")).toBeVisible();
 });

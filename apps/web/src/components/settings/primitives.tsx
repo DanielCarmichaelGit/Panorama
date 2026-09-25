@@ -85,11 +85,16 @@ export function RowAction({
   );
 }
 
+/** The control a freshly opened form should focus: a text input, else the first swatch, else the first checkbox. */
+const FIRST_CONTROL = 'input[type="text"], input:not([type]), .color-swatch[tabindex="0"], input[type="checkbox"]';
+
 /**
  * The compact inline form a row expands into (or the add form at the top of the list). Save
  * submits, Cancel and Escape close it; `canSave` gates the submit button and `busy` swaps its
  * label while a write is in flight. Escape already consumed by a nested control (an open Picker
- * closing itself) leaves the form alone.
+ * closing itself) leaves the form alone. On open the form remembers what was focused (the Edit
+ * or Add button that opened it) and moves focus to its first control; on close it hands focus
+ * back to that opener if it is still on the page.
  */
 export function RowForm({
   onSubmit,
@@ -108,6 +113,16 @@ export function RowForm({
   label: string;
   children: React.ReactNode;
 }) {
+  const formRef = useRef<HTMLFormElement>(null);
+  useEffect(() => {
+    const active = document.activeElement;
+    const opener = active instanceof HTMLElement && active !== document.body ? active : null;
+    formRef.current?.querySelector<HTMLElement>(FIRST_CONTROL)?.focus();
+    return () => {
+      if (opener?.isConnected) opener.focus();
+    };
+  }, []);
+
   function submit(e: React.FormEvent) {
     e.preventDefault();
     if (canSave && !busy) onSubmit();
@@ -119,7 +134,7 @@ export function RowForm({
     }
   }
   return (
-    <form className="row-form" aria-label={label} onSubmit={submit} onKeyDown={onKeyDown}>
+    <form ref={formRef} className="row-form" aria-label={label} onSubmit={submit} onKeyDown={onKeyDown}>
       {children}
       {error && <p className="error row-error" role="alert">{error}</p>}
       <div className="row-form-actions">
@@ -128,15 +143,6 @@ export function RowForm({
       </div>
     </form>
   );
-}
-
-/** A text input that takes focus when the form opens, for the name field of every add and edit form. */
-export function FocusInput(props: React.InputHTMLAttributes<HTMLInputElement>) {
-  const ref = useRef<HTMLInputElement>(null);
-  useEffect(() => {
-    ref.current?.focus();
-  }, []);
-  return <input ref={ref} {...props} />;
 }
 
 /** The inline confirmation below a row: a question, an optional muted note, the destructive action as a small btn, and Cancel. */

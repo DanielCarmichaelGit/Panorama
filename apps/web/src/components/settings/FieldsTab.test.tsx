@@ -72,8 +72,10 @@ describe("FieldsTab", () => {
     const save = screen.getByRole("button", { name: "Save" }) as HTMLButtonElement;
     expect(save.disabled).toBe(true);
 
+    const keyInput = screen.getByLabelText("Key") as HTMLInputElement;
+    expect(screen.getByText(/The name agents use in the API/).id).toBe(keyInput.getAttribute("aria-describedby"));
     fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Story points" } });
-    expect((screen.getByLabelText("Key") as HTMLInputElement).value).toBe("story_points");
+    expect(keyInput.value).toBe("story_points");
     expect(save.disabled).toBe(false);
 
     fireEvent.change(screen.getByLabelText("Key"), { target: { value: "" } });

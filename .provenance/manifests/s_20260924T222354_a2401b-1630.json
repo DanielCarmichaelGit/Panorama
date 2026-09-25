@@ -1,0 +1,26 @@
+{
+  "sessionId": "s_20260924T222354_a2401b",
+  "actor": "Daniel Carmichael",
+  "tool": "claude-code",
+  "intent": "unstated",
+  "head": "638d7bd149d141640ee6c3472b6b4d80797890bfb7691e27d1a57fbd0999d1ce",
+  "count": 1630,
+  "diffHash": "fb501e3f76c9d146cf3aee7eec5397763dd6e2cee086870838749a270687d27a",
+  "files": [
+    "apps/web/src/components/SidebarStatus.test.tsx",
+    "apps/web/src/components/SidebarStatus.tsx",
+    "apps/web/src/components/settings/EpicsTab.tsx",
+    "apps/web/src/components/settings/EvidenceTab.tsx",
+    "apps/web/src/components/settings/FieldsTab.test.tsx",
+    "apps/web/src/components/settings/FieldsTab.tsx",
+    "apps/web/src/components/settings/LanesTab.test.tsx",
+    "apps/web/src/components/settings/LanesTab.tsx",
+    "apps/web/src/components/settings/TagsTab.tsx",
+    "apps/web/src/components/settings/primitives.tsx",
+    "apps/web/src/styles/app.css",
+    "apps/web/src/views/Shell.tsx",
+    "e2e/first-run.spec.ts"
+  ],
+  "base": "f35ebdf00eb1f4531f492613dff8f01936455c48",
+  "ts": "2026-09-25T02:37:33.442Z"
+}

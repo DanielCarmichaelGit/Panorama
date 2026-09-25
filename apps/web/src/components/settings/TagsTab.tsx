@@ -4,7 +4,7 @@ import type { Tag } from "@panorama/core";
 import { useArchiveTag, useCreateTag, useTags, useTickets, useUpdateTag } from "../../lib/hooks";
 import { Chip } from "../Chip";
 import { ColorField, type ColorValue } from "../ColorField";
-import { Count, EmptyRow, FocusInput, RowAction, RowConfirm, RowError, RowForm, SettingsList, SettingsRow, SettingsSection, errorMessage } from "./primitives";
+import { Count, EmptyRow, RowAction, RowConfirm, RowError, RowForm, SettingsList, SettingsRow, SettingsSection, errorMessage } from "./primitives";
 import { TabState } from "./TabState";
 
 const NEW = "new";
@@ -31,7 +31,7 @@ function TagForm({
       <div className="row-form-grid">
         <div className="field">
           <label htmlFor={`${id}-name`}>Name</label>
-          <FocusInput id={`${id}-name`} className="input" value={name} onChange={(e) => setName(e.target.value)} />
+          <input id={`${id}-name`} className="input" value={name} onChange={(e) => setName(e.target.value)} />
         </div>
       </div>
       <ColorField id={`${id}-colour`} label="Colour" family={colour.family} color={colour.color} onChange={setColour} />

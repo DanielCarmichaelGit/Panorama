@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Link, NavLink, Outlet, useMatch, useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { CaretLineLeft, CaretLineRight, GearSix, Kanban, List, Lock, Robot, Tray } from "@phosphor-icons/react";
+import { SidebarStatus } from "../components/SidebarStatus";
 import type { Project } from "@panorama/core";
 import type { Status } from "../App";
 import { api } from "../lib/api";
@@ -180,10 +181,9 @@ export function Shell({ status, chainOk }: { status: Status; chainOk: boolean })
           <span className="label">Menu</span>
         </button>
         <div className="foot">
-          {!collapsed && <span className="mono muted">{chainOk ? "chain verified" : "chain broken"}</span>}
-          {!collapsed && <span className="mono muted">{streamStatus === "open" ? "live" : "reconnecting"}</span>}
+          <SidebarStatus chainOk={chainOk} connected={streamStatus === "open"} />
           {status.encryption && (
-            <button type="button" className="nav-item" onClick={handleLock} aria-label="Lock" title={collapsed ? `Lock (${chainOk ? "chain verified" : "chain broken"}, ${streamStatus === "open" ? "live" : "reconnecting"})` : "Lock"}>
+            <button type="button" className="nav-item" onClick={handleLock} aria-label="Lock" title="Lock">
               <Lock size={22} weight="regular" aria-hidden="true" />
               <span className="label">Lock</span>
             </button>
@@ -220,8 +220,7 @@ export function Shell({ status, chainOk }: { status: Status; chainOk: boolean })
           <Link to="/settings" className="btn ghost" onClick={closeMenu}>
             <GearSix size={16} weight="regular" aria-hidden="true" /> Settings
           </Link>
-          <span className="mono muted">{chainOk ? "chain verified" : "chain broken"}</span>
-          <span className="mono muted">{streamStatus === "open" ? "live" : "reconnecting"}</span>
+          <SidebarStatus chainOk={chainOk} connected={streamStatus === "open"} />
           {status.encryption && (
             <button type="button" className="btn ghost" onClick={handleLock}>
               <Lock size={16} weight="regular" aria-hidden="true" /> Lock

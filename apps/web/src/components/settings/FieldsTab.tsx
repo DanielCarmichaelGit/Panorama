@@ -6,7 +6,7 @@ import { useArchiveField, useCreateField, useFields, useUpdateField } from "../.
 import { swapNeighbour } from "../../lib/reorder";
 import { Chip } from "../Chip";
 import { Picker } from "../Picker";
-import { EmptyRow, FocusInput, RowAction, RowConfirm, RowError, RowForm, SettingsList, SettingsRow, SettingsSection, errorMessage } from "./primitives";
+import { EmptyRow, RowAction, RowConfirm, RowError, RowForm, SettingsList, SettingsRow, SettingsSection, errorMessage } from "./primitives";
 import { TabState } from "./TabState";
 
 const KIND_LABELS: Record<FieldKind, string> = {
@@ -15,6 +15,7 @@ const KIND_LABELS: Record<FieldKind, string> = {
   date: "Date",
   select: "Select",
   checkbox: "Checkbox",
+  file: "File",
 };
 
 const NEW = "new";
@@ -115,7 +116,7 @@ function NewFieldForm({ projectId, onClose }: { projectId: string; onClose: () =
       <div className="row-form-grid">
         <div className="field">
           <label htmlFor="nf-name">Name</label>
-          <FocusInput id="nf-name" className="input" value={name} onChange={(e) => changeName(e.target.value)} />
+          <input id="nf-name" className="input" value={name} onChange={(e) => changeName(e.target.value)} />
         </div>
         <div className="field">
           <label htmlFor="nf-key">Key</label>
@@ -123,11 +124,13 @@ function NewFieldForm({ projectId, onClose }: { projectId: string; onClose: () =
             id="nf-key"
             className="input mono-input"
             value={key}
+            aria-describedby="nf-key-help"
             onChange={(e) => {
               setKeyTouched(true);
               setKey(e.target.value);
             }}
           />
+          <p id="nf-key-help" className="field-help">The name agents use in the API, as in fields.customer_name. It follows the name and is fixed once saved.</p>
         </div>
         <Picker id="nf-kind" label="Kind" options={FIELD_KINDS.map((k) => ({ id: k, label: KIND_LABELS[k] }))} value={kind} onChange={(v) => v && setKind(v as FieldKind)} />
         <label className="checkbox-row">
@@ -166,7 +169,7 @@ function EditFieldForm({ field, onClose }: { field: FieldDefinition; onClose: ()
       <div className="row-form-grid">
         <div className="field">
           <label htmlFor={`ef-name-${field.id}`}>Name</label>
-          <FocusInput id={`ef-name-${field.id}`} className="input" value={name} onChange={(e) => setName(e.target.value)} />
+          <input id={`ef-name-${field.id}`} className="input" value={name} onChange={(e) => setName(e.target.value)} />
         </div>
         <label className="checkbox-row">
           <input type="checkbox" checked={required} onChange={(e) => setRequired(e.target.checked)} /> Required

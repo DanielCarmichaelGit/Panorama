@@ -197,6 +197,40 @@ describe("LanesTab", () => {
     expect(calls.filter((c) => c.method === "PATCH")).toHaveLength(1);
   });
 
+  it("focuses the first control on open and hands focus back to the opener on close", async () => {
+    mockApi();
+    renderTab();
+
+    await screen.findByText("Review", { selector: ".row-name" });
+    const edit = row("Backlog").getByRole("button", { name: "Edit" });
+    edit.focus();
+    fireEvent.click(edit);
+    // The lane form has no name field, so the first family swatch takes focus.
+    expect(document.activeElement).toBe(row("Backlog").getByRole("button", { name: "Stone" }));
+    fireEvent.keyDown(document.activeElement as Element, { key: "Escape" });
+    expect(document.activeElement).toBe(edit);
+
+    const add = screen.getByRole("button", { name: "Add lane" });
+    add.focus();
+    fireEvent.click(add);
+    expect(document.activeElement).toBe(screen.getByLabelText("Name"));
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(document.activeElement).toBe(add);
+  });
+
+  it("shows the server's refusal when Done lane is cleared on the only done lane and keeps the form open", async () => {
+    mockApi({ onWrite: () => Promise.reject(new ApiError(400, "validation", "A project needs one done lane")) });
+    renderTab();
+
+    await screen.findByText("Done", { selector: ".row-name" });
+    fireEvent.click(row("Done").getByRole("button", { name: "Edit" }));
+    fireEvent.click(row("Done").getByLabelText("Done lane"));
+    fireEvent.click(row("Done").getByRole("button", { name: "Save" }));
+
+    expect((await screen.findByRole("alert")).textContent).toBe("A project needs one done lane");
+    expect(row("Done").getByRole("button", { name: "Save" })).toBeTruthy();
+  });
+
   it("moves a lane down through the order route with the full id list", async () => {
     const calls = mockApi();
     renderTab();

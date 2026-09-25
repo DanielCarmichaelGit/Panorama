@@ -58,8 +58,8 @@ function editor(label = "Description"): any {
 const fieldDef = (over: Record<string, unknown> = {}) => ({
   id: "f1", projectId: "p1", name: "Severity", key: "severity", kind: "text", options: [], required: true, position: 0, archived: false, createdAt: "", ...over,
 });
-const epic = { id: "e1", projectId: "p1", name: "Launch", description: null, family: "lilac", position: 0, archived: false, createdAt: "" };
-const tag = (id: string, name: string) => ({ id, projectId: "p1", name, family: "sky", archived: false, createdAt: "" });
+const epic = { id: "e1", projectId: "p1", name: "Launch", description: null, family: "lilac", color: null, position: 0, archived: false, createdAt: "" };
+const tag = (id: string, name: string) => ({ id, projectId: "p1", name, family: "sky", color: null, archived: false, createdAt: "" });
 const otherTicket = {
   id: "t2", projectId: "p1", boardId: "b1", number: 2, key: "PAN-2", title: "Other ticket", laneId: "l1", position: 2,
   epicId: null, tagIds: [], successCriteria: "", fields: {},
@@ -436,7 +436,7 @@ describe("NewTicket required checkbox", () => {
 });
 
 describe("NewTicket request order", () => {
-  it("sends epic, tags, fields and success criteria in the one POST, then the flag, then the dependency link from the other ticket", async () => {
+  it("sends arc, tags, fields and success criteria in the one POST, then the flag, then the dependency link from the other ticket", async () => {
     const calls: { method: string; path: string; body?: unknown }[] = [];
     const apiImpl = async (method: string, path: string, body?: unknown) => {
       calls.push({ method, path, body });
@@ -462,7 +462,7 @@ describe("NewTicket request order", () => {
 
     fireEvent.change(screen.getByLabelText("Title"), { target: { value: "Ship it" } });
 
-    fireEvent.click(screen.getByRole("button", { name: "Epic" }));
+    fireEvent.click(screen.getByRole("button", { name: "Arc" }));
     fireEvent.click(await screen.findByRole("option", { name: "Launch" }));
 
     const tags = screen.getByRole("button", { name: "Tags" });

@@ -47,11 +47,11 @@ const board = (over: Partial<BoardType>): BoardType => ({
 });
 
 const epic = (over: Partial<Epic>): Epic => ({
-  id: "e1", projectId: "p1", name: "Growth", description: null, family: "sky", position: 0, archived: false, createdAt: "", ...over,
+  id: "e1", projectId: "p1", name: "Growth", description: null, family: "sky", color: null, position: 0, archived: false, createdAt: "", ...over,
 });
 
 const tag = (over: Partial<Tag>): Tag => ({
-  id: "tg1", projectId: "p1", name: "Bug", family: "coral", archived: false, createdAt: "", ...over,
+  id: "tg1", projectId: "p1", name: "Bug", family: "coral", color: null, archived: false, createdAt: "", ...over,
 });
 
 describe("groupByLane", () => {
@@ -80,7 +80,7 @@ describe("filterTickets", () => {
     expect(filterTickets([t1, t2, t3], {})).toEqual([t1, t2, t3]);
   });
 
-  it("filters by epic only", () => {
+  it("filters by arc only", () => {
     expect(filterTickets([t1, t2, t3], { epicId: "e1" })).toEqual([t1]);
   });
 
@@ -88,7 +88,7 @@ describe("filterTickets", () => {
     expect(filterTickets([t1, t2, t3], { tagIds: ["tg1", "tg2"] })).toEqual([t2]);
   });
 
-  it("filters by epic and tags together", () => {
+  it("filters by arc and tags together", () => {
     expect(filterTickets([t1, t2, t3], { epicId: "e2", tagIds: ["tg1"] })).toEqual([t2]);
   });
 });
@@ -188,7 +188,7 @@ describe("Board", () => {
     renderBoard(
       [
         ticket({ id: "t1", laneId: "l1", key: "PAN-1", epicId: "e1" }),
-        ticket({ id: "t2", laneId: "l1", key: "PAN-2", title: "Other epic", epicId: "e2" }),
+        ticket({ id: "t2", laneId: "l1", key: "PAN-2", title: "Other arc", epicId: "e2" }),
       ],
       [board({})],
       { epics, initialEntries: ["/?epic=e1"] },
@@ -200,7 +200,7 @@ describe("Board", () => {
     expect(screen.getByRole("link", { name: /PAN-1/ })).toBeTruthy();
     expect(screen.queryByRole("link", { name: /PAN-2/ })).toBeNull();
 
-    const epicTrigger = screen.getByRole("button", { name: "Epic" });
+    const epicTrigger = screen.getByRole("button", { name: "Arc" });
     expect(epicTrigger.textContent).toContain("Growth");
   });
 
@@ -225,7 +225,7 @@ describe("Board", () => {
     renderBoard(
       [
         ticket({ id: "t1", laneId: "l1", key: "PAN-1", epicId: "e1" }),
-        ticket({ id: "t2", laneId: "l1", key: "PAN-2", title: "No epic", epicId: null }),
+        ticket({ id: "t2", laneId: "l1", key: "PAN-2", title: "No arc", epicId: null }),
       ],
       [board({})],
       { epics, initialEntries: ["/?epic=does-not-exist"] },
@@ -236,8 +236,8 @@ describe("Board", () => {
     expect(screen.getByRole("link", { name: /PAN-2/ })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Clear filters" })).toBeNull();
 
-    const epicTrigger = screen.getByRole("button", { name: "Epic" });
-    expect(epicTrigger.textContent).toContain("All epics");
+    const epicTrigger = screen.getByRole("button", { name: "Arc" });
+    expect(epicTrigger.textContent).toContain("All arcs");
   });
 
   it("drops an unknown tag id among otherwise valid ones", async () => {
@@ -261,7 +261,7 @@ describe("Board", () => {
     renderBoard(
       [
         ticket({ id: "t1", laneId: "l1", key: "PAN-1", epicId: "e1" }),
-        ticket({ id: "t2", laneId: "l1", key: "PAN-2", title: "No epic", epicId: null }),
+        ticket({ id: "t2", laneId: "l1", key: "PAN-2", title: "No arc", epicId: null }),
       ],
       [board({})],
       { epics, initialEntries: ["/?epic=e1"] },

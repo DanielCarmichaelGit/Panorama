@@ -253,11 +253,11 @@ export const useSetLaneRequirements = () => {
   });
 };
 
-/** Human only: creates an epic. Epics show as chips on tickets, so ticket and queue caches move too. */
+/** Human only: creates an arc (an epic in the API). Arcs show as chips on tickets, so ticket and queue caches move too. */
 export const useCreateEpic = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (v: { projectId: string; name: string; description?: string; family?: Family }) => api<Epic>("POST", "/api/v1/epics", v),
+    mutationFn: (v: { projectId: string; name: string; description?: string; family?: Family; color?: string }) => api<Epic>("POST", "/api/v1/epics", v),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["epics"] });
       qc.invalidateQueries({ queryKey: ["tickets"] });
@@ -266,13 +266,13 @@ export const useCreateEpic = () => {
   });
 };
 
-/** Human only: edits, reorders, or archives an epic. */
+/** Human only: edits, reorders, or archives an arc. A null `color` clears a custom colour back to the family. */
 export const useUpdateEpic = () => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (v: {
       id: string;
-      patch: { name?: string; description?: string | null; family?: Family; position?: number; archived?: boolean };
+      patch: { name?: string; description?: string | null; family?: Family; color?: string | null; position?: number; archived?: boolean };
     }) => api<Epic>("PATCH", `/api/v1/epics/${v.id}`, v.patch),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["epics"] });
@@ -286,12 +286,22 @@ export const useUpdateEpic = () => {
 export const useCreateTag = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (v: { projectId: string; name: string; family?: Family }) => api<Tag>("POST", "/api/v1/tags", v),
+    mutationFn: (v: { projectId: string; name: string; family?: Family; color?: string }) => api<Tag>("POST", "/api/v1/tags", v),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["tags"] });
       qc.invalidateQueries({ queryKey: ["tickets"] });
       qc.invalidateQueries({ queryKey: ["queue"] });
     },
+  });
+};
+
+/** Human only: renames or recolours a tag. Chips read the tag list, so invalidating it is enough for every view. */
+export const useUpdateTag = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { id: string; projectId: string; patch: { name?: string; family?: Family; color?: string | null } }) =>
+      api<Tag>("PATCH", `/api/v1/tags/${v.id}`, v.patch),
+    onSuccess: (_, v) => qc.invalidateQueries({ queryKey: ["tags", v.projectId] }),
   });
 };
 

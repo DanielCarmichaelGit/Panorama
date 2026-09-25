@@ -1,15 +1,18 @@
 import type { Epic, Family, Tag } from "@panorama/core";
+import { chipTokens } from "../lib/color";
 
-// Chips are labels here. Filtering happens through the Board's Epic and Tags Pickers, not by
-// clicking a chip.
-export function Chip({ family, children }: { family: Family; children: React.ReactNode }) {
-  return <span className="chip" style={{ background: `var(--${family}-top)`, color: `var(--${family}-ink)` }}>{children}</span>;
+// Chips are labels here. Filtering happens through the Board's Arc and Tags Pickers, not by
+// clicking a chip. A chip carries a family and, for arcs and tags, an optional custom colour that
+// wins over the family when set; `chipTokens` turns either into a background and an ink.
+export function Chip({ family, color, children }: { family: Family; color?: string | null; children: React.ReactNode }) {
+  const tokens = chipTokens({ family, color });
+  return <span className="chip" style={{ background: tokens.top, color: tokens.ink }}>{children}</span>;
 }
 
-/** The ticket's epic, as a chip in the epic's family. Nothing when the ticket has no epic. */
+/** The ticket's arc, as a chip in the arc's colour. Nothing when the ticket has no arc. */
 export function EpicChip({ epic }: { epic: Epic | undefined }) {
   if (!epic) return null;
-  return <Chip family={epic.family}>{epic.name}</Chip>;
+  return <Chip family={epic.family} color={epic.color}>{epic.name}</Chip>;
 }
 
 const MAX_TAG_CHIPS = 3;
@@ -22,7 +25,7 @@ export function TagChips({ tags }: { tags: Tag[] }) {
   return (
     <>
       {shown.map((tag) => (
-        <Chip key={tag.id} family={tag.family}>{tag.name}</Chip>
+        <Chip key={tag.id} family={tag.family} color={tag.color}>{tag.name}</Chip>
       ))}
       {overflow.length > 0 && (
         <span

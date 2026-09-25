@@ -1,19 +1,18 @@
+// Arcs are epics in the API. Every user-facing string here says arc; the hooks, routes, query
+// keys, and this file's name keep the API's word.
 import { useMemo, useState } from "react";
-import { FAMILIES, type Epic, type Family } from "@panorama/core";
+import type { Epic } from "@panorama/core";
 import { useCreateEpic, useEpics, useUpdateEpic } from "../../lib/hooks";
 import { swapNeighbour } from "../../lib/reorder";
 import { Chip } from "../Chip";
-import { Picker } from "../Picker";
+import { ColorField, type ColorValue } from "../ColorField";
 import { TabState } from "./TabState";
-
-const FAMILY_LABELS: Record<Family, string> = { coral: "Coral", sky: "Sky", lilac: "Lilac", mint: "Mint", stone: "Stone" };
-const FAMILY_OPTIONS = FAMILIES.map((f) => ({ id: f, label: FAMILY_LABELS[f], family: f }));
 
 function NewEpicForm({ projectId }: { projectId: string }) {
   const create = useCreateEpic();
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [family, setFamily] = useState<Family>("stone");
+  const [colour, setColour] = useState<ColorValue>({ family: "stone", color: null });
 
   const canCreate = name.trim() !== "" && !create.isPending;
 
@@ -21,7 +20,13 @@ function NewEpicForm({ projectId }: { projectId: string }) {
     e.preventDefault();
     if (!canCreate) return;
     try {
-      await create.mutateAsync({ projectId, name: name.trim(), description: description.trim() || undefined, family });
+      await create.mutateAsync({
+        projectId,
+        name: name.trim(),
+        description: description.trim() || undefined,
+        family: colour.family,
+        color: colour.color ?? undefined,
+      });
       setName("");
       setDescription("");
     } catch {
@@ -31,7 +36,7 @@ function NewEpicForm({ projectId }: { projectId: string }) {
 
   return (
     <form className="inline-form" onSubmit={submit}>
-      <h2>New epic</h2>
+      <h2>New arc</h2>
       <div className="field">
         <label htmlFor="ne-name">Name</label>
         <input id="ne-name" className="input" value={name} onChange={(e) => setName(e.target.value)} />
@@ -40,9 +45,9 @@ function NewEpicForm({ projectId }: { projectId: string }) {
         <label htmlFor="ne-description">Description</label>
         <textarea id="ne-description" className="input" value={description} onChange={(e) => setDescription(e.target.value)} />
       </div>
-      <Picker id="ne-family" label="Family" options={FAMILY_OPTIONS} value={family} swatch onChange={(v) => v && setFamily(v as Family)} />
-      {create.isError && <p className="error" role="alert">{create.error instanceof Error ? create.error.message : "Could not create the epic."}</p>}
-      <button type="submit" className="btn" disabled={!canCreate}>{create.isPending ? "Creating" : "Create epic"}</button>
+      <ColorField id="ne-colour" label="Colour" family={colour.family} color={colour.color} onChange={setColour} />
+      {create.isError && <p className="error" role="alert">{create.error instanceof Error ? create.error.message : "Could not create the arc."}</p>}
+      <button type="submit" className="btn" disabled={!canCreate}>{create.isPending ? "Creating" : "Create arc"}</button>
     </form>
   );
 }
@@ -65,23 +70,27 @@ function EpicRow({
   const [confirming, setConfirming] = useState(false);
   const [name, setName] = useState(epic.name);
   const [description, setDescription] = useState(epic.description ?? "");
-  const [family, setFamily] = useState<Family>(epic.family);
+  const [colour, setColour] = useState<ColorValue>({ family: epic.family, color: epic.color });
 
   function startEdit() {
     setName(epic.name);
     setDescription(epic.description ?? "");
-    setFamily(epic.family);
+    setColour({ family: epic.family, color: epic.color });
     update.reset();
     setEditing(true);
   }
 
   const canSave = name.trim() !== "" && !update.isPending;
 
+  // The colour reaches the server on Save only; the native picker fires on every drag step.
   async function save(e: React.FormEvent) {
     e.preventDefault();
     if (!canSave) return;
     try {
-      await update.mutateAsync({ id: epic.id, patch: { name: name.trim(), description: description.trim() || null, family } });
+      await update.mutateAsync({
+        id: epic.id,
+        patch: { name: name.trim(), description: description.trim() || null, family: colour.family, color: colour.color },
+      });
       setEditing(false);
     } catch {
       // update.error renders below
@@ -103,8 +112,8 @@ function EpicRow({
           <label htmlFor={`ee-description-${epic.id}`}>Description</label>
           <textarea id={`ee-description-${epic.id}`} className="input" value={description} onChange={(e) => setDescription(e.target.value)} />
         </div>
-        <Picker id={`ee-family-${epic.id}`} label="Family" options={FAMILY_OPTIONS} value={family} swatch onChange={(v) => v && setFamily(v as Family)} />
-        {update.isError && <p className="error" role="alert">{update.error instanceof Error ? update.error.message : "Could not save the epic."}</p>}
+        <ColorField id={`ee-colour-${epic.id}`} label="Colour" family={colour.family} color={colour.color} onChange={setColour} />
+        {update.isError && <p className="error" role="alert">{update.error instanceof Error ? update.error.message : "Could not save the arc."}</p>}
         <div className="modal-actions">
           <button type="button" className="btn ghost" onClick={() => { update.reset(); setEditing(false); }}>Cancel</button>
           <button type="submit" className="btn" disabled={!canSave}>{update.isPending ? "Saving" : "Save"}</button>
@@ -115,12 +124,12 @@ function EpicRow({
 
   return (
     <div className="settings-row">
-      <Chip family={epic.family}>{epic.name}</Chip>
+      <Chip family={epic.family} color={epic.color}>{epic.name}</Chip>
       {epic.description && <span className="muted">{epic.description}</span>}
       <div className="spacer" />
       {moveError && <p className="error" role="alert">{moveError}</p>}
       {update.isError && (
-        <p className="error" role="alert">{update.error instanceof Error ? update.error.message : "Could not archive the epic."}</p>
+        <p className="error" role="alert">{update.error instanceof Error ? update.error.message : "Could not archive the arc."}</p>
       )}
       {confirming ? (
         <span className="confirm-row">
@@ -141,8 +150,9 @@ function EpicRow({
 }
 
 /**
- * Settings tab for the project's epics: create, reorder, edit, and archive. Archiving keeps the
- * epic on tickets already carrying it but drops it from new assignment and this list.
+ * Settings tab for the project's arcs: create, reorder, edit (name, description, colour), and
+ * archive. Archiving keeps the arc on tickets already carrying it but drops it from new
+ * assignment and this list.
  */
 export function EpicsTab({ projectId }: { projectId: string }) {
   const epics = useEpics(projectId);
@@ -166,12 +176,12 @@ export function EpicsTab({ projectId }: { projectId: string }) {
     }
   }
 
-  const state = TabState({ query: epics, label: "epics" });
+  const state = TabState({ query: epics, label: "arcs" });
   if (state) return state;
 
   return (
     <div>
-      {list.length === 0 && <p className="muted">No epics yet. Add one to group related tickets.</p>}
+      {list.length === 0 && <p className="muted">No arcs yet. Add one to group related tickets.</p>}
       <NewEpicForm projectId={projectId} />
       <div className="settings-list">
         {list.map((e, i) => (

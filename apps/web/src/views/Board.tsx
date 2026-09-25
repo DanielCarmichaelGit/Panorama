@@ -24,7 +24,7 @@ export function groupByLane(tickets: Ticket[], lanes: Lane[]): Record<string, Ti
   return groups;
 }
 
-/** A ticket matches the epic filter (if set) and carries every selected tag (if any are set). */
+/** A ticket matches the arc filter (if set) and carries every selected tag (if any are set). */
 export function filterTickets(tickets: Ticket[], { epicId, tagIds }: { epicId?: string | null; tagIds?: string[] }): Ticket[] {
   return tickets.filter((t) => {
     if (epicId && t.epicId !== epicId) return false;
@@ -133,8 +133,8 @@ export function Board() {
   const epicOptions = epics.filter((e) => !e.archived);
   const tagOptions = tags.filter((t) => !t.archived);
   const urlEpicId = searchParams.get("epic");
-  // A stale or foreign id (an epic deleted since, or from another project) is treated as no
-  // filter, the same way an unknown ?board= falls back to the first board above, so the Epic
+  // A stale or foreign id (an arc deleted since, or from another project) is treated as no
+  // filter, the same way an unknown ?board= falls back to the first board above, so the Arc
   // Picker's placeholder and the filtered result never disagree about whether a filter is set.
   const epicId = urlEpicId && epics.some((e) => e.id === urlEpicId) ? urlEpicId : null;
   const tagIds = searchParams.getAll("tag").filter((id) => tags.some((t) => t.id === id));
@@ -248,11 +248,11 @@ export function Board() {
         />
         <Picker
           id="board-epic-filter"
-          label="Epic"
+          label="Arc"
           swatch
           clearable
-          placeholder="All epics"
-          options={epicOptions.map((e) => ({ id: e.id, label: e.name, family: e.family }))}
+          placeholder="All arcs"
+          options={epicOptions.map((e) => ({ id: e.id, label: e.name, family: e.family, color: e.color }))}
           value={epicId}
           onChange={selectEpic}
         />
@@ -262,7 +262,7 @@ export function Board() {
           multi
           swatch
           placeholder="All tags"
-          options={tagOptions.map((t) => ({ id: t.id, label: t.name, family: t.family }))}
+          options={tagOptions.map((t) => ({ id: t.id, label: t.name, family: t.family, color: t.color }))}
           values={tagIds}
           onChange={selectTags}
         />

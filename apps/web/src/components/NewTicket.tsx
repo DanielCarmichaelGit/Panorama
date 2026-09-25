@@ -60,7 +60,7 @@ export function gatePreview(lanes: Lane[], types: EvidenceType[]): string {
 
 /**
  * The full-screen dialog to create a ticket: title, description, success criteria, and
- * attachments on the left; board, lane, epic, tags, assignee, dates, dependencies, needs human,
+ * attachments on the left; board, lane, arc, tags, assignee, dates, dependencies, needs human,
  * and the project's custom fields on the right; the automations preview and the actions in the
  * footer. `boardId` is the board the opener has showing (Queue passes the project's first board
  * by position, Board passes whatever is selected); `returnTo` says which route to land on
@@ -90,8 +90,8 @@ export function NewTicket({
   const ticketsQuery = useTickets(projectId);
   const boards = [...(boardsQuery.data ?? [])].sort((a, b) => a.position - b.position);
   const lanes = [...(lanesQuery.data ?? [])].sort((a, b) => a.position - b.position);
-  const epicOptions: PickerOption[] = (epicsQuery.data ?? []).filter((e) => !e.archived).map((e) => ({ id: e.id, label: e.name, family: e.family }));
-  const tagOptions: PickerOption[] = (tagsQuery.data ?? []).filter((t) => !t.archived).map((t) => ({ id: t.id, label: t.name, family: t.family }));
+  const epicOptions: PickerOption[] = (epicsQuery.data ?? []).filter((e) => !e.archived).map((e) => ({ id: e.id, label: e.name, family: e.family, color: e.color }));
+  const tagOptions: PickerOption[] = (tagsQuery.data ?? []).filter((t) => !t.archived).map((t) => ({ id: t.id, label: t.name, family: t.family, color: t.color }));
   const activeFields = [...(fieldsQuery.data ?? [])].filter((f) => !f.archived).sort((a, b) => a.position - b.position);
   const dependencyOptions: PickerOption[] = (ticketsQuery.data ?? []).map((t) => ({ id: t.id, label: `${t.key} ${t.title}` }));
 
@@ -422,23 +422,23 @@ export function NewTicket({
                     onChange={(id) => id && setLaneId(id)}
                   />
                 </div>
-                <span className="props-label">Epic</span>
+                <span className="props-label">Arc</span>
                 <div className="props-control">
                   <Picker
                     id="nt-epic"
-                    label="Epic"
+                    label="Arc"
                     hideLabel
                     swatch
                     clearable
                     searchable
-                    placeholder="No epic"
+                    placeholder="No arc"
                     busy={epicsQuery.isPending}
                     options={epicOptions}
                     value={epicId}
                     onChange={setEpicId}
                     onCreate={async (text) => {
                       const epic = await createEpic.mutateAsync({ projectId, name: text });
-                      return { id: epic.id, label: epic.name, family: epic.family };
+                      return { id: epic.id, label: epic.name, family: epic.family, color: epic.color };
                     }}
                   />
                 </div>
@@ -458,7 +458,7 @@ export function NewTicket({
                     onChange={setTagIds}
                     onCreate={async (text) => {
                       const tag = await createTag.mutateAsync({ projectId, name: text });
-                      return { id: tag.id, label: tag.name, family: tag.family };
+                      return { id: tag.id, label: tag.name, family: tag.family, color: tag.color };
                     }}
                   />
                 </div>

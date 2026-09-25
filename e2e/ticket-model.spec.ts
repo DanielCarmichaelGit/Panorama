@@ -12,16 +12,15 @@ async function openPicker(page: Page, trigger: Locator) {
 }
 
 /**
- * Waits for the row Enter will act on. The Picker moves its highlight in an effect after the
- * popover opens or the search narrows, a frame or two behind the list itself, and a keyboard user
- * sees that highlight before pressing Enter; pressing sooner acts on whatever was highlighted
- * before, which is nothing right after opening.
+ * Waits for the row Enter will act on. The Picker settles its highlight during render, so Enter
+ * right after typing already lands on the first match; this wait is what a keyboard user does
+ * anyway (read the highlight, then press) and it documents which row each Enter is aimed at.
  */
 async function expectHighlighted(option: Locator) {
   await expect(option).toHaveClass(/highlighted/);
 }
 
-test("a ticket through the full dialog: required field, epic, tags, dependency, panel, and board filters", async ({ page }) => {
+test("a ticket through the full dialog: required field, arc, tags, dependency, panel, and board filters", async ({ page }) => {
   await page.goto("/");
   await page.getByLabel("Password", { exact: true }).fill("a-long-test-password");
   await page.getByLabel("Repeat password").fill("a-long-test-password");
@@ -32,7 +31,7 @@ test("a ticket through the full dialog: required field, epic, tags, dependency, 
   // No agent connects in this test, so the Queue leads with connecting one.
   await expect(page.getByText("No agents connected yet")).toBeVisible();
 
-  // Settings: a required text field, then an epic. The Fields tab is the default one.
+  // Settings: a required text field, then an arc. The Fields tab is the default one.
   await page.getByRole("link", { name: "Settings" }).click();
   await expect(page.getByRole("tab", { name: "Fields" })).toHaveAttribute("aria-selected", "true");
   await page.getByLabel("Name", { exact: true }).fill("Customer");
@@ -43,9 +42,9 @@ test("a ticket through the full dialog: required field, epic, tags, dependency, 
   await expect(customerRow).toBeVisible();
   await expect(customerRow.getByText("Required")).toBeVisible();
 
-  await page.getByRole("tab", { name: "Epics" }).click();
+  await page.getByRole("tab", { name: "Arcs" }).click();
   await page.getByLabel("Name", { exact: true }).fill("Launch");
-  await page.getByRole("button", { name: "Create epic" }).click();
+  await page.getByRole("button", { name: "Create arc" }).click();
   await expect(page.locator(".settings-row", { hasText: "Launch" })).toBeVisible();
 
   // A first ticket for the second one to depend on, created through the same dialog from the
@@ -72,11 +71,11 @@ test("a ticket through the full dialog: required field, epic, tags, dependency, 
   await expect(dialog.getByText("Missing required fields: Customer")).toBeVisible();
   await expect(createButton).toBeDisabled();
 
-  // Epic, by keyboard alone: Enter opens and focuses the search, typing narrows the list, the
+  // Arc, by keyboard alone: Enter opens and focuses the search, typing narrows the list, the
   // arrow steps past the Clear row onto the match, Enter chooses it and returns focus.
-  const epicTrigger = dialog.getByRole("button", { name: "Epic", exact: true });
+  const epicTrigger = dialog.getByRole("button", { name: "Arc", exact: true });
   await openPicker(page, epicTrigger);
-  const epicSearch = page.getByRole("textbox", { name: "Search Epic" });
+  const epicSearch = page.getByRole("textbox", { name: "Search Arc" });
   await expect(epicSearch).toBeFocused();
   await epicSearch.pressSequentially("Laun");
   await expectHighlighted(page.getByRole("option", { name: "Clear" }));
@@ -118,7 +117,7 @@ test("a ticket through the full dialog: required field, epic, tags, dependency, 
   // The panel shows everything the dialog set.
   const panel = page.getByRole("dialog", { name: "MODELLER-2" });
   await expect(panel).toBeVisible();
-  await expect(panel.getByRole("button", { name: "Epic", exact: true })).toHaveText(/Launch/);
+  await expect(panel.getByRole("button", { name: "Arc", exact: true })).toHaveText(/Launch/);
   const panelTags = panel.getByRole("button", { name: "Tags", exact: true });
   await expect(panelTags).toContainText("frontend");
   await expect(panelTags).toContainText("urgent");
@@ -164,7 +163,7 @@ test("a ticket through the full dialog: required field, epic, tags, dependency, 
   await panel.getByRole("button", { name: "Close" }).click();
   await expect(panel).toBeHidden();
 
-  // Board filters: by epic through the URL, then by one tag, then cleared.
+  // Board filters: by arc through the URL, then by one tag, then cleared.
   const board = page.locator(".board");
   const boardHead = page.locator(".board-head");
   const main = board.getByText("Ship the launch banner");
@@ -175,7 +174,7 @@ test("a ticket through the full dialog: required field, epic, tags, dependency, 
   // taking focus elsewhere, or the type-ahead below goes to the card instead of the Picker.
   await expect(board.getByRole("link", { name: /Ship the launch banner/ })).toBeFocused();
 
-  const epicFilter = boardHead.getByRole("button", { name: "Epic", exact: true });
+  const epicFilter = boardHead.getByRole("button", { name: "Arc", exact: true });
   await openPicker(page, epicFilter);
   await page.keyboard.type("L"); // type-ahead on a plain Picker
   await expectHighlighted(page.getByRole("option", { name: "Launch" }));

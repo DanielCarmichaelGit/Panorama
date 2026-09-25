@@ -10,7 +10,7 @@ import { TagsTab } from "../components/settings/TagsTab";
 const TABS = [
   { id: "fields", label: "Fields" },
   { id: "tags", label: "Tags" },
-  { id: "epics", label: "Epics" },
+  { id: "epics", label: "Arcs" },
   { id: "lanes", label: "Lanes" },
   { id: "evidence", label: "Evidence types" },
 ] as const;
@@ -22,7 +22,7 @@ function isTabId(v: string | null): v is TabId {
 }
 
 /**
- * Settings: Fields, Tags, Epics, Lanes, and Evidence types, each its own tab component. Every
+ * Settings: Fields, Tags, Arcs (epics in the API), Lanes, and Evidence types, each its own tab component. Every
  * save here is human-signed like the rest of the app. The active tab lives in the URL
  * (`?tab=...`) so a link into a specific tab (the Board's Requirements button goes to
  * `?tab=lanes`) lands in the right place.

@@ -2,11 +2,14 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { CaretDown, Check, X } from "@phosphor-icons/react";
 import type { Family } from "@panorama/core";
+import { chipTokens, parseHex } from "../lib/color";
 
 export interface PickerOption {
   id: string;
   label: string;
   family?: Family;
+  /** A custom `#rrggbb` that wins over the family on the swatch and the chip when set. */
+  color?: string | null;
   hint?: string;
   disabled?: boolean;
   disabledReason?: string;
@@ -46,6 +49,24 @@ const CREATE_KEY = "__create__";
 
 function defaultCreateLabel(text: string): string {
   return `Create '${text}'`;
+}
+
+/**
+ * The 12px swatch beside an option or the trigger's value: the option's own colour when it has
+ * one (the colour itself, as the ColorField's preset swatches show it), else the family's mid
+ * tone. Nothing for an option without a family.
+ */
+function swatchStyle(option: PickerOption): React.CSSProperties | undefined {
+  if (option.color && parseHex(option.color)) return { background: option.color };
+  if (option.family) return { background: `var(--${option.family}-left)` };
+  return undefined;
+}
+
+/** The chip for a selected option in a multi trigger: family tokens, or the derived pair for a custom colour. */
+function chipStyle(option: PickerOption): React.CSSProperties | undefined {
+  if (!option.family) return undefined;
+  const tokens = chipTokens({ family: option.family, color: option.color });
+  return { background: tokens.top, color: tokens.ink };
 }
 
 /** Encodes anything outside [A-Za-z0-9_-] so an option id of any shape is safe as a DOM id. */
@@ -119,13 +140,11 @@ export function Picker(props: PickerProps): JSX.Element {
     [rows, busy],
   );
 
-  // Highlight follows the first navigable row whenever the popover opens or the search text
-  // narrows the list, unless the current highlight is still in the (possibly filtered) list.
-  useEffect(() => {
-    if (!open) return;
-    setHighlightedKey((prev) => (prev && navigableKeys.includes(prev) ? prev : (navigableKeys[0] ?? null)));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, search, busy, filteredIdsKey]);
+  // The row Enter acts on, settled during render rather than in an effect so it is never a
+  // frame behind the list: the row the user moved to (arrows, hover, type-ahead) while it is
+  // still navigable, otherwise the first navigable row. Opening and every change to the search
+  // text clear the moved-to row, so a fresh popover and a fresh query both start at the top.
+  const highlighted = highlightedKey !== null && navigableKeys.includes(highlightedKey) ? highlightedKey : (navigableKeys[0] ?? null);
 
   // A fresh open session starts clean: no leftover search text or create error from a previous
   // time this picker was opened.
@@ -219,7 +238,7 @@ export function Picker(props: PickerProps): JSX.Element {
 
   function moveHighlight(delta: number) {
     if (navigableKeys.length === 0) return;
-    const idx = highlightedKey ? navigableKeys.indexOf(highlightedKey) : -1;
+    const idx = highlighted ? navigableKeys.indexOf(highlighted) : -1;
     const nextIdx = idx === -1 ? (delta > 0 ? 0 : navigableKeys.length - 1) : (idx + delta + navigableKeys.length) % navigableKeys.length;
     setHighlightedKey(navigableKeys[nextIdx]);
   }
@@ -268,7 +287,7 @@ export function Picker(props: PickerProps): JSX.Element {
   }
 
   function activateHighlighted() {
-    const row = rows.find((r) => r.key === highlightedKey);
+    const row = rows.find((r) => r.key === highlighted);
     if (!row) return;
     if (row.kind === "clear") {
       handleClear();
@@ -292,10 +311,16 @@ export function Picker(props: PickerProps): JSX.Element {
     }, 600);
   }
 
+  function openPopover() {
+    setSearch("");
+    setHighlightedKey(null);
+    setOpen(true);
+  }
+
   function onTriggerClick() {
     if (disabled) return;
-    setSearch("");
-    setOpen((o) => !o);
+    if (open) setOpen(false);
+    else openPopover();
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {
@@ -306,8 +331,7 @@ export function Picker(props: PickerProps): JSX.Element {
       if (e.target !== triggerRef.current) return;
       if (e.key === "ArrowDown" || e.key === "Enter" || e.key === " ") {
         e.preventDefault();
-        setSearch("");
-        setOpen(true);
+        openPopover();
       }
       return;
     }
@@ -363,13 +387,13 @@ export function Picker(props: PickerProps): JSX.Element {
   }
 
   const activeDescendantId =
-    highlightedKey === null
+    highlighted === null
       ? undefined
-      : highlightedKey === CLEAR_KEY
+      : highlighted === CLEAR_KEY
         ? `${id}-option-clear`
-        : highlightedKey === CREATE_KEY
+        : highlighted === CREATE_KEY
           ? `${id}-option-create`
-          : optionRowId(highlightedKey);
+          : optionRowId(highlighted);
 
   return (
     <div className="picker" ref={wrapRef} onKeyDown={handleKeyDown}>
@@ -401,7 +425,7 @@ export function Picker(props: PickerProps): JSX.Element {
         {!props.multi && (
           <span className="picker-trigger-value">
             {swatch && selectedOptions[0]?.family && (
-              <span className="picker-swatch" style={{ background: `var(--${selectedOptions[0].family}-left)` }} aria-hidden="true" />
+              <span className="picker-swatch" style={swatchStyle(selectedOptions[0])} aria-hidden="true" />
             )}
             <span className={selectedOptions[0] ? "picker-value-text" : "picker-placeholder"}>
               {selectedOptions[0]?.label ?? placeholder ?? "Select"}
@@ -420,7 +444,7 @@ export function Picker(props: PickerProps): JSX.Element {
                     <span
                       key={o.id}
                       className="chip picker-chip"
-                      style={o.family ? { background: `var(--${o.family}-top)`, color: `var(--${o.family}-ink)` } : undefined}
+                      style={chipStyle(o)}
                     >
                       {o.label}
                       <button
@@ -487,6 +511,7 @@ export function Picker(props: PickerProps): JSX.Element {
                 value={search}
                 onChange={(e) => {
                   setSearch(e.target.value);
+                  setHighlightedKey(null);
                   setCreateError(null);
                 }}
                 aria-activedescendant={activeDescendantId}
@@ -507,7 +532,7 @@ export function Picker(props: PickerProps): JSX.Element {
                     id={`${id}-option-clear`}
                     role="option"
                     aria-selected={false}
-                    className={"picker-option picker-clear-row" + (highlightedKey === CLEAR_KEY ? " highlighted" : "")}
+                    className={"picker-option picker-clear-row" + (highlighted === CLEAR_KEY ? " highlighted" : "")}
                     onMouseEnter={() => setHighlightedKey(CLEAR_KEY)}
                     onClick={handleClear}
                   >
@@ -527,7 +552,7 @@ export function Picker(props: PickerProps): JSX.Element {
                       title={o.disabledReason}
                       className={
                         "picker-option" +
-                        (highlightedKey === o.id ? " highlighted" : "") +
+                        (highlighted === o.id ? " highlighted" : "") +
                         (o.disabled ? " disabled" : "")
                       }
                       onMouseEnter={() => {
@@ -536,7 +561,7 @@ export function Picker(props: PickerProps): JSX.Element {
                       onClick={() => selectOption(o)}
                     >
                       {swatch && o.family && (
-                        <span className="picker-swatch" style={{ background: `var(--${o.family}-left)` }} aria-hidden="true" />
+                        <span className="picker-swatch" style={swatchStyle(o)} aria-hidden="true" />
                       )}
                       <span className="picker-option-label">{o.label}</span>
                       {o.hint && <span className="picker-hint">{o.hint}</span>}
@@ -549,7 +574,7 @@ export function Picker(props: PickerProps): JSX.Element {
                     id={`${id}-option-create`}
                     role="option"
                     aria-selected={false}
-                    className={"picker-option picker-create-row" + (highlightedKey === CREATE_KEY ? " highlighted" : "")}
+                    className={"picker-option picker-create-row" + (highlighted === CREATE_KEY ? " highlighted" : "")}
                     onMouseEnter={() => setHighlightedKey(CREATE_KEY)}
                     onClick={() => void handleCreate()}
                   >

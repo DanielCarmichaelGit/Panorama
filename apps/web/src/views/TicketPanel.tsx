@@ -54,15 +54,15 @@ function EpicRow({ ticket }: { ticket: Ticket }) {
   const epics = useEpics(ticket.projectId);
   const update = useUpdateTicket();
   const [error, setError] = useState("");
-  const options: PickerOption[] = (epics.data ?? []).filter((e) => !e.archived).map((e) => ({ id: e.id, label: e.name, family: e.family }));
+  const options: PickerOption[] = (epics.data ?? []).filter((e) => !e.archived).map((e) => ({ id: e.id, label: e.name, family: e.family, color: e.color }));
 
   return (
     <>
-      <span className="props-label">Epic</span>
+      <span className="props-label">Arc</span>
       <div className="props-control">
         <Picker
           id="tp-epic"
-          label="Epic"
+          label="Arc"
           hideLabel
           swatch
           clearable
@@ -70,7 +70,7 @@ function EpicRow({ ticket }: { ticket: Ticket }) {
           value={ticket.epicId}
           onChange={(epicId) => {
             setError("");
-            update.mutate({ id: ticket.id, patch: { epicId } }, { onError: (e) => setError(errorMessage(e, "Could not save the epic.")) });
+            update.mutate({ id: ticket.id, patch: { epicId } }, { onError: (e) => setError(errorMessage(e, "Could not save the arc.")) });
           }}
           options={options}
         />
@@ -85,7 +85,7 @@ function TagsRow({ ticket }: { ticket: Ticket }) {
   const update = useUpdateTicket();
   const createTag = useCreateTag();
   const [error, setError] = useState("");
-  const options: PickerOption[] = (tags.data ?? []).filter((t) => !t.archived).map((t) => ({ id: t.id, label: t.name, family: t.family }));
+  const options: PickerOption[] = (tags.data ?? []).filter((t) => !t.archived).map((t) => ({ id: t.id, label: t.name, family: t.family, color: t.color }));
 
   return (
     <>
@@ -107,7 +107,7 @@ function TagsRow({ ticket }: { ticket: Ticket }) {
           options={options}
           onCreate={async (text) => {
             const tag = await createTag.mutateAsync({ projectId: ticket.projectId, name: text });
-            return { id: tag.id, label: tag.name, family: tag.family };
+            return { id: tag.id, label: tag.name, family: tag.family, color: tag.color };
           }}
         />
         {error && <p className="error" role="alert">{error}</p>}

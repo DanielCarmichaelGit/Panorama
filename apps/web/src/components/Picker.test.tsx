@@ -285,6 +285,47 @@ describe("Picker", () => {
     fireEvent.click(screen.getByRole("button", { name: "Replace options" }));
     expect(trigger.getAttribute("aria-activedescendant")).toBe("swap-picker-option-y1");
   });
+  it("swatches render the option's own colour when it has one, and the family otherwise", () => {
+    const options: PickerOption[] = [
+      { id: "a1", label: "Launch", family: "sky", color: "#12706a" },
+      { id: "a2", label: "Growth", family: "sky", color: null },
+    ];
+    render(<Picker id="arc-picker" label="Arc" options={options} value="a1" onChange={() => {}} swatch />);
+    const trigger = screen.getByRole("button", { name: "Arc" });
+    const triggerSwatch = trigger.querySelector(".picker-swatch") as HTMLElement;
+    expect(triggerSwatch.style.background).toBe("rgb(18, 112, 106)");
+    fireEvent.click(trigger);
+    const swatches = screen.getAllByRole("option").map((o) => (o.querySelector(".picker-swatch") as HTMLElement).style.background);
+    expect(swatches).toEqual(["rgb(18, 112, 106)", "var(--sky-left)"]);
+  });
+
+  it("typing a query then Enter in the same tick picks the first visible match, even after the arrows moved the highlight", () => {
+    const onSelect = vi.fn();
+    render(<SingleHarness options={BOARD_OPTIONS} onSelect={onSelect} searchable />);
+    fireEvent.click(screen.getByRole("button", { name: "Board" }));
+    const search = screen.getByRole("textbox");
+    // Every label contains an "r", so the moved highlight (Platform) would survive the filter
+    // if the query did not reset it.
+    fireEvent.keyDown(search, { key: "ArrowDown" });
+    expect(screen.getByRole("option", { name: "Platform" }).className).toContain("highlighted");
+    fireEvent.change(search, { target: { value: "r" } });
+    fireEvent.keyDown(search, { key: "Enter" });
+    expect(onSelect).toHaveBeenCalledWith("b1");
+  });
+
+  it("reopening starts on the first row rather than the last highlight", () => {
+    const onSelect = vi.fn();
+    render(<SingleHarness options={BOARD_OPTIONS} onSelect={onSelect} />);
+    const trigger = screen.getByRole("button", { name: "Board" });
+    trigger.focus();
+    fireEvent.keyDown(trigger, { key: "ArrowDown" });
+    fireEvent.keyDown(trigger, { key: "ArrowDown" });
+    fireEvent.keyDown(trigger, { key: "ArrowDown" });
+    expect(trigger.getAttribute("aria-activedescendant")).toBe("board-picker-option-b3");
+    fireEvent.keyDown(trigger, { key: "Escape" });
+    fireEvent.keyDown(trigger, { key: "ArrowDown" });
+    expect(trigger.getAttribute("aria-activedescendant")).toBe("board-picker-option-b1");
+  });
 });
 
 describe("Picker inside a modal", () => {

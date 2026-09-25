@@ -98,12 +98,12 @@ describe("BoardCard keyboard move", () => {
 });
 
 describe("BoardCard chips", () => {
-  it("shows the epic chip on the card", () => {
+  it("shows the arc chip on the card", () => {
     vi.mocked(api).mockImplementation(async (method: string, path: string) => {
       if (method === "GET" && path.endsWith("/gates")) return {};
       throw new Error(`unexpected ${method} ${path}`);
     });
-    const epics = [{ id: "e1", projectId: "p1", name: "Growth", description: null, family: "sky", position: 0, archived: false, createdAt: "" }];
+    const epics = [{ id: "e1", projectId: "p1", name: "Growth", description: null, family: "sky", color: null, position: 0, archived: false, createdAt: "" }];
 
     renderCard({ epicId: "e1" }, epics);
 

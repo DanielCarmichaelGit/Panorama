@@ -13,12 +13,12 @@ const base = {
 } as any;
 const agents = [{ id: "a1", name: "claude-worker-2" }] as any;
 
-const epics = [{ id: "e1", projectId: "p", name: "Growth", description: null, family: "sky", position: 0, archived: false, createdAt: "" }] as any;
+const epics = [{ id: "e1", projectId: "p", name: "Growth", description: null, family: "sky", color: null, position: 0, archived: false, createdAt: "" }] as any;
 const tags = [
-  { id: "tg1", projectId: "p", name: "Bug", family: "coral", archived: false, createdAt: "" },
-  { id: "tg2", projectId: "p", name: "Urgent", family: "stone", archived: false, createdAt: "" },
-  { id: "tg3", projectId: "p", name: "Backend", family: "mint", archived: false, createdAt: "" },
-  { id: "tg4", projectId: "p", name: "Frontend", family: "lilac", archived: false, createdAt: "" },
+  { id: "tg1", projectId: "p", name: "Bug", family: "coral", color: null, archived: false, createdAt: "" },
+  { id: "tg2", projectId: "p", name: "Urgent", family: "stone", color: null, archived: false, createdAt: "" },
+  { id: "tg3", projectId: "p", name: "Backend", family: "mint", color: null, archived: false, createdAt: "" },
+  { id: "tg4", projectId: "p", name: "Frontend", family: "lilac", color: null, archived: false, createdAt: "" },
 ] as any;
 
 const renderRow = (ticket: any = base, opts: { epics?: any[]; tags?: any[] } = {}) =>
@@ -47,11 +47,11 @@ describe("TicketRow", () => {
     expect(row.getAttribute("href")).toBe("/t/t1");
     expect(row.getAttribute("data-ticket")).toBe("t1");
   });
-  it("shows the epic chip in the epic's family, before the state chip", () => {
+  it("shows the arc chip in the arc's family, before the state chip", () => {
     renderRow({ ...base, epicId: "e1" }, { epics });
     expect(screen.getByText("Growth")).toBeTruthy();
   });
-  it("shows no epic chip when the ticket has no epic", () => {
+  it("shows no arc chip when the ticket has no arc", () => {
     renderRow(base, { epics });
     expect(screen.queryByText("Growth")).toBeNull();
   });

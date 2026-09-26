@@ -11,7 +11,7 @@
     "dev:web": "pnpm --filter @boomerang/web dev",
     "build:web": "pnpm --filter @boomerang/web build",
     "start": "pnpm build:web && pnpm --filter @boomerang/server start",
-    "e2e": "playwright test",
+    "e2e": "VITE_FAST_KDF=1 pnpm build:web && playwright test",
     "demo:agent": "tsx scripts/demo-agent.ts",
     "provenance": "node scripts/provenance/cli.mjs",
     "prices:update": "node scripts/prices-update.mjs",

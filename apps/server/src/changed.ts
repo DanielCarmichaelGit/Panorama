@@ -3,7 +3,8 @@
  * row, not the keys the client happened to send: a form that saves {name, family, color} on
  * every click must not report three changes when only the colour moved, because milestone 3's
  * rule engine matches on `changed`. The event is still appended when nothing differs (an empty
- * `changed`), so the chain records that a save happened.
+ * `changed`), so the chain records that a save happened; tickets are the exception, since
+ * rules match on ticket.updated (services/tickets.ts appends nothing for a no-op patch).
  */
 export function deepEqual(a: unknown, b: unknown): boolean {
   if (a === b) return true;

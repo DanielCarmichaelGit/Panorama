@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Action, CausedBy, ChainEvent, EngineEvent, Rule, RuleContext, Ticket } from "@boomerang/core";
-import { evaluateRule, LoopGuard, matchesEvent } from "@boomerang/core";
+import { CreateTicketInput, evaluateRule, LoopGuard, matchesEvent } from "@boomerang/core";
 import { addRuleRun, appendEvent, getActor, getDestination, getLane, getTicket, listEvidence, listRules, type DB, type RuleRunOutcome } from "@boomerang/db";
 import type { Ctx } from "../context";
 import { HttpError } from "../errors";
@@ -38,6 +38,8 @@ export interface RuleCause { ruleId: string; runId: string; eventSeq: number }
 /** Fires one root event's chain may make before the engine stops it, and tickets it may create. */
 export const MAX_FIRES = 50;
 export const MAX_CREATED = 20;
+/** The title limit a request is held to; a rendered title is cut there before the same check. */
+const TITLE_MAX = CreateTicketInput.shape.title.maxLength ?? 200;
 
 export interface RunOptions {
   /** Receives each fire's committed events as that fire completes. */
@@ -182,7 +184,11 @@ function fire(ctx: Ctx, db: DB, rule: Rule, event: ChainEvent, chain: CausedBy[]
     return { out, exhausted: true };
   }
 
-  const verdict = guardFor(ctx).check(rule.id, ticketId ?? "", ctx.now().getTime(), chain);
+  // The guard's second key is the ticket. A schedule fire has none, and a run_all catch-up
+  // hands many over at once, so it is keyed by its occurrence instead: the per-minute window
+  // never holds one catch-up's fires against each other, while depth and chain still apply.
+  const guardKey = ticketId ?? (event.type === "trigger.fired" ? `schedule:${str(payloadOf(event).scheduledFor) ?? event.seq}` : "");
+  const verdict = guardFor(ctx).check(rule.id, guardKey, ctx.now().getTime(), chain);
   if (!verdict.ok) {
     db.transaction(() => {
       fired("skipped", { reason: verdict.reason, actions });
@@ -214,7 +220,7 @@ function fire(ctx: Ctx, db: DB, rule: Rule, event: ChainEvent, chain: CausedBy[]
     const f = failed ?? { action: actions[0], index: 0, error };
     db.transaction(() => recordFailure(acting, rule, actions, f, liveTicket(db, ticketId), fired))();
   }
-  guardFor(ctx).allow(rule.id, ticketId ?? "", ctx.now().getTime(), chain);
+  guardFor(ctx).allow(rule.id, guardKey, ctx.now().getTime(), chain);
   return { out, exhausted: false };
 }
 
@@ -331,13 +337,18 @@ function applyAction(a: Acting, rule: Rule, action: Action, ticket: Ticket | und
       }
       return;
     }
-    case "create_ticket":
+    case "create_ticket": {
       // The fire checked its creates fit before it started; this is the count as it happens,
       // so no fire, however many creates it carries, can pass MAX_CREATED.
       if (budget.created >= MAX_CREATED) throw new HttpError(422, "budget", `This event's chain has already created ${MAX_CREATED} tickets`);
       budget.created += 1;
-      createTicketAs(a, { projectId: rule.projectId, title: action.title, laneId: action.laneId, ...(action.boardId ? { boardId: action.boardId } : {}), ...(action.epicId ? { epicId: action.epicId } : {}), ...(action.tagIds ? { tagIds: action.tagIds } : {}) });
+      // The rendered title is plain text and may run past the limit a request is held to: cut
+      // it there, then put it through the same input schema a POST /tickets goes through.
+      const input = CreateTicketInput.safeParse({ projectId: rule.projectId, title: action.title.slice(0, TITLE_MAX), laneId: action.laneId, ...(action.boardId ? { boardId: action.boardId } : {}), ...(action.epicId ? { epicId: action.epicId } : {}), ...(action.tagIds ? { tagIds: action.tagIds } : {}) });
+      if (!input.success) throw new HttpError(400, "validation", "The rendered title is not a valid ticket title", { issues: input.error.issues });
+      createTicketAs(a, input.data);
       return;
+    }
     case "start_timer":
       startTimerAs(a, needTicket(ticket, "time"));
       return;

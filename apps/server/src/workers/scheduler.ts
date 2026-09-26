@@ -72,10 +72,12 @@ export interface ReconcileOptions {
  * Keeps triggers in step with rules: exactly one trigger for each rule whose event is a
  * schedule, carrying that schedule's cron, timezone and missed policy, and none for any other
  * rule. A new or changed schedule gets its first run computed from `now`; an edit never
- * creates missed runs, and a policy change alone leaves the next run where it was. A schedule
- * croner rejects gets no trigger and one note. The scheduler runs this every tick, so a rule
- * saved by a route is picked up within one interval; the rules routes may call it directly
- * after a save to make that immediate.
+ * creates missed runs, and a policy change alone leaves the next run where it was. The
+ * trigger mirrors the rule's `enabled`: a paused rule keeps its trigger but not its place,
+ * and resuming computes the next run from `now`, so the pause is not replayed as missed
+ * runs. A schedule croner rejects gets no trigger and one note. The scheduler runs this
+ * every tick, so a rule saved by a route is picked up within one interval; the rules routes
+ * may call it directly after a save to make that immediate.
  */
 export function reconcileTriggers(db: DB, now: Date, opts: ReconcileOptions = {}): void {
   const log = opts.log ?? (() => {});
@@ -107,15 +109,20 @@ export function reconcileTriggers(db: DB, now: Date, opts: ReconcileOptions = {}
       }
       rejected.delete(rule.id);
       if (existing.length === 0) {
-        createTrigger(db, { ruleId: rule.id, cron, timezone, nextRunAt: next, missedPolicy });
+        createTrigger(db, { ruleId: rule.id, cron, timezone, nextRunAt: next, missedPolicy, enabled: rule.enabled });
         continue;
       }
       const [keep, ...extra] = existing;
       for (const t of extra) deleteTrigger(db, t.id);
-      const policy = keep.missedPolicy !== missedPolicy ? { missedPolicy } : {};
-      if (keep.cron !== cron || keep.timezone !== timezone) updateTrigger(db, keep.id, { cron, timezone, nextRunAt: next, ...policy });
-      else if (keep.nextRunAt === null) updateTrigger(db, keep.id, { nextRunAt: next, ...policy });
-      else if (keep.missedPolicy !== missedPolicy) updateTrigger(db, keep.id, policy);
+      const patch: Parameters<typeof updateTrigger>[2] = {};
+      if (keep.missedPolicy !== missedPolicy) patch.missedPolicy = missedPolicy;
+      if (keep.cron !== cron || keep.timezone !== timezone) Object.assign(patch, { cron, timezone, nextRunAt: next });
+      else if (keep.nextRunAt === null) patch.nextRunAt = next;
+      if (keep.enabled !== rule.enabled) {
+        patch.enabled = rule.enabled;
+        if (rule.enabled) patch.nextRunAt = next;
+      }
+      if (Object.keys(patch).length > 0) updateTrigger(db, keep.id, patch);
     }
   }
 }
@@ -166,16 +173,17 @@ export class Scheduler {
     }
     const now = this.now();
     const out: ChainEvent[] = [];
-    // Due dates announced in this pass are remembered only once the pass has committed: a
-    // rollback must leave them to be announced again next time.
+    // The due date scan, and the due dates it announced, are remembered only once the pass
+    // has committed: a rollback must leave them to be scanned and announced again next time.
     const announcedNow: string[] = [];
+    let scanned = false;
     try {
       db.transaction(() => {
         if (!this.armed) this.arm(db);
         reconcileTriggers(db, now, { log: this.log, rejected: this.rejected });
         for (const t of dueTriggers(db, now.toISOString())) out.push(...this.fire(db, t, now));
         if (this.lastDueScan === null || now.getTime() - this.lastDueScan >= this.dueScanMs) {
-          this.lastDueScan = now.getTime();
+          scanned = true;
           out.push(...this.scanDueDates(db, now, announcedNow));
         }
       })();
@@ -183,6 +191,7 @@ export class Scheduler {
       this.log(`scheduler: tick failed and rolled back: ${(e as Error).message}`);
       return [];
     }
+    if (scanned) this.lastDueScan = now.getTime();
     for (const key of announcedNow) this.announced.add(key);
     publishEvents(this.ctx, db, out, this.onEvents, this.log);
     return out;

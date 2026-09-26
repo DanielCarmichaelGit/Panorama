@@ -24,7 +24,8 @@ import { openSecret } from "./secrets";
 import { appendSystemEvent, publishEvents, type OnEvents } from "./system";
 
 // The outbox worker (base spec section 9; delivery format in docs/webhooks.md). Every 5 s it
-// takes the due rows and POSTs each to its destination, signed with the destination's secret.
+// takes the due rows, at most PER_DESTINATION per destination and in turns across
+// destinations, and POSTs each to its destination, signed with the destination's secret.
 // Any 2xx marks the row delivered; anything else records the error and schedules the next
 // attempt on the backoff below. After the last attempt the row is parked for the record, a
 // `webhook.failed` event is appended, and the ticket the payload names, if any, is flagged
@@ -34,6 +35,10 @@ import { appendSystemEvent, publishEvents, type OnEvents } from "./system";
 export const BACKOFF_MS = [30_000, 120_000, 600_000, 3_600_000, 21_600_000];
 export const MAX_ATTEMPTS = 8;
 export const PURGE_AFTER_MS = 7 * 24 * 3_600_000;
+/** Rows one tick takes for one destination, at most. */
+export const PER_DESTINATION = 5;
+/** Due rows one tick looks at before the per-destination cap, so many destinations all get a turn. */
+const DUE_LIMIT = 1000;
 const TICK_MS = 5_000;
 const TIMEOUT_MS = 10_000;
 /** Hard ceiling on one delivery attempt, DNS, connect and body included. */
@@ -69,12 +74,13 @@ export function enqueueNotification(db: DB, destinationId: string, eventSeq: num
 export const signBody = (secret: string, body: string): string => "sha256=" + createHmac("sha256", secret).update(body).digest("hex");
 
 // The address guard works on bytes, not spellings. IPv4 ranges: unspecified, loopback,
-// private, link-local, carrier-grade NAT, multicast and reserved. IPv6: unspecified, loopback,
-// unique local, link-local, multicast. An IPv6 address that carries an IPv4 one (v4-mapped
-// ::ffff:0:0/96, v4-compatible ::/96, NAT64 64:ff9b::/96) is judged by the IPv4 it carries,
-// whichever way it was written.
+// private, link-local, carrier-grade NAT, IETF protocol assignments (192.0.0.0/24),
+// benchmarking (198.18.0.0/15), multicast and reserved. IPv6: unspecified, loopback, unique
+// local, link-local, multicast. An IPv6 address that carries an IPv4 one (v4-mapped
+// ::ffff:0:0/96, v4-compatible ::/96, NAT64 64:ff9b::/96, 6to4 2002::/16) is judged by the
+// IPv4 it carries, whichever way it was written.
 const v4Block = new BlockList();
-for (const [net, bits] of [["0.0.0.0", 8], ["10.0.0.0", 8], ["100.64.0.0", 10], ["127.0.0.0", 8], ["169.254.0.0", 16], ["172.16.0.0", 12], ["192.168.0.0", 16], ["224.0.0.0", 3]] as const) v4Block.addSubnet(net, bits, "ipv4");
+for (const [net, bits] of [["0.0.0.0", 8], ["10.0.0.0", 8], ["100.64.0.0", 10], ["127.0.0.0", 8], ["169.254.0.0", 16], ["172.16.0.0", 12], ["192.0.0.0", 24], ["192.168.0.0", 16], ["198.18.0.0", 15], ["224.0.0.0", 3]] as const) v4Block.addSubnet(net, bits, "ipv4");
 const v6Block = new BlockList();
 for (const [net, bits] of [["::", 128], ["::1", 128], ["fc00::", 7], ["fe80::", 10], ["ff00::", 8]] as const) v6Block.addSubnet(net, bits, "ipv6");
 
@@ -106,6 +112,7 @@ export function isPrivateAddress(ip: string): boolean {
   const zeroTo = (n: number) => g.slice(0, n).every((x) => x === 0);
   if (zeroTo(5) && g[5] === 0xffff) return v4Block.check(v4FromGroups(g[6], g[7]), "ipv4");
   if (g[0] === 0x64 && g[1] === 0xff9b && g.slice(2, 6).every((x) => x === 0)) return v4Block.check(v4FromGroups(g[6], g[7]), "ipv4");
+  if (g[0] === 0x2002) return v4Block.check(v4FromGroups(g[1], g[2]), "ipv4");
   if (zeroTo(6)) {
     if (g[6] === 0 && g[7] <= 1) return true; // :: and ::1
     return v4Block.check(v4FromGroups(g[6], g[7]), "ipv4");
@@ -182,6 +189,20 @@ function post(url: string, body: string, headers: Record<string, string>, pin: {
   });
 }
 
+/** At most `cap` rows per destination, taken in turns across destinations in the order the
+ *  rows came due, so a destination that is down and retrying cannot hold the others behind it. */
+export function inTurns(items: OutboxItem[], cap: number): OutboxItem[] {
+  const byDestination = new Map<string, OutboxItem[]>();
+  for (const item of items) {
+    const rows = byDestination.get(item.destinationId) ?? [];
+    if (rows.length < cap) rows.push(item);
+    byDestination.set(item.destinationId, rows);
+  }
+  const out: OutboxItem[] = [];
+  for (let i = 0; i < cap; i++) for (const rows of byDestination.values()) if (rows[i]) out.push(rows[i]);
+  return out;
+}
+
 /** Runs `work` against a deadline that also aborts whatever honours the signal; a lookup that
  *  ignores it is still abandoned when the race settles. */
 function withDeadline<T>(ms: number, work: (signal: AbortSignal) => Promise<T>): Promise<T> {
@@ -225,7 +246,7 @@ export class OutboxWorker {
     this.timer = null;
   }
 
-  /** One pass over the due rows. A pass still in flight makes the next one a no-op. */
+  /** One pass over the due rows, a few per destination. A pass still in flight makes the next one a no-op. */
   async tick(): Promise<void> {
     if (this.running) return;
     this.running = true;
@@ -234,7 +255,7 @@ export class OutboxWorker {
       if (!db) return;
       const now = this.now();
       purgeDelivered(db, new Date(now.getTime() - PURGE_AFTER_MS).toISOString());
-      for (const item of dueOutbox(db, now.toISOString())) {
+      for (const item of inTurns(dueOutbox(db, now.toISOString(), DUE_LIMIT), PER_DESTINATION)) {
         if (this.ctx.db !== db) return; // locked meanwhile
         await this.deliver(db, item, now);
       }

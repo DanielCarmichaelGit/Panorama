@@ -107,7 +107,8 @@ export function createTicketAs(a: Acting, input: CreateTicketInput): Ticket {
 }
 
 /** PATCH /tickets/:id after its permission checks. `changed[]` on the event names the keys
- *  whose value actually differs from the row. */
+ *  whose value actually differs from the row; a patch that changes none writes nothing and
+ *  appends no event, whoever sent it. */
 export function updateTicketAs(a: Acting, t: Ticket, patch: UpdateTicketInput): Ticket {
   const { db } = a;
   if (patch.assigneeId !== undefined && patch.assigneeId !== null) {
@@ -131,6 +132,10 @@ export function updateTicketAs(a: Acting, t: Ticket, patch: UpdateTicketInput): 
     requireOwnAttachments(db, defs, patch.fields, t.id);
   }
   const changed = changedKeys(t, patch, { tagIds: sameSet, fields: sameMergedRecord });
+  // Nothing differs: not an update. Every caller comes through here, the route and the
+  // engine's actions alike, so a rule matching on ticket.updated never sees a no-op, and
+  // add_tag of a tag the ticket already carries ends a chain rather than feeding it.
+  if (changed.length === 0) return t;
   return db.transaction(() => {
     const out = updateTicket(db, t.id, patch, a.now());
     a.log("ticket.updated", { id: t.id, projectId: t.projectId, changed });

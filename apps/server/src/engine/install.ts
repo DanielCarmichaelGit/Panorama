@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import type { Ctx } from "../context";
+import type { OnEvents } from "../workers/system";
 import { runRules } from "./runRules";
 
 export interface EngineOptions {
@@ -35,4 +36,24 @@ export function installEngine(app: FastifyInstance, ctx: Ctx, opts: EngineOption
     }
     return payload;
   });
+}
+
+/**
+ * The workers' entry point: the scheduler and the outbox worker hand what they append
+ * (trigger.fired, ticket.due_passed, delivery events) here, so a schedule rule runs like any
+ * other. Each fire's committed events are published as that fire completes, one microtask
+ * later: the worker publishes its own events right after this hook returns, so the engine's
+ * land after them (cause before effect on the stream), and a fire that committed reaches the
+ * stream even if a later fire in the same run fails.
+ */
+export function workerHook(ctx: Ctx, opts: EngineOptions = {}): OnEvents {
+  const log = opts.log ?? ((message: string, error: unknown) => console.error(message, error));
+  return (_db, events) => {
+    runRules(ctx, events, {
+      log,
+      sink: (produced) => queueMicrotask(() => {
+        for (const ev of produced) ctx.bus.publish({ seq: ev.seq, type: ev.type, payload: ev.payload, at: ev.createdAt });
+      }),
+    });
+  };
 }

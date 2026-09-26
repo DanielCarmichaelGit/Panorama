@@ -1,7 +1,8 @@
 import { createServer } from "node:http";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { verifyChain } from "@boomerang/core";
-import { dueOutbox, getActor, listEvents, listTriggers } from "@boomerang/db";
+import { dueOutbox, getActor, listEvents, listTriggers, updateTrigger } from "@boomerang/db";
+import { workerHook } from "./engine/install";
 import { MAX_CREATED, runRules } from "./engine/runRules";
 import { agentIn, client, setupApp } from "./test/helpers";
 import { MAX_ATTEMPTS, OutboxWorker } from "./workers/outbox";
@@ -40,9 +41,9 @@ function canvas(event: Record<string, unknown>, conditions: Record<string, unkno
   });
   return { nodes, edges };
 }
-const scheduled = (cron: string, action: Record<string, unknown>) => ({
+const scheduled = (cron: string, action: Record<string, unknown>, missed?: string) => ({
   nodes: [
-    { id: "s", kind: "schedule", position: at, data: { cron, timezone: "UTC" } },
+    { id: "s", kind: "schedule", position: at, data: { cron, timezone: "UTC", ...(missed ? { missed } : {}) } },
     { id: "a0", kind: "action", position: at, data: action },
   ],
   edges: [{ id: "s-a0", source: "s", target: "a0" }],
@@ -271,6 +272,35 @@ describe("rule engine", () => {
     const runs = await w.runs(r.id);
     expect(runs.filter((x: any) => x.outcome === "applied")).toHaveLength(fires);
     expect(runs.filter((x: any) => x.outcome === "skipped").map((x: any) => x.detail.reason)).toEqual(["budget"]);
+  });
+
+  it("creates a ticket from a plain-text title template, truncated to the title limit", async () => {
+    const w = await world();
+    const long = "*bold* " + "x".repeat(193);
+    expect(long).toHaveLength(200);
+    const r = await w.rule("Retest", { type: "ticket.created" }, [{ kind: "title", op: "is", value: long }], [{ type: "create_ticket", title: "Retest {{ticket.title}}", laneId: w.lane("Ready").id }]);
+    await w.human("POST", "/api/v1/tickets", { projectId: w.project.id, title: long });
+    const all = (await w.human("GET", `/api/v1/tickets?projectId=${w.project.id}`)).json;
+    const made = all.find((t: any) => t.key === "PAN-2");
+    expect(made.title).toHaveLength(200);
+    expect(made.title.startsWith("Retest *bold* xxx")).toBe(true);
+    expect(made.title).not.toContain("\\");
+    expect((await w.runs(r.id)).map((x: any) => x.outcome)).toEqual(["applied"]);
+  });
+
+  it("appends no ticket.updated when nothing changes: add_tag of a tag the ticket already carries, or a patch that repeats a value", async () => {
+    const w = await world();
+    const tag = (await w.human("POST", "/api/v1/tags", { projectId: w.project.id, name: "auto", family: "sky" })).json;
+    const r = await w.rule("Tag it", { type: "ticket.created" }, [], [{ type: "add_tag", tagId: tag.id }]);
+    const t = (await w.human("POST", "/api/v1/tickets", { projectId: w.project.id, title: "Already tagged", tagIds: [tag.id] })).json;
+    expect((await w.ticket(t.id)).tagIds).toEqual([tag.id]);
+    expect((await w.runs(r.id)).map((x: any) => x.outcome)).toEqual(["applied"]);
+    expect(w.events().filter((e) => e.type === "ticket.updated")).toEqual([]);
+    const before = w.events().length;
+    const res = await w.human("PATCH", `/api/v1/tickets/${t.id}`, { tagIds: [tag.id] });
+    expect(res.status).toBe(200);
+    expect(res.json).toMatchObject({ id: t.id, tagIds: [tag.id] });
+    expect(w.events().length).toBe(before);
   });
 
   it("does not move a ticket past a gate: the run is refused, the ticket is blocked, and a system comment says why", async () => {
@@ -503,6 +533,38 @@ describe("rule engine with the workers", () => {
     const r = (await w.human("POST", "/api/v1/rules", { projectId: w.project.id, name: "Nowhere", enabled: true, canvas: scheduled("* * * * *", { type: "move_to_lane", laneId: w.lane("Eval").id }) })).json;
     tickAfter(w, listTriggers(w.app.ctx.db!, { ruleId: r.id })[0].nextRunAt!);
     expect((await w.runs(r.id)).map((x: any) => [x.outcome, x.ticketId, x.detail.code])).toEqual([["error", null, "no_ticket"]]);
+  });
+
+  it("lets a run_all catch-up fire every occurrence: a schedule fire is keyed by scheduledFor, not held to the per-minute window", async () => {
+    const w = await world();
+    const r = (await w.human("POST", "/api/v1/rules", { projectId: w.project.id, name: "Every minute", enabled: true, canvas: scheduled("* * * * *", { type: "create_ticket", title: "Tick", laneId: w.lane("Ready").id }, "run_all") })).json;
+    expect(r.event.missed).toBe("run_all");
+    const [t] = listTriggers(w.app.ctx.db!, { ruleId: r.id });
+    updateTrigger(w.app.ctx.db!, t.id, { nextRunAt: "2030-01-01T10:00:00.000Z" });
+    const clock = new Date("2030-01-01T10:10:30.000Z");
+    new Scheduler(w.app.ctx, { now: () => clock, log: () => {}, onEvents: (_db, evs) => void runRules(w.app.ctx, evs) }).tick();
+    const fired = w.events().filter((e) => e.type === "trigger.fired");
+    expect(fired).toHaveLength(11);
+    const runs = await w.runs(r.id);
+    expect(runs.map((x: any) => x.outcome)).toEqual(Array(11).fill("applied"));
+    expect((await w.human("GET", `/api/v1/tickets?projectId=${w.project.id}`)).json).toHaveLength(11);
+  });
+
+  it("publishes each fire's events after the worker's own through workerHook, and a fire that errored does not cost an earlier one", async () => {
+    const w = await world();
+    const make = (await w.human("POST", "/api/v1/rules", { projectId: w.project.id, name: "Make", enabled: true, canvas: scheduled("* * * * *", { type: "create_ticket", title: "Made", laneId: w.lane("Ready").id }) })).json;
+    const nowhere = (await w.human("POST", "/api/v1/rules", { projectId: w.project.id, name: "Nowhere", enabled: true, canvas: scheduled("* * * * *", { type: "move_to_lane", laneId: w.lane("Eval").id }) })).json;
+    const next = listTriggers(w.app.ctx.db!).map((t) => Date.parse(t.nextRunAt!));
+    const clock = new Date(Math.max(...next) + 1000);
+    const seen: string[] = [];
+    const unsubscribe = w.app.ctx.bus.subscribe((e: any) => seen.push(e.type));
+    new Scheduler(w.app.ctx, { now: () => clock, log: () => {}, onEvents: workerHook(w.app.ctx, { log: () => {} }) }).tick();
+    await new Promise((r) => setTimeout(r, 0));
+    unsubscribe();
+    expect(seen.slice(0, 2)).toEqual(["trigger.fired", "trigger.fired"]);
+    expect([...seen.slice(2)].sort()).toEqual(["rule.fired", "rule.fired", "ticket.created"]);
+    expect((await w.runs(make.id)).map((x: any) => x.outcome)).toEqual(["applied"]);
+    expect((await w.runs(nowhere.id)).map((x: any) => [x.outcome, x.detail.code])).toEqual([["error", "no_ticket"]]);
   });
 
   it("refuses a schedule croner rejects, naming the schedule node", async () => {

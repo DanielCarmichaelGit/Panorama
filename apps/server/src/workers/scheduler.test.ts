@@ -93,6 +93,39 @@ describe("scheduler", () => {
     expect(d.getTrigger(w.db(), off.id)!.nextRunAt).toBe("2026-09-25T10:00:00.000Z");
   });
 
+  it("computes a fresh next run when a paused rule is enabled again, so the pause is not replayed", async () => {
+    const w = await world();
+    const r = w.rule(EVERY_FIVE, false);
+    const t = d.createTrigger(w.db(), { ruleId: r.id, cron: "*/5 * * * *", timezone: "UTC", nextRunAt: "2026-09-25T09:00:00.000Z" });
+    w.sched.tick();
+    expect(w.fired()).toHaveLength(0);
+    expect(d.getTrigger(w.db(), t.id)).toMatchObject({ enabled: false, nextRunAt: "2026-09-25T09:00:00.000Z" });
+    d.updateRule(w.db(), r.id, { enabled: true }, w.clock.now.toISOString());
+    w.sched.tick();
+    expect(w.fired()).toHaveLength(0);
+    expect(d.getTrigger(w.db(), t.id)).toMatchObject({ enabled: true, nextRunAt: "2026-09-25T10:05:00.000Z" });
+    w.clock.now = T("2026-09-25T10:05:00.000Z");
+    w.sched.tick();
+    expect(w.fired()).toHaveLength(1);
+    expect(w.fired()[0].payload).toMatchObject({ scheduledFor: "2026-09-25T10:05:00.000Z", missed: 0 });
+  });
+
+  it("scans due dates again on the next tick when the tick that scanned them rolled back", async () => {
+    const w = await world();
+    const iso = w.clock.now.toISOString();
+    const t = d.createTicket(w.db(), { projectId: w.project.id, title: "late" }, iso);
+    d.updateTicket(w.db(), t.id, { dueDate: "2026-09-20" }, iso);
+    w.db().exec("create trigger boom before insert on events when new.type = 'ticket.due_passed' begin select raise(abort, 'disk full'); end");
+    w.sched.tick();
+    w.db().exec("drop trigger boom");
+    expect(w.notes.join("\n")).toContain("rolled back");
+    const due = () => d.listEvents(w.db()).filter((e) => e.type === "ticket.due_passed");
+    expect(due()).toHaveLength(0);
+    w.sched.tick();
+    expect(due()).toHaveLength(1);
+    expect(due()[0].payload).toMatchObject({ ticketId: t.id, dueDate: "2026-09-20" });
+  });
+
   it("keeps triggers in step with rules: creates for a schedule rule, updates on a cron change, deletes when the event changes", async () => {
     const w = await world();
     const r = w.rule(EVERY_FIVE);

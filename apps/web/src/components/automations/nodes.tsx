@@ -4,6 +4,7 @@ import { Handle, Position, type NodeProps, type Node } from "@xyflow/react";
 import type { Actor, Board, CanvasNodeKind, Epic, EvidenceType, FieldDefinition, Lane, Tag } from "@boomerang/core";
 import { Picker, type PickerOption } from "../Picker";
 import type { Destination } from "../../lib/hooks";
+import { useConfirmLeave } from "../../lib/unsaved";
 import { DEFAULT_FIELDS, HOUR_OPTIONS, MISSED_OPTIONS, REPEAT_OPTIONS, WEEKDAY_OPTIONS, buildCron, describeCron, parseCron, timezoneOptions, type Repeat, type ScheduleFields } from "./schedule";
 import {
   ACTION_OPTIONS,
@@ -124,8 +125,12 @@ function Card({ id, kind, title, children }: { id: string; kind: CanvasNodeKind;
         <span className="rnode-kind">{KIND_LABEL[kind]}</span>
         <span className="rnode-title">{title}</span>
       </div>
-      {/* nokey keeps React Flow's own key handling (arrows nudge, Enter selects) off the controls inside. */}
-      <div className="rnode-body nodrag nowheel nokey">{children}</div>
+      {/*
+        nokey keeps React Flow's own key handling (arrows nudge, Enter selects, Escape deselects)
+        off the controls inside. A Picker's popover is portalled out of the node, so its keys
+        bubble here through the React tree without the class; they stop here for the same reason.
+      */}
+      <div className="rnode-body nodrag nowheel nokey" onKeyDown={(e) => { if ((e.target as HTMLElement).closest(".picker-popover")) e.stopPropagation(); }}>{children}</div>
       {error && <p className="rnode-error">{error}</p>}
       {kind !== "event" && kind !== "schedule" && <Handle type="target" position={Position.Left} className="rnode-handle" />}
       <Handle type="source" position={Position.Right} className="rnode-handle" />
@@ -344,6 +349,7 @@ const NONE = "__none__";
 /** The action node: what the engine does, and the target it needs. */
 export function ActionNode({ id, data }: NodeProps<RuleNode>) {
   const { options, names, values, set, patch } = useNode(id, data);
+  const confirmLeave = useConfirmLeave();
   const type = values.type as string | undefined;
   const setFieldDef = type === "set_field" ? options.fields.find((f) => f.key === values.key) : undefined;
 
@@ -411,7 +417,7 @@ export function ActionNode({ id, data }: NodeProps<RuleNode>) {
       {type === "emit_webhook" && (
         <>
           <Picker id={`${id}-dest`} label="Destination" options={destinationOptions(options)} value={(values.destinationId as string) ?? null} onChange={(v) => patch({ destinationId: v ?? undefined })} placeholder={destinationOptions(options).length ? "Choose" : "No destinations yet"} />
-          <Link className="rnode-link" to="/settings?tab=destinations">Manage destinations</Link>
+          <Link className="rnode-link" to="/settings?tab=destinations" onClick={(e) => { if (!confirmLeave()) e.preventDefault(); }}>Manage destinations</Link>
         </>
       )}
     </Card>

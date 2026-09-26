@@ -45,6 +45,12 @@ export interface RuleCanvasProps {
 const DRAG_TYPE = "application/x-boomerang-node";
 const SNAP: [number, number] = [8, 8];
 const FIT = { padding: 0.25, maxZoom: 1 };
+/** Where focus goes after a delete when no node is left: the canvas itself. */
+const ROOT = "__root__";
+
+/** A node id inside an attribute selector; ids are free text from the API. */
+const esc = (s: string): string => (typeof CSS !== "undefined" && typeof CSS.escape === "function" ? CSS.escape(s) : s.replace(/["\\]/g, "\\$&"));
+const nodeSelector = (id: string) => `.react-flow__node[data-id="${esc(id)}"]`;
 
 function titleOf(kind: CanvasNodeKind, data: Record<string, unknown>, names: Names): string {
   switch (kind) {
@@ -140,15 +146,21 @@ function Flow({ state, dispatch, options, names, errors, lit, litEdges, hint }: 
   );
 
   // A node added from the keyboard or the palette takes focus once it is on the canvas, so
-  // Enter opens its first Picker and Tab carries on from it. React Flow draws a new node a
-  // render after it arrives in props, so the lookup retries over a few frames.
+  // Enter opens its first Picker and Tab carries on from it (and after a delete, the node that
+  // takes over). React Flow draws a new node a render after it arrives in props, so the lookup
+  // retries over a few frames.
   useEffect(() => {
     if (!focusNext.current) return;
+    if (focusNext.current === ROOT) {
+      focusNext.current = null;
+      rootRef.current?.focus();
+      return;
+    }
     let tries = 0;
     const attempt = () => {
       const id = focusNext.current;
       if (!id) return;
-      const el = rootRef.current?.querySelector<HTMLElement>(`.react-flow__node[data-id="${id}"]`);
+      const el = rootRef.current?.querySelector<HTMLElement>(nodeSelector(id));
       if (el) {
         focusNext.current = null;
         el.focus();
@@ -203,7 +215,7 @@ function Flow({ state, dispatch, options, names, errors, lit, litEdges, hint }: 
     if (mod || e.altKey) return;
     if (e.key === "Delete" || e.key === "Backspace") {
       e.preventDefault();
-      dispatch({ type: "removeSelection" });
+      removeAt(onNode ? node.dataset.id : undefined);
       return;
     }
     if (onNode && e.key === "Enter") {
@@ -231,11 +243,31 @@ function Flow({ state, dispatch, options, names, errors, lit, litEdges, hint }: 
       const start = stateRef.current.nodes.find((n) => n.kind === "event" || n.kind === "schedule");
       if (start) {
         dispatch({ type: "select", nodeIds: [start.id] });
-        rootRef.current?.querySelector<HTMLElement>(`.react-flow__node[data-id="${start.id}"]`)?.focus();
+        rootRef.current?.querySelector<HTMLElement>(nodeSelector(start.id))?.focus();
         return;
       }
     }
     addKind(kind);
+  }
+
+  /**
+   * Delete: the selection goes, or, when nothing is selected, the node that has focus (focus is
+   * not selection; Tab reaches a node without selecting it). Focus then moves to the node before
+   * the first one removed, else the one after, else the canvas, so the keyboard keeps its place
+   * and Ctrl+Z still has somewhere to land.
+   */
+  function removeAt(focusedId: string | undefined) {
+    const s = stateRef.current;
+    const hasSelection = s.selectedNodes.length > 0 || s.selectedEdges.length > 0;
+    const nodeIds = hasSelection ? s.selectedNodes : focusedId ? [focusedId] : [];
+    if (!nodeIds.length && !hasSelection) return;
+    const gone = new Set(nodeIds);
+    const order = s.nodes.map((n) => n.id);
+    const first = order.findIndex((id) => gone.has(id));
+    if (!hasSelection) dispatch({ type: "select", nodeIds });
+    dispatch({ type: "removeSelection" });
+    if (first < 0) return;
+    focusNext.current = order.slice(0, first).reverse().find((id) => !gone.has(id)) ?? order.slice(first + 1).find((id) => !gone.has(id)) ?? ROOT;
   }
 
   function onDrop(e: React.DragEvent) {

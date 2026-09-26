@@ -81,7 +81,7 @@ a{color:var(--accent)}
 .collapsed .side .nav-item{justify-content:center;width:44px;height:44px;padding:0;gap:0;border-radius:var(--r-input)}
 .side .label{white-space:nowrap;overflow:hidden;transition:opacity var(--dur) var(--ease)}
 .collapsed .side .label{opacity:0;position:absolute;width:1px;height:1px;clip:rect(0 0 0 0)}
-.view{padding:2rem var(--gutter);max-width:1200px;position:relative}
+.view{padding:2rem var(--gutter);max-width:1200px;position:relative;min-width:0}
 .view-head{display:flex;align-items:baseline;gap:1rem;flex-wrap:wrap;margin-bottom:1.25rem}
 .view-head .count{font-size:2.4rem;font-weight:500;color:var(--accent);letter-spacing:-.03em;margin-right:.5rem}
 .view-head .spacer{margin-left:auto}
@@ -106,7 +106,8 @@ a{color:var(--accent)}
 .side .menu-item{display:none}
 .sheet{background:var(--surface);border-top:1px solid var(--line);border-radius:var(--r-card) var(--r-card) 0 0;padding:1rem var(--gutter) 1.25rem;display:grid;gap:.75rem;justify-items:stretch;animation:sheet-in 250ms var(--ease-in) both}
 @keyframes sheet-in{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
-@media (max-width:860px){.shell,.shell.collapsed{grid-template-columns:1fr}.side{position:fixed;inset:auto 0 0 0;height:auto;flex-direction:row;justify-content:space-around;gap:0;padding:6px 4px;border-right:0;border-top:1px solid var(--line);animation:none}.side .nav-item{flex:0 0 auto;padding:.55rem;border-radius:var(--r-input)}.side .nav-item .label{display:none}.side .foot,.side .switcher,.side .brand{display:none}.side .menu-item{display:flex}.sheet-back{align-items:end;justify-items:stretch;padding:0}.sheet{width:100%;padding-bottom:5rem}.view{padding-bottom:5rem}.trow .ag,.trow .tk{display:none}}
+/* minmax(0,1fr), not 1fr: a bare 1fr track cannot shrink below its content, and six Settings tabs would widen the page on a phone. */
+@media (max-width:860px){.shell,.shell.collapsed{grid-template-columns:minmax(0,1fr)}.side{position:fixed;inset:auto 0 0 0;height:auto;flex-direction:row;justify-content:space-around;gap:0;padding:6px 4px;border-right:0;border-top:1px solid var(--line);animation:none}.side .nav-item{flex:0 0 auto;padding:.55rem;border-radius:var(--r-input)}.side .nav-item .label{display:none}.side .foot,.side .switcher,.side .brand{display:none}.side .menu-item{display:flex}.sheet-back{align-items:end;justify-items:stretch;padding:0}.sheet{width:100%;padding-bottom:5rem}.view{padding-bottom:5rem}.trow .ag,.trow .tk{display:none}}
 .panel{position:fixed;top:0;right:0;bottom:0;width:min(clamp(520px,60vw,1100px),100%);background:var(--surface);border-left:1px solid var(--line);z-index:var(--z-panel);padding:1.25rem var(--gutter);overflow:auto;animation:panel-in 250ms var(--ease-in) both;box-shadow:var(--shadow)}
 @keyframes panel-in{from{transform:translateX(24px);opacity:0}to{transform:none;opacity:1}}
 @media (min-width:1600px){.with-panel .view{margin-right:min(60vw,1100px)}}
@@ -452,7 +453,7 @@ a{color:var(--accent)}
 .switch[aria-checked="true"]{background:var(--mint-right);border-color:var(--mint-right)}
 .switch-knob{position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:var(--r-pill);background:var(--surface);transition:transform var(--dur) var(--ease)}
 .switch[aria-checked="true"] .switch-knob{transform:translateX(14px)}
-.switch:disabled{opacity:.5;cursor:not-allowed}
+.switch[aria-disabled="true"]{opacity:.5;cursor:progress}
 .rule-editor{min-width:0;display:grid;gap:.75rem}
 .rule-editor-head{display:flex;align-items:center;gap:.75rem;flex-wrap:wrap}
 .rule-name-input{font:600 1.25rem var(--font);letter-spacing:-.01em;border:1px solid transparent;border-radius:var(--r-input);padding:.3rem .4rem;margin-left:-.4rem;flex:1;min-width:12rem;color:inherit;background:none;transition:border-color var(--dur) var(--ease)}

@@ -6,10 +6,16 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type { Lane, Project, Rule, Ticket } from "@boomerang/core";
 import { ApiError, api } from "../lib/api";
 import { Automations } from "./Automations";
+import { Shell } from "./Shell";
 
 vi.mock("../lib/api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../lib/api")>();
   return { ...actual, api: vi.fn() };
+});
+// The Shell opens the live stream; not under test here.
+vi.mock("../lib/stream", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../lib/stream")>();
+  return { ...actual, connectStream: vi.fn(() => new Promise<void>(() => {})) };
 });
 
 // jsdom lays nothing out. React Flow measures nodes through ResizeObserver, offsetWidth and
@@ -396,5 +402,148 @@ describe("keyboard inside nodes", () => {
     fireEvent.keyDown(added, { key: "e" });
     expect(document.querySelectorAll(".rnode-event")).toHaveLength(1);
     await waitFor(() => expect(document.activeElement).toBe(nodeEl("event")));
+  });
+
+  it("Delete on a focused, unselected node removes it, focus moves to the node before it, and Ctrl+Z from there brings it back", async () => {
+    await drawn();
+    const a1 = nodeEl("a1")!;
+    await act(async () => {
+      a1.focus();
+    });
+    expect(a1.classList.contains("selected")).toBe(false);
+    fireEvent.keyDown(a1, { key: "Delete" });
+    await waitFor(() => expect(nodeEl("a1")).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(nodeEl("c1")));
+    fireEvent.keyDown(document.activeElement!, { key: "z", ctrlKey: true });
+    await waitFor(() => expect(nodeEl("a1")).toBeTruthy());
+  });
+
+  it("deleting the first node focuses the next one; deleting the only node focuses the canvas", async () => {
+    const event = await drawn();
+    fireEvent.keyDown(event, { key: "Delete" });
+    await waitFor(() => expect(nodeEl("event")).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(nodeEl("c1")));
+    fireEvent.keyDown(nodeEl("c1")!, { key: "Delete" });
+    await waitFor(() => expect(nodeEl("c1")).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(nodeEl("a1")));
+    fireEvent.keyDown(nodeEl("a1")!, { key: "Delete" });
+    await waitFor(() => expect(document.querySelectorAll(".rnode")).toHaveLength(0));
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("application", { name: "Rule canvas" })));
+  });
+
+  it("Escape out of a node's Picker closes the popover and keeps the node selected", async () => {
+    const event = await drawn();
+    await act(async () => {
+      fireEvent.click(event);
+    });
+    await waitFor(() => expect(event.classList.contains("selected")).toBe(true));
+    const trigger = within(event).getByRole("button", { name: "Event" });
+    fireEvent.click(trigger);
+    await waitFor(() => expect(trigger.getAttribute("aria-expanded")).toBe("true"));
+    fireEvent.keyDown(document.activeElement!, { key: "Escape" });
+    expect(trigger.getAttribute("aria-expanded")).toBe("false");
+    expect(nodeEl("event")!.classList.contains("selected")).toBe(true);
+  });
+});
+
+describe("enable switch while busy", () => {
+  it("ignores a second click while the PATCH is in flight and keeps focus on the switch", async () => {
+    let release!: () => void;
+    const calls = mockApi([rule({})], (c) => (c.method === "PATCH" ? new Promise((r) => { release = () => r({ ...rule({}), enabled: false }); }) : undefined));
+    renderView("/automations");
+    const sw = await screen.findByRole("switch", { name: "Promote on eval pass enabled" });
+    await act(async () => {
+      sw.focus();
+      fireEvent.click(sw);
+    });
+    await waitFor(() => expect(sw.getAttribute("aria-disabled")).toBe("true"));
+    expect(sw.hasAttribute("disabled")).toBe(false);
+    fireEvent.click(sw);
+    expect(calls.filter((c) => c.method === "PATCH")).toHaveLength(1);
+    expect(document.activeElement).toBe(sw);
+    await act(async () => {
+      release();
+    });
+    await waitFor(() => expect(sw.getAttribute("aria-disabled")).toBeNull());
+    expect(document.activeElement).toBe(sw);
+  });
+});
+
+/** The view under the Shell, so its shortcuts and sidebar links are the ones leaving the rule. */
+function renderShell(path: string, rules: Rule[] = []) {
+  const calls = mockApi(rules, (c) => (c.path === "/api/v1/projects" ? [project] : c.path === "/api/v1/projects/p1/lanes" ? lanes : undefined));
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+  render(
+    <QueryClientProvider client={client}>
+      <MemoryRouter initialEntries={[path]}>
+        <Routes>
+          <Route element={<Shell status={{ state: "unlocked" }} chainOk={true} />}>
+            <Route path="/" element={<div>Queue view</div>} />
+            <Route path="/board" element={<div>Board view</div>} />
+            <Route path="/agents" element={<div>Agents view</div>} />
+            <Route path="/automations" element={<Automations />} />
+            <Route path="/automations/:ruleId" element={<Automations />} />
+          </Route>
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  return calls;
+}
+
+describe("leaving a dirty rule", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  async function dirtyDraft() {
+    renderShell("/automations");
+    fireEvent.click(await screen.findByRole("button", { name: "New rule" }));
+    await waitFor(() => expect(document.querySelectorAll(".rnode")).toHaveLength(1));
+  }
+
+  it("g b asks first and stays when cancelled; confirmed, it goes", async () => {
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    await dirtyDraft();
+    fireEvent.keyDown(document, { key: "g" });
+    fireEvent.keyDown(document, { key: "b" });
+    expect(confirm).toHaveBeenCalledWith("You have unsaved changes. Leave this rule?");
+    expect(screen.queryByText("Board view")).toBeNull();
+    expect(screen.getByRole("region", { name: "New rule" })).toBeTruthy();
+    confirm.mockReturnValue(true);
+    fireEvent.keyDown(document, { key: "g" });
+    fireEvent.keyDown(document, { key: "b" });
+    expect(await screen.findByText("Board view")).toBeTruthy();
+  });
+
+  it("a sidebar link asks too and stays when cancelled", async () => {
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    await dirtyDraft();
+    fireEvent.click(screen.getByRole("link", { name: "Board" }));
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText("Board view")).toBeNull();
+    expect(screen.getByRole("region", { name: "New rule" })).toBeTruthy();
+  });
+
+  it("g then a inside the canvas adds an action node and does not leave for Agents", async () => {
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    await dirtyDraft();
+    const event = nodeEl("event")!;
+    await act(async () => {
+      event.focus();
+      fireEvent.keyDown(event, { key: "g" });
+      fireEvent.keyDown(event, { key: "a" });
+    });
+    await waitFor(() => expect(document.querySelectorAll(".rnode-action")).toHaveLength(1));
+    expect(confirm).not.toHaveBeenCalled();
+    expect(screen.queryByText("Agents view")).toBeNull();
+  });
+
+  it("a clean rule leaves without asking", async () => {
+    const confirm = vi.spyOn(window, "confirm");
+    renderShell("/automations/r1", [rule({})]);
+    await waitFor(() => expect(document.querySelectorAll(".rnode")).toHaveLength(3));
+    fireEvent.keyDown(document, { key: "g" });
+    fireEvent.keyDown(document, { key: "b" });
+    expect(await screen.findByText("Board view")).toBeTruthy();
+    expect(confirm).not.toHaveBeenCalled();
   });
 });

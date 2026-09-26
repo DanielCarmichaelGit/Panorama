@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link, NavLink, Outlet, useMatch, useNavigate } from "react-router-dom";
+import { Link, NavLink, Outlet, useMatch, useNavigate, useSearchParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { CaretLineLeft, CaretLineRight, GearSix, Kanban, Lightning, List, Lock, Robot, Tray } from "@phosphor-icons/react";
 import { SidebarStatus } from "../components/SidebarStatus";
@@ -10,6 +10,7 @@ import { session } from "../lib/session";
 import { SIDEBAR_KEY } from "../lib/storage";
 import { useLanes, useProjects, useStream } from "../lib/hooks";
 import { isTypingTarget } from "../lib/keys";
+import { UnsavedContext, useUnsavedState } from "../lib/unsaved";
 import { useFocusTrap } from "../lib/useFocusTrap";
 import { ProjectSwitcher } from "../components/ProjectSwitcher";
 import { BrandMark } from "../components/BrandMark";
@@ -62,6 +63,15 @@ export function Shell({ status, chainOk }: { status: Status; chainOk: boolean })
   const closeMenu = useCallback(() => setMenuOpen(false), []);
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const unsaved = useUnsavedState();
+  const [searchParams] = useSearchParams();
+  // The metrics views share `?period=`; the links between them carry it so the choice holds.
+  const period = searchParams.get("period");
+  const withPeriod = (path: string) => (period ? `${path}?period=${encodeURIComponent(period)}` : path);
+  /** A sidebar link leaves only when nothing unsaved objects. */
+  const guardLink = (e: React.MouseEvent) => {
+    if (!unsaved.confirm()) e.preventDefault();
+  };
 
   const list = projects.data ?? [];
   const current = list.find((p) => p.id === projectOverride) ?? list[0] ?? null;
@@ -88,21 +98,22 @@ export function Shell({ status, chainOk }: { status: Status; chainOk: boolean })
     let timer: number | undefined;
     const reset = () => { pendingG = false; window.clearTimeout(timer); };
     function onKeyDown(e: KeyboardEvent) {
-      if (isTypingTarget() || document.querySelector(".modal-back")) { reset(); return; }
+      // A key something already took (the canvas drawing a node on `a`) is not a shortcut.
+      if (isTypingTarget() || e.defaultPrevented || document.querySelector(".modal-back")) { reset(); return; }
       if (pendingG) {
         reset();
-        if (e.key === "q") { e.preventDefault(); navigate("/"); }
-        else if (e.key === "b") { e.preventDefault(); navigate("/board"); }
-        else if (e.key === "m") { e.preventDefault(); navigate("/automations"); }
-        else if (e.key === "a") { e.preventDefault(); navigate("/agents"); }
-        else if (e.key === "s") { e.preventDefault(); navigate("/settings"); }
+        const to = e.key === "q" ? "/" : e.key === "b" ? "/board" : e.key === "m" ? "/automations" : e.key === "a" ? "/agents" : e.key === "s" ? "/settings" : null;
+        if (!to) return;
+        e.preventDefault();
+        if (unsaved.confirm()) navigate(to === "/" || to === "/board" || to === "/agents" ? withPeriod(to) : to);
         return;
       }
       if (e.key === "g") { pendingG = true; timer = window.setTimeout(reset, 900); }
     }
     document.addEventListener("keydown", onKeyDown);
     return () => { document.removeEventListener("keydown", onKeyDown); reset(); };
-  }, [navigate]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [navigate, unsaved, period]);
 
   function toggleCollapsed() {
     setCollapsed((c) => { writeCollapsed(!c); return !c; });
@@ -130,6 +141,7 @@ export function Shell({ status, chainOk }: { status: Status; chainOk: boolean })
   if (!projects.isPending && list.length === 0) return <FirstProject />;
 
   return (
+    <UnsavedContext.Provider value={unsaved}>
     <div className={collapsed ? "shell collapsed" : "shell"}>
       <a className="skip" href="#main">Skip to content</a>
       <nav className="side" aria-label="Main">
@@ -137,23 +149,23 @@ export function Shell({ status, chainOk }: { status: Status; chainOk: boolean })
         <div className="switcher">
           {current && <ProjectSwitcher id="project-switcher" list={list} current={current} onChange={setProjectOverride} compact={collapsed} />}
         </div>
-        <Link to="/" className="nav-item" aria-label="Queue" title="Queue" aria-current={queueCurrent ? "page" : undefined}>
+        <Link to={withPeriod("/")} className="nav-item" aria-label="Queue" title="Queue" aria-current={queueCurrent ? "page" : undefined} onClick={guardLink}>
           <Tray size={22} weight="regular" aria-hidden="true" />
           <span className="label">Queue</span>
         </Link>
-        <Link to="/board" className="nav-item" aria-label="Board" title="Board" aria-current={boardCurrent ? "page" : undefined}>
+        <Link to={withPeriod("/board")} className="nav-item" aria-label="Board" title="Board" aria-current={boardCurrent ? "page" : undefined} onClick={guardLink}>
           <Kanban size={22} weight="regular" aria-hidden="true" />
           <span className="label">Board</span>
         </Link>
-        <NavLink to="/automations" className="nav-item" aria-label="Automations" title="Automations">
+        <NavLink to="/automations" className="nav-item" aria-label="Automations" title="Automations" onClick={guardLink}>
           <Lightning size={22} weight="regular" aria-hidden="true" />
           <span className="label">Automations</span>
         </NavLink>
-        <NavLink to="/agents" className="nav-item" aria-label="Agents" title="Agents">
+        <NavLink to={withPeriod("/agents")} className="nav-item" aria-label="Agents" title="Agents" onClick={guardLink}>
           <Robot size={22} weight="regular" aria-hidden="true" />
           <span className="label">Agents</span>
         </NavLink>
-        <NavLink to="/settings" className="nav-item" aria-label="Settings" title="Settings">
+        <NavLink to="/settings" className="nav-item" aria-label="Settings" title="Settings" onClick={guardLink}>
           <GearSix size={22} weight="regular" aria-hidden="true" />
           <span className="label">Settings</span>
         </NavLink>
@@ -198,7 +210,7 @@ export function Shell({ status, chainOk }: { status: Status; chainOk: boolean })
               onChange={(id) => { setProjectOverride(id); closeMenu(); }}
             />
           )}
-          <Link to="/settings" className="btn ghost" onClick={closeMenu}>
+          <Link to="/settings" className="btn ghost" onClick={(e) => { guardLink(e); if (!e.defaultPrevented) closeMenu(); }}>
             <GearSix size={16} weight="regular" aria-hidden="true" /> Settings
           </Link>
           <SidebarStatus chainOk={chainOk} connected={streamStatus === "open"} />
@@ -212,5 +224,6 @@ export function Shell({ status, chainOk }: { status: Status; chainOk: boolean })
         </MenuSheet>
       )}
     </div>
+    </UnsavedContext.Provider>
   );
 }

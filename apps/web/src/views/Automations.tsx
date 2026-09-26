@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
+import { useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { useNavigate, useOutletContext, useParams } from "react-router-dom";
 import { Flask, Plus, Trash } from "@phosphor-icons/react";
 import type { CanvasError, Lane, Project, Rule } from "@boomerang/core";
@@ -30,6 +30,7 @@ import {
   type RuleTestResult,
 } from "../lib/hooks";
 import { BoomerangScene } from "../lib/iso";
+import { useConfirmLeave, useUnsavedGuard } from "../lib/unsaved";
 
 /**
  * Automations: the rule list on the left, the canvas for the selected rule on the right, the
@@ -44,7 +45,11 @@ function eventFamily(rule: Rule): "coral" | "lilac" {
   return rule.event.type === "schedule" ? "lilac" : "coral";
 }
 
-/** The enable toggle. It flips at once and settles on what the server answers; while the PATCH is in flight it takes no second click. */
+/**
+ * The enable toggle. It flips at once and settles on what the server answers; while the PATCH
+ * is in flight it ignores a second click, but stays focusable (aria-disabled, not disabled) so
+ * the keyboard does not lose its place.
+ */
 function EnableSwitch({ rule, onChange, busy }: { rule: RuleSummary; onChange: (enabled: boolean) => void; busy?: boolean }) {
   const [optimistic, setOptimistic] = useState<boolean | null>(null);
   useEffect(() => {
@@ -58,10 +63,11 @@ function EnableSwitch({ rule, onChange, busy }: { rule: RuleSummary; onChange: (
       aria-checked={checked}
       aria-label={`${rule.name} enabled`}
       className="switch"
-      disabled={busy}
+      aria-disabled={busy || undefined}
       aria-busy={busy || undefined}
       onClick={(e) => {
         e.stopPropagation();
+        if (busy) return;
         setOptimistic(!checked);
         onChange(!checked);
       }}
@@ -71,7 +77,7 @@ function EnableSwitch({ rule, onChange, busy }: { rule: RuleSummary; onChange: (
   );
 }
 
-function RuleList({ rules, selectedId, busyId, onSelect, onNew, onToggle }: { rules: RuleSummary[]; selectedId: string | undefined; busyId: string | null; onSelect: (id: string) => void; onNew: () => void; onToggle: (rule: RuleSummary, enabled: boolean) => void }) {
+function RuleList({ rules, selectedId, busy, onSelect, onNew, onToggle }: { rules: RuleSummary[]; selectedId: string | undefined; busy: Set<string>; onSelect: (id: string) => void; onNew: () => void; onToggle: (rule: RuleSummary, enabled: boolean) => void }) {
   return (
     <aside className="rule-list" aria-label="Rules">
       <div className="rule-list-head">
@@ -99,7 +105,7 @@ function RuleList({ rules, selectedId, busyId, onSelect, onNew, onToggle }: { ru
               {typeof rule.runCount === "number" && <span className="mono">{rule.runCount} {rule.runCount === 1 ? "run" : "runs"}</span>}
             </div>
             <div className="row-actions">
-              <EnableSwitch rule={rule} busy={busyId === rule.id} onChange={(enabled) => onToggle(rule, enabled)} />
+              <EnableSwitch rule={rule} busy={busy.has(rule.id)} onChange={(enabled) => onToggle(rule, enabled)} />
             </div>
           </li>
         ))}
@@ -129,14 +135,16 @@ function mapErrors(errors: CanvasError[], nodes: Drawn[], names: Names): { byNod
   return { byNode, lines };
 }
 
-function RuleEditor({ rule, project, lanes, onSaved, onDeleted, onDirtyChange }: { rule: RuleSummary; project: Project; lanes: Lane[]; onSaved: (saved: Rule) => void; onDeleted: () => void; onDirtyChange?: (dirty: boolean) => void }) {
+const SAVED: Bar = { kind: "saved", lines: ["Saved."] };
+
+function RuleEditor({ rule, project, lanes, justSaved, onSaved, onDeleted }: { rule: RuleSummary; project: Project; lanes: Lane[]; /** The editor mounts fresh under the saved draft's own id; the bar the save earned comes with it. */ justSaved?: boolean; onSaved: (saved: Rule) => void; onDeleted: () => void }) {
   const draft = rule.id === DRAFT_ID;
   const [state, dispatch] = useReducer(reducer, rule.canvas, initialState);
   const [name, setName] = useState(rule.name);
   const [errors, setErrors] = useState<Map<string, string>>(new Map());
   const [lit, setLit] = useState<Set<string>>(new Set());
   const [litEdges, setLitEdges] = useState<Set<string>>(new Set());
-  const [bar, setBar] = useState<Bar | null>(null);
+  const [bar, setBar] = useState<Bar | null>(justSaved ? SAVED : null);
   const [testing, setTesting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
@@ -173,15 +181,17 @@ function RuleEditor({ rule, project, lanes, onSaved, onDeleted, onDirtyChange }:
 
   const doc = useMemo(() => toDoc(state), [state]);
   const dirty = draft || name.trim() !== rule.name || canonical(doc) !== canonical(rule.canvas);
-  useEffect(() => {
-    onDirtyChange?.(dirty);
-    return () => onDirtyChange?.(false);
-  }, [dirty, onDirtyChange]);
+  useUnsavedGuard(dirty);
 
   // What the drawing means, positions and selection left out: editing it again clears what the
   // last save or test said, while moving or selecting a node keeps the rings and the bar.
   const meaning = useMemo(() => canonical({ nodes: state.nodes.map((n) => ({ id: n.id, kind: n.kind, data: n.data })), edges: state.edges }), [state.nodes, state.edges]);
+  const firstMeaning = useRef(true);
   useEffect(() => {
+    if (firstMeaning.current) {
+      firstMeaning.current = false;
+      return;
+    }
     setErrors(new Map());
     setLit(new Set());
     setLitEdges(new Set());
@@ -209,7 +219,7 @@ function RuleEditor({ rule, project, lanes, onSaved, onDeleted, onDirtyChange }:
         ? await create.mutateAsync({ projectId: project.id, name: trimmed, enabled: rule.enabled, canvas: doc })
         : await update.mutateAsync({ id: rule.id, patch: { name: trimmed, canvas: doc } });
       setErrors(new Map());
-      setBar({ kind: "saved", lines: ["Saved."] });
+      setBar(SAVED);
       onSaved(saved);
     } catch (e) {
       if (e instanceof ApiError && e.code === "canvas_invalid" && Array.isArray((e.details as { errors?: unknown })?.errors)) {
@@ -323,15 +333,15 @@ export function Automations() {
   const update = useUpdateRule();
   const [draft, setDraft] = useState<RuleSummary | null>(null);
   const [toggleError, setToggleError] = useState<string | null>(null);
-  const [busyId, setBusyId] = useState<string | null>(null);
-  const editorDirty = useRef(false);
-  const onDirtyChange = useCallback((d: boolean) => {
-    editorDirty.current = d;
-  }, []);
+  /** The rules whose enable PATCH is in flight. */
+  const [busy, setBusy] = useState<Set<string>>(() => new Set());
+  /** The id a draft was just saved under, so the editor that mounts for it shows the Saved bar. */
+  const [justSaved, setJustSaved] = useState<string | null>(null);
+  const confirmLeave = useConfirmLeave();
 
   /** Leaving a rule with unsaved changes asks first. */
   function leave(go: () => void) {
-    if (editorDirty.current && !window.confirm("You have unsaved changes. Leave this rule?")) return;
+    if (!confirmLeave()) return;
     go();
   }
 
@@ -348,13 +358,17 @@ export function Automations() {
 
   async function toggle(rule: RuleSummary, enabled: boolean) {
     setToggleError(null);
-    setBusyId(rule.id);
+    setBusy((prev) => new Set(prev).add(rule.id));
     try {
       await update.mutateAsync({ id: rule.id, patch: { enabled } });
     } catch (e) {
       setToggleError(e instanceof Error ? e.message : "Could not change the rule.");
     } finally {
-      setBusyId(null);
+      setBusy((prev) => {
+        const next = new Set(prev);
+        next.delete(rule.id);
+        return next;
+      });
     }
   }
 
@@ -372,7 +386,7 @@ export function Automations() {
             {[0, 1, 2].map((i) => <div key={i} className="skeleton" />)}
           </div>
         ) : (
-          <RuleList rules={list} selectedId={selected?.id} busyId={busyId} onSelect={(id) => { if (id !== selected?.id) leave(() => navigate(`/automations/${id}`)); }} onNew={startDraft} onToggle={toggle} />
+          <RuleList rules={list} selectedId={selected?.id} busy={busy} onSelect={(id) => { if (id !== selected?.id) leave(() => navigate(`/automations/${id}`)); }} onNew={startDraft} onToggle={toggle} />
         )}
         {selected ? (
           <RuleEditor
@@ -380,14 +394,15 @@ export function Automations() {
             rule={selected}
             project={project}
             lanes={lanes}
+            justSaved={justSaved === selected.id}
             onSaved={(saved) => {
               if (selected.id === DRAFT_ID) {
                 setDraft(null);
+                setJustSaved(saved.id);
                 navigate(`/automations/${saved.id}`, { replace: true });
               }
             }}
             onDeleted={() => navigate("/automations", { replace: true })}
-            onDirtyChange={onDirtyChange}
           />
         ) : (
           <div className="canvas-empty">

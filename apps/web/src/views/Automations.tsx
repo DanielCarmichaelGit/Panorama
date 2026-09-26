@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { useNavigate, useOutletContext, useParams } from "react-router-dom";
-import { Flask, Plus, Trash } from "@phosphor-icons/react";
+import { CaretLineLeft, CaretLineRight, Flask, Plus, Trash } from "@phosphor-icons/react";
 import type { CanvasError, Lane, Project, Rule } from "@boomerang/core";
 import { canonical, canvasToRule } from "@boomerang/core";
 import { Chip } from "../components/Chip";
@@ -30,6 +30,7 @@ import {
   type RuleTestResult,
 } from "../lib/hooks";
 import { BoomerangScene } from "../lib/iso";
+import { RULES_RAIL_KEY, RUNS_DRAWER_KEY } from "../lib/storage";
 import { useConfirmLeave, useUnsavedGuard } from "../lib/unsaved";
 
 /**
@@ -44,6 +45,24 @@ export const DRAFT_ID = "new";
 function eventFamily(rule: Rule): "coral" | "lilac" {
   return rule.event.type === "schedule" ? "lilac" : "coral";
 }
+
+/** The rule list folded to its rail, kept in localStorage; the run log drawer, kept for the session. */
+function readFlag(store: Storage | undefined, key: string, on: string): boolean {
+  try {
+    return store?.getItem(key) === on;
+  } catch {
+    return false;
+  }
+}
+function writeFlag(store: Storage | undefined, key: string, value: string): void {
+  try {
+    store?.setItem(key, value);
+  } catch {
+    // storage unavailable; the choice just will not persist
+  }
+}
+const local = () => (typeof localStorage === "undefined" ? undefined : localStorage);
+const session = () => (typeof sessionStorage === "undefined" ? undefined : sessionStorage);
 
 /**
  * The enable toggle. It flips at once and settles on what the server answers; while the PATCH
@@ -77,13 +96,28 @@ function EnableSwitch({ rule, onChange, busy }: { rule: RuleSummary; onChange: (
   );
 }
 
-function RuleList({ rules, selectedId, busy, onSelect, onNew, onToggle }: { rules: RuleSummary[]; selectedId: string | undefined; busy: Set<string>; onSelect: (id: string) => void; onNew: () => void; onToggle: (rule: RuleSummary, enabled: boolean) => void }) {
+function RuleList({ rules, selectedId, busy, rail, onRail, onSelect, onNew, onToggle }: { rules: RuleSummary[]; selectedId: string | undefined; busy: Set<string>; rail: boolean; onRail: (rail: boolean) => void; onSelect: (id: string) => void; onNew: () => void; onToggle: (rule: RuleSummary, enabled: boolean) => void }) {
+  if (rail) {
+    return (
+      <aside className="rule-list rail" aria-label="Rules">
+        <button type="button" className="icon-btn rail-btn" aria-label="Expand rules" title="Expand rules" onClick={() => onRail(false)}>
+          <CaretLineRight size={16} weight="regular" aria-hidden="true" />
+        </button>
+        <button type="button" className="icon-btn rail-btn" aria-label="New rule" title="New rule" onClick={onNew}>
+          <Plus size={16} weight="bold" aria-hidden="true" />
+        </button>
+      </aside>
+    );
+  }
   return (
     <aside className="rule-list" aria-label="Rules">
       <div className="rule-list-head">
         <h2>Rules</h2>
         <button type="button" className="btn small" onClick={onNew}>
           <Plus size={14} weight="bold" aria-hidden="true" /> New rule
+        </button>
+        <button type="button" className="icon-btn rail-btn" aria-label="Collapse rules" title="Collapse rules" onClick={() => onRail(true)}>
+          <CaretLineLeft size={16} weight="regular" aria-hidden="true" />
         </button>
       </div>
       <ul className="settings-list rule-rows" aria-label="Rules">
@@ -149,6 +183,13 @@ function RuleEditor({ rule, project, lanes, justSaved, onSaved, onDeleted }: { r
   const [testing, setTesting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
+  const [runsOpen, setRunsOpen] = useState(() => readFlag(session(), RUNS_DRAWER_KEY, "open"));
+  function toggleRuns() {
+    setRunsOpen((open) => {
+      writeFlag(session(), RUNS_DRAWER_KEY, open ? "closed" : "open");
+      return !open;
+    });
+  }
 
   const boards = useBoards(project.id);
   const epics = useEpics(project.id);
@@ -275,7 +316,7 @@ function RuleEditor({ rule, project, lanes, justSaved, onSaved, onDeleted }: { r
   const ticketOptions = useMemo(() => (tickets.data ?? []).filter((t) => !t.archived).map((t) => ({ id: t.id, label: t.title, hint: t.key })), [tickets.data]);
 
   return (
-    <section className="rule-editor" aria-label={draft ? "New rule" : rule.name}>
+    <section className={runsOpen && !draft ? "rule-editor drawer-open" : "rule-editor"} aria-label={draft ? "New rule" : rule.name}>
       <div className="rule-editor-head">
         <input className="rule-name-input" aria-label="Rule name" value={name} onChange={(e) => setName(e.target.value)} maxLength={80} placeholder="Name this rule" />
         <div className="rule-editor-actions">
@@ -327,7 +368,7 @@ function RuleEditor({ rule, project, lanes, justSaved, onSaved, onDeleted }: { r
         </div>
       )}
       <RuleCanvas state={state} dispatch={dispatch} options={options} names={names} errors={errors} lit={lit} litEdges={litEdges} elseTaken={elseTaken} />
-      {!draft && <RunLog ruleId={rule.id} projectId={project.id} />}
+      {!draft && <RunLog ruleId={rule.id} projectId={project.id} lastFiredAt={rule.lastFiredAt} runCount={rule.runCount} open={runsOpen} onToggle={toggleRuns} />}
     </section>
   );
 }
@@ -344,6 +385,11 @@ export function Automations() {
   const [busy, setBusy] = useState<Set<string>>(() => new Set());
   /** The id a draft was just saved under, so the editor that mounts for it shows the Saved bar. */
   const [justSaved, setJustSaved] = useState<string | null>(null);
+  const [rail, setRail] = useState(() => readFlag(local(), RULES_RAIL_KEY, "1"));
+  function setRailAndRemember(next: boolean) {
+    setRail(next);
+    writeFlag(local(), RULES_RAIL_KEY, next ? "1" : "0");
+  }
   const confirmLeave = useConfirmLeave();
 
   /** Leaving a rule with unsaved changes asks first. */
@@ -387,13 +433,13 @@ export function Automations() {
       </div>
       {rules.isError && <p className="error" role="alert">Could not load the rules.</p>}
       {toggleError && <p className="error" role="alert">{toggleError}</p>}
-      <div className="auto-layout">
+      <div className={rail ? "auto-layout rail" : "auto-layout"}>
         {rules.isPending ? (
           <div className="rule-list">
             {[0, 1, 2].map((i) => <div key={i} className="skeleton" />)}
           </div>
         ) : (
-          <RuleList rules={list} selectedId={selected?.id} busy={busy} onSelect={(id) => { if (id !== selected?.id) leave(() => navigate(`/automations/${id}`)); }} onNew={startDraft} onToggle={toggle} />
+          <RuleList rules={list} selectedId={selected?.id} busy={busy} rail={rail} onRail={setRailAndRemember} onSelect={(id) => { if (id !== selected?.id) leave(() => navigate(`/automations/${id}`)); }} onNew={startDraft} onToggle={toggle} />
         )}
         {selected ? (
           <RuleEditor

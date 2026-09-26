@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { Handle, Position, type NodeProps, type Node } from "@xyflow/react";
+import { Clock, Funnel, Lightning, Play, type Icon } from "@phosphor-icons/react";
 import type { Actor, Board, CanvasNodeKind, Epic, EvidenceType, FieldDefinition, Lane, Tag } from "@boomerang/core";
 import { Picker, type PickerOption } from "../Picker";
 import type { Destination } from "../../lib/hooks";
@@ -115,7 +116,11 @@ function createFlag(text: string): PickerOption {
   return { id: name, label: name };
 }
 
+/** The glyph on each kind's header strip: a bolt for When, a funnel for If, play for Then, a clock for Every. */
+const KIND_ICON: Record<CanvasNodeKind, Icon> = { event: Lightning, condition: Funnel, action: Play, schedule: Clock };
+
 function Card({ id, kind, title, children }: { id: string; kind: CanvasNodeKind; title: string; children: React.ReactNode }) {
+  const Glyph = KIND_ICON[kind];
   const { errors, lit, elseTaken } = useContext(CanvasContext);
   const error = errors.get(id);
   // A condition whose else branch ran did not match; it says so in words rather than lighting up.
@@ -123,19 +128,22 @@ function Card({ id, kind, title, children }: { id: string; kind: CanvasNodeKind;
   const cls = ["rnode", `rnode-${kind}`, error ? "has-error" : "", lit.has(id) && !elseRan ? "is-lit" : ""].filter(Boolean).join(" ");
   return (
     <div className={cls} data-kind={kind} data-node-id={id}>
-      <span className="rnode-band" aria-hidden="true" />
+      {/* The header strip in the family's top colour is the drag handle; the title sits in the body under it. */}
       <div className="rnode-head">
+        <Glyph size={14} weight="regular" aria-hidden="true" />
         <span className="rnode-kind">{KIND_LABEL[kind]}</span>
-        <span className="rnode-title">{title}</span>
       </div>
       {/*
         nokey keeps React Flow's own key handling (arrows nudge, Enter selects, Escape deselects)
         off the controls inside. A Picker's popover is portalled out of the node, so its keys
         bubble here through the React tree without the class; they stop here for the same reason.
       */}
-      <div className="rnode-body nodrag nowheel nokey" onKeyDown={(e) => { if ((e.target as HTMLElement).closest(".picker-popover")) e.stopPropagation(); }}>{children}</div>
-      {error && <p className="rnode-error">{error}</p>}
-      {elseRan && !error && <p className="rnode-note muted">Else branch taken</p>}
+      <div className="rnode-body nodrag nowheel nokey" onKeyDown={(e) => { if ((e.target as HTMLElement).closest(".picker-popover")) e.stopPropagation(); }}>
+        <span className="rnode-title">{title}</span>
+        {children}
+        {error && <p className="rnode-error">{error}</p>}
+        {elseRan && !error && <p className="rnode-note muted">Else branch taken</p>}
+      </div>
       {kind !== "event" && kind !== "schedule" && <Handle type="target" position={Position.Left} className="rnode-handle" />}
       <Handle type="source" position={Position.Right} className="rnode-handle" />
     </div>

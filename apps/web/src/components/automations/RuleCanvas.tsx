@@ -46,8 +46,8 @@ export interface RuleCanvasProps {
 
 const DRAG_TYPE = "application/x-boomerang-node";
 const SNAP: [number, number] = [8, 8];
-/** The palette sits over the right edge of the canvas, so a fit leaves that edge clear. */
-const FIT: FitViewOptions = { padding: { top: 0.2, right: "200px", bottom: 0.2, left: 0.15 }, maxZoom: 1 };
+/** The palette rail sits on the right edge of the canvas, so a fit leaves that edge clear. */
+const FIT: FitViewOptions = { padding: { top: "24px", right: "168px", bottom: "64px", left: "24px" }, maxZoom: 1 };
 const EMPTY_SET: Set<string> = new Set();
 /** Where focus goes after a delete when no node is left: the canvas itself. */
 const ROOT = "__root__";
@@ -105,9 +105,10 @@ function Flow({ state, dispatch, options, names, errors, lit, litEdges, elseTake
         type: "smoothstep",
         label: e.label === "else" ? "else" : undefined,
         selected: state.selectedEdges.includes(e.id),
-        className: [e.label === "else" ? "edge-else" : "", litEdges?.has(e.id) ? "is-lit" : ""].filter(Boolean).join(" ") || undefined,
+        // An edge lights when the test run passed along it: both ends matched, or its else branch was taken.
+        className: [e.label === "else" ? "edge-else" : "", litEdges?.has(e.id) || (lit.has(e.source) && lit.has(e.target)) ? "is-lit" : ""].filter(Boolean).join(" ") || undefined,
       })),
-    [state.edges, state.selectedEdges, litEdges],
+    [state.edges, state.selectedEdges, litEdges, lit],
   );
 
   const context = useMemo(
@@ -129,6 +130,28 @@ function Flow({ state, dispatch, options, names, errors, lit, litEdges, elseTake
     timers.current.push(t);
   }, []);
   useEffect(() => () => timers.current.forEach((t) => window.clearTimeout(t)), []);
+
+  // The canvas takes the height the editor leaves it, which changes when the run log drawer
+  // opens or the window resizes; the drawing fits again a moment later (not on a phone, where a
+  // whole rule fitted is too small to read).
+  useEffect(() => {
+    const el = rootRef.current;
+    if (!el || phone || typeof ResizeObserver === "undefined") return;
+    let last = { w: el.clientWidth, h: el.clientHeight };
+    let timer: number | undefined;
+    const ro = new ResizeObserver(() => {
+      const next = { w: el.clientWidth, h: el.clientHeight };
+      if (next.w === last.w && next.h === last.h) return;
+      last = next;
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => fitView({ ...FIT, duration: 150 }), 60);
+    });
+    ro.observe(el);
+    return () => {
+      ro.disconnect();
+      window.clearTimeout(timer);
+    };
+  }, [phone, fitView]);
 
   // Two quick key presses can arrive before React re-renders, so placement reads the latest
   // drawing through a ref rather than the render's closure.
@@ -330,7 +353,7 @@ function Flow({ state, dispatch, options, names, errors, lit, litEdges, elseTake
           edgesFocusable
         >
           <Background variant={BackgroundVariant.Lines} gap={32} lineWidth={1} className="rule-grid" />
-          <Panel position="top-right" className="rule-palette">
+          <Panel position="top-right" className="rule-palette" aria-label="Add a node">
             <span className="rule-palette-title">Add</span>
             {CANVAS_NODE_KINDS.map((kind) => (
               <button
@@ -348,8 +371,13 @@ function Flow({ state, dispatch, options, names, errors, lit, litEdges, elseTake
                 <kbd>{KIND_KEY[kind]}</kbd> {KIND_LABEL[kind]}
               </button>
             ))}
-            {onlyEvent && <p className="rule-palette-hint muted">Press c to add a condition, a to add an action</p>}
+            <p className="rule-palette-hint muted">Press e, c, a or s</p>
           </Panel>
+          {onlyEvent && (
+            <Panel position="bottom-center" className="rule-canvas-hint">
+              <p className="muted">Press c to add a condition, a to add an action</p>
+            </Panel>
+          )}
           <Panel position="bottom-left" className="rule-controls">
             <button type="button" className="icon-btn" aria-label="Zoom in" title="Zoom in" onClick={() => zoomIn()}>
               <MagnifyingGlassPlus size={16} weight="regular" aria-hidden="true" />

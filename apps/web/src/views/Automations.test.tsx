@@ -225,6 +225,8 @@ describe("Automations view", () => {
     await waitFor(() => expect(calls.some((c) => c.path === "/api/v1/rules/r1/test")).toBe(true));
     expect(calls.find((c) => c.path === "/api/v1/rules/r1/test")?.body).toEqual({ ticketId: "t2" });
     await waitFor(() => expect(nodeEl("a1")?.querySelector(".rnode")?.classList.contains("is-lit")).toBe(true));
+    // The edges between matched nodes light too, so the path reads as one.
+    await waitFor(() => expect(document.querySelectorAll(".react-flow__edge.is-lit")).toHaveLength(2));
     const status = screen.getByRole("status");
     expect(status.textContent).toContain("Matched PAN-2. Nothing was written.");
     expect(status.textContent).toContain("Would move to Ready for Production");
@@ -496,6 +498,68 @@ describe("keyboard inside nodes", () => {
     fireEvent.keyDown(document.activeElement!, { key: "Escape" });
     expect(trigger.getAttribute("aria-expanded")).toBe("false");
     expect(nodeEl("event")!.classList.contains("selected")).toBe(true);
+  });
+});
+
+describe("full-height layout", () => {
+  afterEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+  });
+
+  it("each node has a header strip with its icon and kind, and the title in the body", async () => {
+    mockApi([rule({})]);
+    renderView("/automations/r1");
+    await waitFor(() => expect(document.querySelectorAll(".rnode")).toHaveLength(3));
+    const head = nodeEl("event")!.querySelector(".rnode-head")!;
+    expect(head.querySelector("svg")).toBeTruthy();
+    expect(head.querySelector(".rnode-kind")?.textContent).toBe("When");
+    expect(head.querySelector(".rnode-title")).toBeNull();
+    expect(nodeEl("event")!.querySelector(".rnode-body .rnode-title")?.textContent).toBe("A ticket moves to Eval");
+    expect(nodeEl("event")!.querySelector(".rnode-band")).toBeNull();
+  });
+
+  it("the rule list collapses to a rail and remembers it", async () => {
+    mockApi([rule({})]);
+    renderView("/automations/r1");
+    const list = await screen.findByRole("complementary", { name: "Rules" });
+    expect(list.classList.contains("rail")).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: "Collapse rules" }));
+    expect(list.classList.contains("rail")).toBe(true);
+    expect(localStorage.getItem("bm.rulesRail")).toBe("1");
+    expect(screen.queryByRole("list", { name: "Rules" })).toBeNull();
+    expect(screen.getByRole("button", { name: "New rule" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Expand rules" }));
+    expect(list.classList.contains("rail")).toBe(false);
+    expect(localStorage.getItem("bm.rulesRail")).toBe("0");
+    expect(screen.getByRole("list", { name: "Rules" })).toBeTruthy();
+  });
+
+  it("the run log is a drawer: a bar with the last fire and run count, opening to the list, remembered for the session", async () => {
+    const twelveMinutesAgo = new Date(Date.now() - 12 * 60 * 1000).toISOString();
+    mockApi([{ ...rule({}), lastFiredAt: twelveMinutesAgo, runCount: 7 } as Rule]);
+    renderView("/automations/r1");
+    const bar = await screen.findByRole("button", { name: /^Runs/ });
+    expect(bar.getAttribute("aria-expanded")).toBe("false");
+    expect(bar.textContent).toContain("Last fired 12 min ago, 7 runs");
+    expect(bar.querySelector(".mono")?.textContent).toBe("Last fired 12 min ago, 7 runs");
+    expect(screen.queryByRole("list", { name: "Runs" })).toBeNull();
+    fireEvent.click(bar);
+    expect(bar.getAttribute("aria-expanded")).toBe("true");
+    expect(await screen.findByRole("list", { name: "Runs" })).toBeTruthy();
+    expect(screen.getByText("This rule has not fired yet.")).toBeTruthy();
+    expect(sessionStorage.getItem("bm.runsDrawer")).toBe("open");
+    expect(document.querySelector(".rule-editor")?.classList.contains("drawer-open")).toBe(true);
+    fireEvent.click(bar);
+    expect(screen.queryByRole("list", { name: "Runs" })).toBeNull();
+    expect(sessionStorage.getItem("bm.runsDrawer")).toBe("closed");
+  });
+
+  it("a rule that never fired says so on the bar", async () => {
+    mockApi([rule({})]);
+    renderView("/automations/r1");
+    const bar = await screen.findByRole("button", { name: /^Runs/ });
+    expect(bar.querySelector(".mono")?.textContent).toBe("Not fired yet");
   });
 });
 

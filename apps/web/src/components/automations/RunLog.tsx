@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { CaretDown, CaretRight } from "@phosphor-icons/react";
+import { CaretDown, CaretRight, CaretUp } from "@phosphor-icons/react";
 import type { Family } from "@boomerang/core";
 import { useRuleRuns, useTickets, type RuleRun } from "../../lib/hooks";
 import { Chip } from "../Chip";
@@ -27,64 +27,86 @@ const OUTCOME: Record<RuleRun["outcome"], { family: Family; label: string }> = {
   error: { family: "coral", label: "Error" },
 };
 
-function detailText(detail: unknown): string {
+/** A run's detail as text: pretty JSON when expanded, one compact line on the row. */
+function detailText(detail: unknown, pretty: boolean): string {
   if (detail === undefined || detail === null || detail === "") return "";
-  if (typeof detail === "string") return detail;
+  if (typeof detail === "string") return pretty ? detail : detail.split("\n")[0];
   try {
-    return JSON.stringify(detail, null, 2);
+    return pretty ? JSON.stringify(detail, null, 2) : JSON.stringify(detail);
   } catch {
     return String(detail);
   }
 }
 
+/** The one line on the drawer's bar: when the rule last fired and how often, in mono. */
+export function firedSummary(lastFiredAt: string | null | undefined, runCount: number | undefined, now = Date.now()): string {
+  if (!lastFiredAt) return "Not fired yet";
+  const count = typeof runCount === "number" ? `, ${runCount} ${runCount === 1 ? "run" : "runs"}` : "";
+  return `Last fired ${ago(lastFiredAt, now)}${count}`;
+}
+
 /** The last 20 runs of a rule as a dense list: time, ticket key, outcome chip, the detail on expand. Live through the stream. */
-export function RunLog({ ruleId, projectId }: { ruleId: string; projectId: string }) {
+function RunList({ ruleId, projectId }: { ruleId: string; projectId: string }) {
   const runs = useRuleRuns(ruleId, 20);
   const tickets = useTickets(projectId);
   const [open, setOpen] = useState<string | null>(null);
   const keyOf = (run: RuleRun) => run.ticketKey ?? tickets.data?.find((t) => t.id === run.ticketId)?.key ?? run.ticketId;
 
+  if (runs.isPending) return <div className="skeleton" />;
+  if (runs.isError) return <p className="muted">The run log could not be loaded.</p>;
   return (
-    <section className="run-log" aria-labelledby="run-log-title">
-      <div className="run-log-head">
-        <h2 id="run-log-title">Runs</h2>
-        {runs.data && runs.data.length > 0 && <span className="muted">Last {runs.data.length}</span>}
-      </div>
-      {runs.isPending && <div className="skeleton" />}
-      {runs.isError && <p className="muted">The run log could not be loaded.</p>}
-      {runs.data && (
-        <ul className="settings-list run-list" aria-label="Runs">
-          {runs.data.length === 0 && (
-            <li className="settings-empty">
-              <p className="muted">This rule has not fired yet.</p>
-            </li>
-          )}
-          {runs.data.map((run) => {
-            const o = OUTCOME[run.outcome] ?? OUTCOME.error;
-            const detail = detailText(run.detail);
-            const expanded = open === run.id;
-            return (
-              <li key={run.id} className="settings-row run-row" data-expanded={expanded || undefined}>
-                <div className="row-id">
-                  <span className="mono muted" title={new Date(run.firedAt).toLocaleString()}>{ago(run.firedAt)}</span>
-                  <span className="mono">{keyOf(run)}</span>
-                </div>
-                <div className="row-facts">
-                  <Chip family={o.family}>{o.label}</Chip>
-                  {detail && !expanded && <span className="row-truncate">{detail.split("\n")[0]}</span>}
-                </div>
-                <div className="row-actions">
-                  {detail && (
-                    <button type="button" className="icon-btn" aria-expanded={expanded} aria-label={expanded ? "Hide detail" : "Show detail"} title={expanded ? "Hide detail" : "Show detail"} onClick={() => setOpen(expanded ? null : run.id)}>
-                      {expanded ? <CaretDown size={16} weight="regular" aria-hidden="true" /> : <CaretRight size={16} weight="regular" aria-hidden="true" />}
-                    </button>
-                  )}
-                </div>
-                {expanded && <pre className="codeblock run-detail">{detail}</pre>}
-              </li>
-            );
-          })}
-        </ul>
+    <ul className="settings-list run-list" aria-label="Runs">
+      {runs.data.length === 0 && (
+        <li className="settings-empty">
+          <p className="muted">This rule has not fired yet.</p>
+        </li>
+      )}
+      {runs.data.map((run) => {
+        const o = OUTCOME[run.outcome] ?? OUTCOME.error;
+        const expanded = open === run.id;
+        const detail = detailText(run.detail, expanded);
+        return (
+          <li key={run.id} className="settings-row run-row" data-expanded={expanded || undefined}>
+            <div className="row-id">
+              <span className="mono muted" title={new Date(run.firedAt).toLocaleString()}>{ago(run.firedAt)}</span>
+              <span className="mono">{keyOf(run)}</span>
+            </div>
+            <div className="row-facts">
+              <Chip family={o.family}>{o.label}</Chip>
+              {detail && !expanded && <span className="row-truncate">{detail}</span>}
+            </div>
+            <div className="row-actions">
+              {detail && (
+                <button type="button" className="icon-btn" aria-expanded={expanded} aria-label={expanded ? "Hide detail" : "Show detail"} title={expanded ? "Hide detail" : "Show detail"} onClick={() => setOpen(expanded ? null : run.id)}>
+                  {expanded ? <CaretDown size={16} weight="regular" aria-hidden="true" /> : <CaretRight size={16} weight="regular" aria-hidden="true" />}
+                </button>
+              )}
+            </div>
+            {expanded && <pre className="codeblock run-detail">{detail}</pre>}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+/**
+ * The run log as a drawer at the bottom of the editor: a 44px bar ("Runs", then the last fire
+ * and the run count in mono) that opens to the list. Whether it is open belongs to the editor,
+ * which sizes the canvas around it and remembers the choice for the session.
+ */
+export function RunLog({ ruleId, projectId, lastFiredAt, runCount, open, onToggle }: { ruleId: string; projectId: string; lastFiredAt?: string | null; runCount?: number; open: boolean; onToggle: () => void }) {
+  return (
+    <section className={open ? "run-log open" : "run-log"} aria-label="Run log">
+      <button type="button" className="run-log-bar" aria-expanded={open} aria-controls="run-log-panel" onClick={onToggle}>
+        <span className="run-log-title">Runs</span>
+        <span className="mono muted">{firedSummary(lastFiredAt, runCount)}</span>
+        <CaretUp size={16} weight="regular" aria-hidden="true" className="run-log-caret" />
+      </button>
+      {open && (
+        <div id="run-log-panel" className="run-log-panel">
+          <RunList ruleId={ruleId} projectId={projectId} />
+        </div>
       )}
     </section>
   );

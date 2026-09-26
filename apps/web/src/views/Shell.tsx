@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, NavLink, Outlet, useMatch, useNavigate, useSearchParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
-import { CaretLineLeft, CaretLineRight, GearSix, Kanban, Lightning, List, Lock, Robot, Tray } from "@phosphor-icons/react";
+import { CaretLineLeft, GearSix, Kanban, Lightning, List, Lock, Robot, Tray } from "@phosphor-icons/react";
 import { SidebarStatus } from "../components/SidebarStatus";
 import type { Project } from "@boomerang/core";
 import type { Status } from "../App";
@@ -12,6 +12,7 @@ import { useLanes, useProjects, useStream } from "../lib/hooks";
 import { isTypingTarget } from "../lib/keys";
 import { UnsavedContext, useUnsavedState } from "../lib/unsaved";
 import { useFocusTrap } from "../lib/useFocusTrap";
+import { useSidebarFlip } from "../lib/useSidebarFlip";
 import { ProjectSwitcher } from "../components/ProjectSwitcher";
 import { BrandMark } from "../components/BrandMark";
 import { FirstProject } from "./FirstProject";
@@ -57,6 +58,7 @@ export function Shell({ status, chainOk }: { status: Status; chainOk: boolean })
   const projects = useProjects();
   const streamStatus = useStream();
   const [collapsed, setCollapsed] = useState(readCollapsed);
+  const flip = useSidebarFlip(collapsed);
   const [projectOverride, setProjectOverride] = useState<string | null>(null);
   const [lockError, setLockError] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
@@ -116,6 +118,7 @@ export function Shell({ status, chainOk }: { status: Status; chainOk: boolean })
   }, [navigate, unsaved, period]);
 
   function toggleCollapsed() {
+    flip.capture();
     setCollapsed((c) => { writeCollapsed(!c); return !c; });
   }
 
@@ -144,7 +147,7 @@ export function Shell({ status, chainOk }: { status: Status; chainOk: boolean })
     <UnsavedContext.Provider value={unsaved}>
     <div className={collapsed ? "shell collapsed" : "shell"}>
       <a className="skip" href="#main">Skip to content</a>
-      <nav className="side" aria-label="Main">
+      <nav className="side" aria-label="Main" ref={flip.sideRef}>
         <BrandMark collapsed={collapsed} />
         <div className="switcher">
           {current && <ProjectSwitcher id="project-switcher" list={list} current={current} onChange={setProjectOverride} compact={collapsed} />}
@@ -183,11 +186,11 @@ export function Shell({ status, chainOk }: { status: Status; chainOk: boolean })
           )}
           {lockError && <p className="error" role="alert">{lockError}</p>}
           <button type="button" className="collapse-btn" onClick={toggleCollapsed} aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"} title={collapsed ? "Expand sidebar" : "Collapse sidebar"}>
-            {collapsed ? <CaretLineRight size={16} weight="regular" aria-hidden="true" /> : <CaretLineLeft size={16} weight="regular" aria-hidden="true" />}
+            <CaretLineLeft size={16} weight="regular" aria-hidden="true" />
           </button>
         </div>
       </nav>
-      <main id="main" className={ticketId ? "with-panel" : undefined}>
+      <main id="main" className={ticketId ? "with-panel" : undefined} ref={flip.mainRef}>
         {projects.isPending || lanes.isPending ? (
           <SkeletonRows />
         ) : lanes.isError ? (

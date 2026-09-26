@@ -81,6 +81,8 @@ Total under 1 second because this is a tool opened many times a day. View switch
 
 Live changes (an agent moves a ticket while you watch): the row or card slides to its new position over 250ms on the entrance curve and its state chip cross-fades. No flash, no toast for routine moves. A new needs-human ticket enters the Queue at the top with the same rise.
 
+- The sidebar's expand and collapse is a FLIP, not a width animation: the shell's grid track changes in one frame, the main column is translated back and eased into place, and the sidebar's surface scales from its old width to its new one, all with transforms; labels fade in after the width settles.
+
 ## Interaction inventory
 
 | What | Trigger | Behaviour |
@@ -117,7 +119,6 @@ Phosphor, regular weight, 18px in the sidebar and 16px inline, imported per glyp
 
 - Light theme only in v1. A dark theme is on the traction list.
 - The motion-noise recovery display cannot honour reduced motion, because motion is how it works. It offers an explicit "show as plain text" button instead.
-- The sidebar width snaps when it collapses or expands; only its contents animate. Animating the shell's `grid-template-columns` relaid out the whole page on every frame, which is the layout thrash BRAND rules out, so the track changes in one step and the nav items and labels carry the motion.
 
 ## Colour presets
 

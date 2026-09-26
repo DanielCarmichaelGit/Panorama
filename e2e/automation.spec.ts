@@ -147,7 +147,7 @@ test("the owner's pipeline rule, drawn by keyboard, runs on the demo agent's tic
   const ruleUrl = page.url();
   const ruleId = ruleUrl.slice(ruleUrl.lastIndexOf("/") + 1);
   await expect(page.getByRole("switch", { name: "Pipeline enabled" })).toHaveAttribute("aria-checked", "true");
-  // The run log is a drawer under the canvas, closed until asked; it stays open for the session.
+  // The run log is a drawer under the canvas, closed each time a rule opens so the canvas keeps the height.
   const drawer = page.getByRole("button", { name: /^Runs/ });
   await expect(drawer).toHaveAttribute("aria-expanded", "false");
   await expect(drawer).toContainText("Not fired yet");
@@ -159,8 +159,7 @@ test("the owner's pipeline rule, drawn by keyboard, runs on the demo agent's tic
     const controls = await canvas.locator(".rule-controls").boundingBox();
     expect(first && controls && first.y + first.height <= controls.y).toBe(true);
   }).toPass({ timeout: 5_000 });
-  await page.screenshot({ path: "shots-final-2/automations-rule-drawer-1280.png" });
-
+  
   // The demo agent over MCP, with the owner's stream open to see the rule fire. The agent
   // moves its ticket into Eval with a passing eval score on it; the rule takes it from there.
   const stream = await human.openStream();
@@ -206,6 +205,8 @@ test("the owner's pipeline rule, drawn by keyboard, runs on the demo agent's tic
   await page.getByRole("link", { name: "Automations" }).click();
   await page.getByRole("list", { name: "Rules" }).getByRole("button", { name: "Pipeline" }).click();
   await expect(page).toHaveURL(ruleUrl);
+  await expect(page.getByRole("button", { name: /^Runs/ })).toHaveAttribute("aria-expanded", "false");
+  await page.getByRole("button", { name: /^Runs/ }).click();
   await expect(page.getByRole("list", { name: "Runs" }).locator(".chip", { hasText: "Applied" })).toHaveCount(1);
   const before = (await human.call("GET", "/api/v1/chain/verify")).json;
   expect(before.ok).toBe(true);

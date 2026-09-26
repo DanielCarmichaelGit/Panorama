@@ -54,8 +54,8 @@ a{color:var(--accent)}
 .checkbox-row{display:flex;align-items:center;gap:.5rem;margin:.3rem 0;font-weight:400}
 .banner{background:var(--coral-top);color:var(--coral-ink);padding:.7rem var(--gutter);font-weight:600}
 @media (max-width:860px){.lock{grid-template-columns:1fr;align-content:start}.lock .art{order:-1;margin-bottom:.5rem}.lock form{width:100%;margin:0 auto}.iso-scene{max-width:320px}}
-/* The track snaps: animating grid-template-columns relayouts the whole shell on every frame.
-   The sidebar's own contents carry the motion instead, and the labels fade. */
+/* The track changes in one frame (animating grid-template-columns relays out the page on every
+   frame); useSidebarFlip makes it read as motion with transforms only. See "Sidebar motion" below. */
 .shell{display:grid;grid-template-columns:232px minmax(0,1fr);min-height:100%}.shell.collapsed{grid-template-columns:64px minmax(0,1fr)}
 .side{background:var(--surface);border-right:1px solid var(--line);padding:16px 12px;display:flex;flex-direction:column;gap:4px;position:sticky;top:0;height:100vh;z-index:var(--z-sidebar);animation:fade 300ms var(--ease-in) both}
 .side>*{transition:transform var(--dur) var(--ease),opacity var(--dur) var(--ease)}
@@ -595,3 +595,18 @@ a{color:var(--accent)}
 
 /* Vertical rhythm: a view's blocks are spaced by its own stack, so a block after the empty state never sits flush under its buttons. */
 .view>.empty+*{margin-top:2rem}
+
+/* Sidebar motion: the sidebar's surface and border live on ::before and scale from the old width to
+   the new one through --side-scale, while the main column is translated and eased into place (see
+   useSidebarFlip). Labels fade in after the width settles and leave at once; the caret turns. */
+@media (min-width:861px){
+  .side{background:none;border-right:0}
+  .side::before{content:"";position:absolute;inset:0;z-index:-1;background:var(--surface);border-right:1px solid var(--line);transform-origin:left center;transform:scaleX(var(--side-scale,1));transition:transform 220ms var(--ease)}
+  .side.side-flip-start::before{transition:none}
+}
+.shell:not(.collapsed) .side .label{transition:opacity var(--dur) var(--ease) 140ms}
+.collapse-btn svg{transition:transform 220ms var(--ease)}
+.collapsed .collapse-btn svg{transform:rotate(180deg)}
+@media (prefers-reduced-motion:reduce){
+  .side::before,.collapse-btn svg,.shell:not(.collapsed) .side .label{transition:none}
+}

@@ -30,7 +30,7 @@ import {
   type RuleTestResult,
 } from "../lib/hooks";
 import { BoomerangScene } from "../lib/iso";
-import { RULES_RAIL_KEY, RUNS_DRAWER_KEY } from "../lib/storage";
+import { RULES_RAIL_KEY } from "../lib/storage";
 import { useConfirmLeave, useUnsavedGuard } from "../lib/unsaved";
 
 /**
@@ -46,7 +46,7 @@ function eventFamily(rule: Rule): "coral" | "lilac" {
   return rule.event.type === "schedule" ? "lilac" : "coral";
 }
 
-/** The rule list folded to its rail, kept in localStorage; the run log drawer, kept for the session. */
+/** The rule list folded to its rail, kept in localStorage. The run log drawer starts closed on every rule so the canvas gets the height. */
 function readFlag(store: Storage | undefined, key: string, on: string): boolean {
   try {
     return store?.getItem(key) === on;
@@ -62,7 +62,6 @@ function writeFlag(store: Storage | undefined, key: string, value: string): void
   }
 }
 const local = () => (typeof localStorage === "undefined" ? undefined : localStorage);
-const session = () => (typeof sessionStorage === "undefined" ? undefined : sessionStorage);
 
 /**
  * The enable toggle. It flips at once and settles on what the server answers; while the PATCH
@@ -183,13 +182,16 @@ function RuleEditor({ rule, project, lanes, justSaved, onSaved, onDeleted }: { r
   const [testing, setTesting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
-  const [runsOpen, setRunsOpen] = useState(() => readFlag(session(), RUNS_DRAWER_KEY, "open"));
+  const [runsOpen, setRunsOpen] = useState(false);
   function toggleRuns() {
-    setRunsOpen((open) => {
-      writeFlag(session(), RUNS_DRAWER_KEY, open ? "closed" : "open");
-      return !open;
-    });
+    setRunsOpen((open) => !open);
   }
+  // "Saved." is a short status beside the name, not a row above the canvas; it fades after 3 s.
+  useEffect(() => {
+    if (bar?.kind !== "saved") return;
+    const t = setTimeout(() => setBar((b) => (b?.kind === "saved" ? null : b)), 3000);
+    return () => clearTimeout(t);
+  }, [bar]);
 
   const boards = useBoards(project.id);
   const epics = useEpics(project.id);
@@ -319,6 +321,7 @@ function RuleEditor({ rule, project, lanes, justSaved, onSaved, onDeleted }: { r
     <section className={runsOpen && !draft ? "rule-editor drawer-open" : "rule-editor"} aria-label={draft ? "New rule" : rule.name}>
       <div className="rule-editor-head">
         <input className="rule-name-input" aria-label="Rule name" value={name} onChange={(e) => setName(e.target.value)} maxLength={80} placeholder="Name this rule" />
+        {bar?.kind === "saved" && <span className="rule-saved" role="status">{bar.lines[0]}</span>}
         <div className="rule-editor-actions">
           {testing ? (
             <div className="rule-test-picker">
@@ -360,7 +363,7 @@ function RuleEditor({ rule, project, lanes, justSaved, onSaved, onDeleted }: { r
         </div>
       )}
       {failure && <p className="error" role="alert">{failure}</p>}
-      {bar && (
+      {bar && bar.kind !== "saved" && (
         <div className={`canvas-bar canvas-bar-${bar.kind}`} role={bar.kind === "error" ? "alert" : "status"}>
           <ul>
             {bar.lines.map((l, i) => <li key={i}>{l}</li>)}

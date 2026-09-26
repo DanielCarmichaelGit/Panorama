@@ -535,7 +535,7 @@ describe("full-height layout", () => {
     expect(screen.getByRole("list", { name: "Rules" })).toBeTruthy();
   });
 
-  it("the run log is a drawer: a bar with the last fire and run count, opening to the list, remembered for the session", async () => {
+  it("the run log is a drawer: a bar with the last fire and run count, opening to the list, closed again whenever a rule opens", async () => {
     const twelveMinutesAgo = new Date(Date.now() - 12 * 60 * 1000).toISOString();
     mockApi([{ ...rule({}), lastFiredAt: twelveMinutesAgo, runCount: 7 } as Rule]);
     renderView("/automations/r1");
@@ -548,11 +548,10 @@ describe("full-height layout", () => {
     expect(bar.getAttribute("aria-expanded")).toBe("true");
     expect(await screen.findByRole("list", { name: "Runs" })).toBeTruthy();
     expect(screen.getByText("This rule has not fired yet.")).toBeTruthy();
-    expect(sessionStorage.getItem("bm.runsDrawer")).toBe("open");
     expect(document.querySelector(".rule-editor")?.classList.contains("drawer-open")).toBe(true);
     fireEvent.click(bar);
     expect(screen.queryByRole("list", { name: "Runs" })).toBeNull();
-    expect(sessionStorage.getItem("bm.runsDrawer")).toBe("closed");
+    expect(sessionStorage.getItem("bm.runsDrawer")).toBeNull();
   });
 
   it("a rule that never fired says so on the bar", async () => {

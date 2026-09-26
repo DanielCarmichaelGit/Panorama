@@ -4,8 +4,6 @@ export const SIDEBAR_KEY = "bm.sidebar";
 export const INTRO_KEY = "bm.settingsIntro";
 /** Whether the Automations rule list is folded to its rail (localStorage). */
 export const RULES_RAIL_KEY = "bm.rulesRail";
-/** Whether the run log drawer under the canvas is open (sessionStorage: per tab, per session). */
-export const RUNS_DRAWER_KEY = "bm.runsDrawer";
 
 const OLD_ANCHOR_KEY = "pan.anchor";
 const OLD_KEYS = [OLD_ANCHOR_KEY, "pan.sidebar", "pan.settingsIntro"];

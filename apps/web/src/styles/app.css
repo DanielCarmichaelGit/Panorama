@@ -81,7 +81,7 @@ a{color:var(--accent)}
 .collapsed .side .nav-item{justify-content:center;width:44px;height:44px;padding:0;gap:0;border-radius:var(--r-input)}
 .side .label{white-space:nowrap;overflow:hidden;transition:opacity var(--dur) var(--ease)}
 .collapsed .side .label{opacity:0;position:absolute;width:1px;height:1px;clip:rect(0 0 0 0)}
-.view{padding:2rem var(--gutter);max-width:1200px;position:relative;min-width:0}
+.view{padding:2rem var(--gutter);position:relative;min-width:0}
 .view-head{display:flex;align-items:baseline;gap:1rem;flex-wrap:wrap;margin-bottom:1.25rem}
 .view-head .count{font-size:2.4rem;font-weight:500;color:var(--accent);letter-spacing:-.03em;margin-right:.5rem}
 .view-head .spacer{margin-left:auto}
@@ -92,7 +92,7 @@ a{color:var(--accent)}
 .chip{font:600 .75rem var(--font);padding:.2rem .6rem;border-radius:var(--r-pill);border:0;white-space:nowrap;flex:none}
 .section-title{margin:1.75rem 0 .75rem}
 .skeleton{height:46px;border-radius:var(--r-card);background:var(--stone-top);margin-bottom:8px}
-.empty{display:grid;justify-items:start;gap:.5rem;max-width:420px}
+.empty{display:grid;justify-items:start;gap:.5rem}.empty p{max-width:60ch}
 .empty-actions{display:flex;gap:.6rem;margin-top:.25rem}
 .rows{width:100%;max-width:none}
 .modal-back{position:fixed;inset:0;background:rgba(27,34,48,.35);z-index:var(--z-modal);display:grid;place-items:center;padding:var(--gutter)}
@@ -288,7 +288,7 @@ a{color:var(--accent)}
 .settings-intro-text{font-size:.8125rem;line-height:1.5;color:var(--muted)}
 .settings-section{margin-bottom:2.5rem}
 .settings-head{display:flex;align-items:center;justify-content:space-between;gap:1rem;margin-bottom:.75rem}
-.settings-head p{margin:0;font-size:.875rem;max-width:56rem}
+.settings-head p{margin:0;font-size:.875rem;flex:1;min-width:0}
 .settings-head .btn{flex:none;white-space:nowrap}
 .settings-list{list-style:none;margin:0;padding:0;background:var(--surface);border:1px solid var(--line);border-radius:var(--r-card)}
 .settings-row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;grid-template-areas:"id facts actions";align-items:center;gap:.25rem .9rem;min-height:44px;padding:.3rem .5rem .3rem .9rem;transition:background var(--dur) var(--ease)}
@@ -297,11 +297,11 @@ a{color:var(--accent)}
 .settings-row:last-child{border-radius:0 0 var(--r-card) var(--r-card)}
 .settings-row:hover,.settings-row[data-expanded]{background:var(--bg)}
 .row-id{grid-area:id;display:flex;align-items:center;gap:.6rem;min-width:0}
-.row-name{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:22rem}
+.row-name{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 .row-dot{width:10px;height:10px;border-radius:var(--r-pill);flex:none}
 .row-facts{grid-area:facts;display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;min-width:0;font-size:.8125rem;color:var(--muted)}
 .row-facts .chip{font-size:.6875rem;padding:.12rem .5rem}
-.row-truncate{min-width:0;max-width:28rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row-truncate{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .row-actions{grid-area:actions;display:flex;align-items:center;gap:2px;justify-self:end;min-height:32px}
 .row-actions .icon-btn,.options-row .icon-btn,.req-row-top .icon-btn{width:32px;height:32px;flex:none;border:0;border-radius:var(--r-input);color:var(--muted)}
 .row-actions .icon-btn:hover,.options-row .icon-btn:hover,.req-row-top .icon-btn:hover{color:var(--text);background:var(--stone-top)}
@@ -317,7 +317,7 @@ a{color:var(--accent)}
 .row-form .color-swatches{padding:2px 4px}
 .row-form .color-native{width:34px;height:34px}
 .row-form .checkbox-row{margin:0;font-size:.875rem}
-.row-form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(11rem,1fr));gap:.6rem .9rem;align-items:start;max-width:48rem}
+.row-form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(11rem,1fr));gap:.6rem .9rem;align-items:start}
 .row-form-grid>.checkbox-row{margin-top:1.45rem;min-height:34px}
 .row-form-checks{display:flex;gap:1.25rem;flex-wrap:wrap}
 .row-form-actions{display:flex;gap:.5rem}
@@ -327,9 +327,9 @@ a{color:var(--accent)}
 .link-btn:hover{text-decoration:underline}
 .link-btn:disabled{color:var(--muted);cursor:not-allowed;text-decoration:none}
 .options-editor{display:grid;gap:.4rem;justify-items:start}
-.options-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto;gap:.5rem;align-items:center;width:100%;max-width:36rem}
+.options-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto;gap:.5rem;align-items:center;width:100%}
 .req-rows{display:grid;gap:.6rem;justify-items:start}
-.req-row{display:grid;gap:.4rem;width:100%;max-width:36rem;padding:.5rem .6rem .6rem;border:1px solid var(--line);border-radius:var(--r-input);background:var(--surface)}
+.req-row{display:grid;gap:.4rem;width:100%;padding:.5rem .6rem .6rem;border:1px solid var(--line);border-radius:var(--r-input);background:var(--surface)}
 .req-row-top{display:grid;grid-template-columns:minmax(0,1fr) 5rem auto;gap:.5rem;align-items:end}
 .req-desc{resize:none;overflow:hidden}
 .row-confirm{grid-column:1 / -1;display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;font-size:.875rem;padding:.2rem 0 .5rem}
@@ -475,7 +475,9 @@ a{color:var(--accent)}
 .canvas-bar ul{margin:0;padding:0;list-style:none;display:grid;gap:.15rem}
 .canvas-bar-error{background:var(--coral-top);color:var(--coral-ink)}
 .canvas-bar-test{background:var(--mint-top);color:var(--mint-ink)}
-.canvas-bar-saved{background:var(--stone-top);color:var(--stone-ink)}
+.rule-saved{font-size:.8125rem;color:var(--muted);animation:saved-note 3s var(--ease) both}
+@keyframes saved-note{0%{opacity:0}8%{opacity:1}80%{opacity:1}100%{opacity:0}}
+@media (prefers-reduced-motion:reduce){.rule-saved{animation:none}}
 /* The canvas: the remaining height, never under 60vh; with the drawer open it may shrink to 30vh so the two fit. */
 .rule-editor>.rule-canvas{position:relative;flex:1;min-height:60vh;background:var(--surface);border:1px solid var(--line);border-radius:var(--r-card);overflow:hidden}
 .rule-editor.drawer-open>.rule-canvas{min-height:30vh}
@@ -548,12 +550,12 @@ a{color:var(--accent)}
 .rule-controls-gap{width:1px;background:var(--line);margin:4px 3px}
 .rule-edge-panel{background:var(--surface);border:1px solid var(--muted);border-radius:var(--r-input);padding:.5rem .7rem;margin:12px;min-width:18rem;animation:row-form-in var(--dur) var(--ease-in) both}
 .rule-edge-panel .picker-label{font-size:.6875rem;color:var(--muted)}
-.canvas-empty{display:grid;justify-items:start;gap:.75rem;padding:1.5rem 0;max-width:420px}
+.canvas-empty{display:grid;justify-items:start;gap:.75rem;padding:1.5rem 0}
 .canvas-empty .iso-scene{width:96px;max-width:96px}
 .canvas-empty p{margin:0}
-/* The run log drawer: a 44px bar that opens to 40 percent of the editor with the list scrolling inside. */
+/* The run log drawer: a 44px bar that opens to its content, at most 35 percent of the editor, with the list scrolling inside. */
 .run-log{display:flex;flex-direction:column;min-height:0;background:var(--surface);border:1px solid var(--line);border-radius:var(--r-card)}
-.rule-editor>.run-log.open{flex:0 0 40%}
+.rule-editor>.run-log.open{flex:0 1 auto;max-height:35%}
 .run-log-bar{display:flex;align-items:center;gap:.75rem;width:100%;height:44px;padding:0 .9rem;background:none;border:0;border-radius:var(--r-card);font:inherit;color:inherit;cursor:pointer;text-align:left;transition:background var(--dur) var(--ease)}
 .run-log-bar:hover{background:var(--bg)}
 .run-log.open .run-log-bar{border-radius:var(--r-card) var(--r-card) 0 0}
@@ -561,7 +563,7 @@ a{color:var(--accent)}
 .run-log-bar .mono{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .run-log-caret{flex:none;color:var(--muted);transition:transform var(--dur) var(--ease)}
 .run-log.open .run-log-caret{transform:rotate(180deg)}
-.run-log-panel{flex:1;min-height:0;overflow:auto;border-top:1px solid var(--line)}
+.run-log-panel{flex:0 1 auto;min-height:0;overflow:auto;border-top:1px solid var(--line)}
 .run-log-panel .settings-list{border:0;border-radius:0}
 .run-log-panel .skeleton,.run-log-panel>.muted{margin:.75rem .9rem}
 .run-row .row-id{gap:.9rem}
@@ -590,3 +592,6 @@ a{color:var(--accent)}
   .rule-controls{margin-bottom:calc(12px + 3.5rem)}
   .rule-canvas .react-flow__panel.rule-canvas-hint{margin-bottom:calc(64px + 3.5rem)}
 }
+
+/* Vertical rhythm: a view's blocks are spaced by its own stack, so a block after the empty state never sits flush under its buttons. */
+.view>.empty+*{margin-top:2rem}

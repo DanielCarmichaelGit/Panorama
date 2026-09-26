@@ -351,11 +351,11 @@ describe("Schedule node", () => {
     fireEvent.click(within(node).getByRole("button", { name: "Repeats" }));
     fireEvent.click(await screen.findByRole("option", { name: "Every week" }));
     await waitFor(() => expect(nodeEl("schedule")?.querySelector(".rnode-title")?.textContent).toBe("Every Monday at 09:00, Europe/London"));
-    fireEvent.click(within(nodeEl("schedule")!).getByRole("button", { name: "Weekday" }));
+    fireEvent.click(await waitFor(() => within(nodeEl("schedule")!).getByRole("button", { name: "Weekday" })));
     fireEvent.click(await screen.findByRole("option", { name: "Friday" }));
     await waitFor(() => expect(nodeEl("schedule")?.querySelector(".rnode-title")?.textContent).toBe("Every Friday at 09:00, Europe/London"));
 
-    fireEvent.click(within(nodeEl("schedule")!).getByRole("button", { name: "Missed runs" }));
+    fireEvent.click(await waitFor(() => within(nodeEl("schedule")!).getByRole("button", { name: "Missed runs" })));
     fireEvent.click(await screen.findByRole("option", { name: "Skip" }));
     await waitFor(() => expect(within(nodeEl("schedule")!).getByRole("button", { name: "Missed runs" }).textContent).toBe("Skip"));
   });

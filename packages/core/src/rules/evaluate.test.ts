@@ -260,10 +260,10 @@ describe("evaluateRule", () => {
       { type: "add_comment", body: "BOOM-7 Fix the \\<b\\>login\\</b\\> bug entered Eval on ticket.moved {{unknown}} BOOM-7" },
     ]);
   });
-  it("renders the title template of create_ticket the same way", () => {
+  it("renders the title template of create_ticket as plain text: a title is not markdown, so nothing is escaped", () => {
     const r = rule({ actions: [{ type: "create_ticket", title: "Retest {{ticket.key}}: {{ticket.title}}", laneId: "l_ready", tagIds: ["tag_bug"] }] });
-    expect(evaluateRule(r, moved, ctx({ ticket: { ...ctx().ticket, title: "*bold* move" } }))).toEqual([
-      { type: "create_ticket", title: "Retest BOOM-7: \\*bold\\* move", laneId: "l_ready", tagIds: ["tag_bug"] },
+    expect(evaluateRule(r, moved, ctx({ ticket: { ...ctx().ticket, title: "*bold* <move>" } }))).toEqual([
+      { type: "create_ticket", title: "Retest BOOM-7: *bold* <move>", laneId: "l_ready", tagIds: ["tag_bug"] },
     ]);
   });
   it("refuses a condition nested deeper than the cap rather than evaluating it", () => {
@@ -284,6 +284,11 @@ describe("renderTemplate", () => {
   it("backslash-escapes markdown specials in substituted values only, leaving the template alone", () => {
     const out = renderTemplate("<b>{{ticket.title}}</b> & {{lane.name}}", { ticket: { key: "K", title: `Tom & "Jerry" <'x'>` }, lane: { name: "A<B" }, event: { type: "e" } });
     expect(out).toBe("<b>Tom & \"Jerry\" \\<'x'\\></b> & A\\<B");
+  });
+  it("substitutes values verbatim when asked not to escape, for plain-text targets like a title", () => {
+    const scope = { ticket: { key: "K", title: "*bold* [x]" }, lane: { name: "A<B" }, event: { type: "e" } };
+    expect(renderTemplate("{{ticket.title}} in {{lane.name}}", scope, { escape: false })).toBe("*bold* [x] in A<B");
+    expect(renderTemplate("{{ticket.title}} in {{lane.name}}", scope, { escape: true })).toBe(renderTemplate("{{ticket.title}} in {{lane.name}}", scope));
   });
   it("escapes every special the renderer could read as structure", () => {
     expect(escapeMarkdown("*bold* _it_ `code` # h [l](u) a|b \\ <b>")).toBe("\\*bold\\* \\_it\\_ \\`code\\` \\# h \\[l\\](u) a\\|b \\\\ \\<b\\>");

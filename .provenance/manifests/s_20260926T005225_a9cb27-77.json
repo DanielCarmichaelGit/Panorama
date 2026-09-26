@@ -1,0 +1,27 @@
+{
+  "sessionId": "s_20260926T005225_a9cb27",
+  "actor": "Daniel Carmichael",
+  "tool": "cli",
+  "intent": "milestone 3 final wave server",
+  "head": "8023fc53f4005519c706291a28325e5adfa5d0edcd174c05813b882cdc5ae2ba",
+  "count": 77,
+  "diffHash": "c880dbefe197b9a58d1159f9f84fdcf9f53e9ea50b05b16cc50e2e29c41f3ddc",
+  "files": [
+    "README.md",
+    "apps/server/src/changed.ts",
+    "apps/server/src/engine/install.ts",
+    "apps/server/src/engine/runRules.ts",
+    "apps/server/src/main.ts",
+    "apps/server/src/rules.test.ts",
+    "apps/server/src/services/tickets.ts",
+    "apps/server/src/workers/outbox.test.ts",
+    "apps/server/src/workers/outbox.ts",
+    "apps/server/src/workers/scheduler.test.ts",
+    "apps/server/src/workers/scheduler.ts",
+    "docs/superpowers/specs/2026-09-24-automation-design.md",
+    "packages/core/src/rules/evaluate.test.ts",
+    "packages/core/src/rules/evaluate.ts"
+  ],
+  "base": "d07b570d51c213e5bb4a0460467a9e6ac981691b",
+  "ts": "2026-09-26T01:43:35.910Z"
+}

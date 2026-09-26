@@ -203,6 +203,14 @@ describe("outbox worker", () => {
     await refused("http://100.64.0.1/x");
     await refused("http://172.16.0.1/x");
     await refused("http://224.0.0.1/x");
+    await refused("http://192.0.0.1/x");
+    await refused("http://198.18.0.1/x");
+    await refused("http://198.19.255.254/x");
+    // 6to4 carries an IPv4 address in its second and third groups; it is judged by that address.
+    await refused("http://[2002:7f00:1::1]/x");
+    await refused("http://[2002:a00:1::]/x");
+    await refused("http://[2002:c0a8:101::1]/x");
+    await allowed("http://[2002:808:808::1]/x");
     expect((await checkWebhookUrl("http://user:pw@8.8.8.8/x", { allowPrivate: false })).ok).toBe(false);
     expect((await checkWebhookUrl("http://user:pw@8.8.8.8/x", { allowPrivate: true })).ok).toBe(false);
     await allowed("http://[::ffff:8.8.8.8]/x");
@@ -225,6 +233,26 @@ describe("outbox worker", () => {
     expect(d.getOutboxItem(w.db(), item.id)!.lastError).toMatch(/deadline/);
     expect(d.getOutboxItem(w.db(), fast.id)!.deliveredAt).not.toBeNull();
     expect(trickle.hits()).toBe(1);
+  });
+
+  it("takes at most five rows per destination per tick, in turns, so a dead destination cannot hold the rest", async () => {
+    const w = await world();
+    const dead = await fakeDestination(); servers.push(dead); dead.status.code = 500;
+    const deadDest = d.createDestination(w.db(), { projectId: w.project.id, name: "Dead", url: dead.url, secret: w.secret }, w.clock.now.toISOString());
+    for (let i = 0; i < 12; i++) enqueueNotification(w.db(), deadDest.id, w.event.seq, { n: i }, w.clock.now.toISOString());
+    const live = [w.enqueue(), w.enqueue(), w.enqueue()];
+    await w.worker.tick();
+    expect(w.dest.received).toHaveLength(3);
+    expect(dead.received).toHaveLength(5);
+    for (const item of live) expect(d.getOutboxItem(w.db(), item.id)!.deliveredAt).not.toBeNull();
+    const rows = d.dueOutbox(w.db(), "9999-01-01T00:00:00.000Z").filter((r) => r.destinationId === deadDest.id);
+    expect(rows.filter((r) => r.attempts === 1)).toHaveLength(5);
+    expect(rows.filter((r) => r.attempts === 0)).toHaveLength(7);
+    // The next tick takes the next five of the untouched rows, oldest due first.
+    w.clock.now = new Date(w.clock.now.getTime() + 1000);
+    await w.worker.tick();
+    expect(dead.received).toHaveLength(10);
+    expect(d.dueOutbox(w.db(), "9999-01-01T00:00:00.000Z").filter((r) => r.destinationId === deadDest.id && r.attempts === 0)).toHaveLength(2);
   });
 
   it("does nothing while locked", async () => {

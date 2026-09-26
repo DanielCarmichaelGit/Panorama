@@ -53,6 +53,24 @@ describe("destinations", () => {
     expect(JSON.stringify(d.listEvents(w.db()))).not.toContain(created.json.secret);
   });
 
+  it("logs the name and the url's host on create and only the changed keys on update, never the full url", async () => {
+    const w = await world();
+    const created = (await w.s.human("POST", "/api/v1/destinations", { projectId: w.project.id, name: "Slack", url: "https://hooks.example.com/services/T0/secretpath?token=abc" })).json;
+    expect(created.status ?? 200).toBe(200);
+    const events = () => d.listEvents(w.db());
+    expect(events().find((e) => e.type === "destination.created")!.payload).toEqual({ id: created.id, projectId: w.project.id, name: "Slack", host: "hooks.example.com" });
+
+    expect((await w.s.human("PATCH", `/api/v1/destinations/${created.id}`, { name: "Slack", url: "https://other.example.com:8443/v2/path?x=1" })).status).toBe(200);
+    expect((await w.s.human("PATCH", `/api/v1/destinations/${created.id}`, { name: "Bridge", archived: true })).status).toBe(200);
+    const updated = events().filter((e) => e.type === "destination.updated").map((e) => e.payload);
+    expect(updated).toEqual([
+      { id: created.id, projectId: w.project.id, changed: ["url"], host: "other.example.com:8443" },
+      { id: created.id, projectId: w.project.id, changed: ["name", "archived"], name: "Bridge", archived: true },
+    ]);
+    const text = JSON.stringify(events());
+    for (const leak of ["secretpath", "token=abc", "/services", "/v2/path", "x=1"]) expect(text).not.toContain(leak);
+  });
+
   it("keeps names unique per project among live destinations, and refuses urls that carry credentials", async () => {
     const w = await world();
     const first = await w.s.human("POST", "/api/v1/destinations", { projectId: w.project.id, name: "Slack", url: "https://example.com/a" });

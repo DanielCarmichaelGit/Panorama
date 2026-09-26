@@ -1,0 +1,17 @@
+{
+  "sessionId": "s_20260926T005225_a9cb27",
+  "actor": "Daniel Carmichael",
+  "tool": "cli",
+  "intent": "milestone 3 final wave server",
+  "head": "f1b4f7cbeb180386c41304ff2d975d0309f711feef1288c5a0dc530bfb096bca",
+  "count": 38,
+  "diffHash": "f28063044233a2679fc1eb39fa54da2848b1edf61c0f443a725c7cf32f2f2f48",
+  "files": [
+    "apps/server/src/destinations.test.ts",
+    "apps/server/src/engine/runRules.ts",
+    "apps/server/src/routes/destinations.ts",
+    "apps/server/src/rules.test.ts"
+  ],
+  "base": "64ee767e789d5403254b46b319960b10881d28dc",
+  "ts": "2026-09-26T01:34:49.932Z"
+}

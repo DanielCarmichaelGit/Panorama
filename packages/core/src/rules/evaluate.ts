@@ -170,12 +170,14 @@ export interface TemplateScope {
 }
 
 /** Fills `{{ticket.key}}`, `{{ticket.title}}`, `{{lane.name}}` and `{{event.type}}`; any
- *  other placeholder is left as written. Substituted values are escaped so a title cannot
- *  smuggle markdown structure into a system comment or a created ticket's title. */
-export function renderTemplate(body: string, scope: TemplateScope): string {
+ *  other placeholder is left as written. Substituted values are escaped by default so a title
+ *  cannot smuggle markdown structure into a system comment; a plain-text target such as a
+ *  created ticket's title asks for `escape: false` and gets the values verbatim. */
+export function renderTemplate(body: string, scope: TemplateScope, opts: { escape?: boolean } = {}): string {
+  const escape = opts.escape ?? true;
   return body.replace(/\{\{\s*(ticket\.key|ticket\.title|lane\.name|event\.type)\s*\}\}/g, (_, path: string) => {
     const value = path === "ticket.key" ? scope.ticket.key : path === "ticket.title" ? scope.ticket.title : path === "lane.name" ? scope.lane.name : scope.event.type;
-    return escapeMarkdown(value);
+    return escape ? escapeMarkdown(value) : value;
   });
 }
 
@@ -193,7 +195,8 @@ export function evaluateRule(rule: Rule, event: EngineEvent, ctx: RuleContext): 
   for (const { when, ...action } of rule.actions) {
     if (when && !when.every((c) => evaluateCondition(c, ctx))) continue;
     if (action.type === "add_comment") out.push({ ...action, body: renderTemplate(action.body, scope) });
-    else if (action.type === "create_ticket") out.push({ ...action, title: renderTemplate(action.title, scope) });
+    // A ticket title is plain text, not markdown: no escaping, or the backslashes would show.
+    else if (action.type === "create_ticket") out.push({ ...action, title: renderTemplate(action.title, scope, { escape: false }) });
     else out.push(action);
   }
   return out;

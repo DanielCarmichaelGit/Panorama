@@ -1,9 +1,24 @@
-import { describe, expect, it, vi } from "vitest";
+import { createServer } from "node:http";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { verifyChain } from "@boomerang/core";
-import { dueOutbox, getActor, listEvents, listTriggers } from "@boomerang/db";
+import { dueOutbox, getActor, listEvents, listTriggers, updateTrigger } from "@boomerang/db";
+import { workerHook } from "./engine/install";
 import { MAX_CREATED, runRules } from "./engine/runRules";
 import { agentIn, client, setupApp } from "./test/helpers";
+import { MAX_ATTEMPTS, OutboxWorker } from "./workers/outbox";
 import { Scheduler } from "./workers/scheduler";
+
+/** A destination on a port of its own that always answers `status`, counting the hits. */
+function fakeDestination(status: number): Promise<{ url: string; hits: () => number; close: () => Promise<void> }> {
+  let hits = 0;
+  const server = createServer((req, res) => { hits += 1; req.resume(); req.on("end", () => { res.statusCode = status; res.end(); }); });
+  return new Promise((resolve) => server.listen(0, "127.0.0.1", () => {
+    const { port } = server.address() as { port: number };
+    resolve({ url: `http://127.0.0.1:${port}/hook`, hits: () => hits, close: () => new Promise((r) => server.close(() => r())) });
+  }));
+}
+const servers: { close: () => Promise<void> }[] = [];
+afterEach(async () => { for (const s of servers.splice(0)) await s.close(); });
 
 // The rule engine and the rules routes (milestone 3, task 4). Rules are created through the
 // canvas so the tests exercise the same serialiser the Automations view will: one event node,
@@ -26,9 +41,9 @@ function canvas(event: Record<string, unknown>, conditions: Record<string, unkno
   });
   return { nodes, edges };
 }
-const scheduled = (cron: string, action: Record<string, unknown>) => ({
+const scheduled = (cron: string, action: Record<string, unknown>, missed?: string) => ({
   nodes: [
-    { id: "s", kind: "schedule", position: at, data: { cron, timezone: "UTC" } },
+    { id: "s", kind: "schedule", position: at, data: { cron, timezone: "UTC", ...(missed ? { missed } : {}) } },
     { id: "a0", kind: "action", position: at, data: action },
   ],
   edges: [{ id: "s-a0", source: "s", target: "a0" }],
@@ -221,6 +236,71 @@ describe("rule engine", () => {
     const last = w.events().filter((e) => e.type === "rule.fired").at(-1)!;
     expect(last.payload).toMatchObject({ ruleId: r.id, outcome: "skipped", reason: "budget" });
     expect(verifyChain(w.events()).ok).toBe(true);
+  });
+
+  it("gives each root event its own budget: a first event that spends its budget does not silence the second", async () => {
+    const w = await world();
+    const ready = w.lane("Ready").id;
+    const r = await w.rule("Breed", { type: "ticket.created" }, [], [{ type: "create_ticket", title: "Child of {{ticket.key}}", laneId: ready }, { type: "create_ticket", title: "Twin of {{ticket.key}}", laneId: ready }], false);
+    const a = (await w.human("POST", "/api/v1/tickets", { projectId: w.project.id, title: "Root A" })).json;
+    const b = (await w.human("POST", "/api/v1/tickets", { projectId: w.project.id, title: "Root B" })).json;
+    expect((await w.human("PATCH", `/api/v1/rules/${r.id}`, { enabled: true })).status).toBe(200);
+    const roots = w.events().filter((e) => e.type === "ticket.created");
+    expect(roots).toHaveLength(2);
+    // One call with both root events, the way a scheduler tick hands its events over.
+    runRules(w.app.ctx, roots);
+    const tickets = (await w.human("GET", `/api/v1/tickets?projectId=${w.project.id}`)).json;
+    expect(tickets).toHaveLength(2 + 2 * MAX_CREATED);
+    const runs = await w.runs(r.id);
+    expect(runs.filter((x: any) => x.outcome === "applied")).toHaveLength(MAX_CREATED);
+    expect(runs.filter((x: any) => x.outcome === "skipped").map((x: any) => x.detail.reason)).toEqual(["budget", "budget"]);
+    expect((await w.ticket(a.id)).flags).toEqual(["needs_human"]);
+    expect((await w.ticket(b.id)).flags).toEqual(["needs_human"]);
+    expect(verifyChain(w.events()).ok).toBe(true);
+  });
+
+  it("does not let one fire exceed the created-ticket budget: a fire that would pass it is skipped whole", async () => {
+    const w = await world();
+    const ready = w.lane("Ready").id;
+    const creates = ["One", "Two", "Three"].map((n) => ({ type: "create_ticket", title: `${n} of {{ticket.key}}`, laneId: ready }));
+    const r = await w.rule("Triplets", { type: "ticket.created" }, [], creates);
+    await w.human("POST", "/api/v1/tickets", { projectId: w.project.id, title: "Root" });
+    // Six fires make 18; a seventh would make 21, past MAX_CREATED, so it does not start.
+    const fires = Math.floor(MAX_CREATED / 3);
+    const tickets = (await w.human("GET", `/api/v1/tickets?projectId=${w.project.id}`)).json;
+    expect(tickets).toHaveLength(1 + fires * 3);
+    const runs = await w.runs(r.id);
+    expect(runs.filter((x: any) => x.outcome === "applied")).toHaveLength(fires);
+    expect(runs.filter((x: any) => x.outcome === "skipped").map((x: any) => x.detail.reason)).toEqual(["budget"]);
+  });
+
+  it("creates a ticket from a plain-text title template, truncated to the title limit", async () => {
+    const w = await world();
+    const long = "*bold* " + "x".repeat(193);
+    expect(long).toHaveLength(200);
+    const r = await w.rule("Retest", { type: "ticket.created" }, [{ kind: "title", op: "is", value: long }], [{ type: "create_ticket", title: "Retest {{ticket.title}}", laneId: w.lane("Ready").id }]);
+    await w.human("POST", "/api/v1/tickets", { projectId: w.project.id, title: long });
+    const all = (await w.human("GET", `/api/v1/tickets?projectId=${w.project.id}`)).json;
+    const made = all.find((t: any) => t.key === "PAN-2");
+    expect(made.title).toHaveLength(200);
+    expect(made.title.startsWith("Retest *bold* xxx")).toBe(true);
+    expect(made.title).not.toContain("\\");
+    expect((await w.runs(r.id)).map((x: any) => x.outcome)).toEqual(["applied"]);
+  });
+
+  it("appends no ticket.updated when nothing changes: add_tag of a tag the ticket already carries, or a patch that repeats a value", async () => {
+    const w = await world();
+    const tag = (await w.human("POST", "/api/v1/tags", { projectId: w.project.id, name: "auto", family: "sky" })).json;
+    const r = await w.rule("Tag it", { type: "ticket.created" }, [], [{ type: "add_tag", tagId: tag.id }]);
+    const t = (await w.human("POST", "/api/v1/tickets", { projectId: w.project.id, title: "Already tagged", tagIds: [tag.id] })).json;
+    expect((await w.ticket(t.id)).tagIds).toEqual([tag.id]);
+    expect((await w.runs(r.id)).map((x: any) => x.outcome)).toEqual(["applied"]);
+    expect(w.events().filter((e) => e.type === "ticket.updated")).toEqual([]);
+    const before = w.events().length;
+    const res = await w.human("PATCH", `/api/v1/tickets/${t.id}`, { tagIds: [tag.id] });
+    expect(res.status).toBe(200);
+    expect(res.json).toMatchObject({ id: t.id, tagIds: [tag.id] });
+    expect(w.events().length).toBe(before);
   });
 
   it("does not move a ticket past a gate: the run is refused, the ticket is blocked, and a system comment says why", async () => {
@@ -455,6 +535,38 @@ describe("rule engine with the workers", () => {
     expect((await w.runs(r.id)).map((x: any) => [x.outcome, x.ticketId, x.detail.code])).toEqual([["error", null, "no_ticket"]]);
   });
 
+  it("lets a run_all catch-up fire every occurrence: a schedule fire is keyed by scheduledFor, not held to the per-minute window", async () => {
+    const w = await world();
+    const r = (await w.human("POST", "/api/v1/rules", { projectId: w.project.id, name: "Every minute", enabled: true, canvas: scheduled("* * * * *", { type: "create_ticket", title: "Tick", laneId: w.lane("Ready").id }, "run_all") })).json;
+    expect(r.event.missed).toBe("run_all");
+    const [t] = listTriggers(w.app.ctx.db!, { ruleId: r.id });
+    updateTrigger(w.app.ctx.db!, t.id, { nextRunAt: "2030-01-01T10:00:00.000Z" });
+    const clock = new Date("2030-01-01T10:10:30.000Z");
+    new Scheduler(w.app.ctx, { now: () => clock, log: () => {}, onEvents: (_db, evs) => void runRules(w.app.ctx, evs) }).tick();
+    const fired = w.events().filter((e) => e.type === "trigger.fired");
+    expect(fired).toHaveLength(11);
+    const runs = await w.runs(r.id);
+    expect(runs.map((x: any) => x.outcome)).toEqual(Array(11).fill("applied"));
+    expect((await w.human("GET", `/api/v1/tickets?projectId=${w.project.id}`)).json).toHaveLength(11);
+  });
+
+  it("publishes each fire's events after the worker's own through workerHook, and a fire that errored does not cost an earlier one", async () => {
+    const w = await world();
+    const make = (await w.human("POST", "/api/v1/rules", { projectId: w.project.id, name: "Make", enabled: true, canvas: scheduled("* * * * *", { type: "create_ticket", title: "Made", laneId: w.lane("Ready").id }) })).json;
+    const nowhere = (await w.human("POST", "/api/v1/rules", { projectId: w.project.id, name: "Nowhere", enabled: true, canvas: scheduled("* * * * *", { type: "move_to_lane", laneId: w.lane("Eval").id }) })).json;
+    const next = listTriggers(w.app.ctx.db!).map((t) => Date.parse(t.nextRunAt!));
+    const clock = new Date(Math.max(...next) + 1000);
+    const seen: string[] = [];
+    const unsubscribe = w.app.ctx.bus.subscribe((e: any) => seen.push(e.type));
+    new Scheduler(w.app.ctx, { now: () => clock, log: () => {}, onEvents: workerHook(w.app.ctx, { log: () => {} }) }).tick();
+    await new Promise((r) => setTimeout(r, 0));
+    unsubscribe();
+    expect(seen.slice(0, 2)).toEqual(["trigger.fired", "trigger.fired"]);
+    expect([...seen.slice(2)].sort()).toEqual(["rule.fired", "rule.fired", "ticket.created"]);
+    expect((await w.runs(make.id)).map((x: any) => x.outcome)).toEqual(["applied"]);
+    expect((await w.runs(nowhere.id)).map((x: any) => [x.outcome, x.detail.code])).toEqual([["error", "no_ticket"]]);
+  });
+
   it("refuses a schedule croner rejects, naming the schedule node", async () => {
     const w = await world();
     const res = await w.human("POST", "/api/v1/rules", { projectId: w.project.id, name: "Never", enabled: true, canvas: scheduled("99 * * * *", { type: "set_flag", flag: "blocked" }) });
@@ -483,5 +595,27 @@ describe("rule engine with the workers", () => {
     expect((await w.runs(r.id)).map((x: any) => [x.outcome, x.detail.code])).toEqual([["refused", "destination_archived"], ["applied", undefined]]);
     const refused = w.events().filter((e) => e.type === "rule.fired").at(-1)!;
     expect(refused.payload).toMatchObject({ ruleId: r.id, outcome: "refused", code: "destination_archived" });
+  });
+
+  it("names the ticket on an engine-enqueued delivery, so one that gives up flags it needs_human", async () => {
+    const w = await world();
+    const dead = await fakeDestination(500); servers.push(dead);
+    const dest = (await w.human("POST", "/api/v1/destinations", { projectId: w.project.id, name: "Dead", url: dead.url })).json;
+    await w.rule("Tell ops", { type: "ticket.created" }, [], [{ type: "emit_webhook", destinationId: dest.id }]);
+    const t = (await w.human("POST", "/api/v1/tickets", { projectId: w.project.id, title: "Notify me" })).json;
+    const [row] = dueOutbox(w.app.ctx.db!, FAR);
+    expect(row.payload).toMatchObject({ ticketId: t.id, projectId: w.project.id, ticket: { id: t.id } });
+
+    const clock = { now: new Date() };
+    const worker = new OutboxWorker(w.app.ctx, { now: () => clock.now, allowPrivate: true, log: () => {} });
+    for (let i = 0; i < MAX_ATTEMPTS; i++) {
+      await worker.tick();
+      clock.now = new Date(clock.now.getTime() + 24 * 3_600_000);
+    }
+    expect(dead.hits()).toBe(MAX_ATTEMPTS);
+    const failed = w.events().find((e) => e.type === "webhook.failed")!;
+    expect(failed.payload).toMatchObject({ outboxId: row.id, destinationId: dest.id, projectId: w.project.id, ticketId: t.id, attempts: MAX_ATTEMPTS });
+    expect((await w.ticket(t.id)).flags).toEqual(["needs_human"]);
+    expect(w.events().filter((e) => e.type === "ticket.flag_set").map((e) => e.payload)).toEqual([{ id: t.id, projectId: w.project.id, flag: "needs_human", cause: "webhook" }]);
   });
 });

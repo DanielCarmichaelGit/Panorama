@@ -1,9 +1,23 @@
-import { describe, expect, it, vi } from "vitest";
+import { createServer } from "node:http";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { verifyChain } from "@boomerang/core";
 import { dueOutbox, getActor, listEvents, listTriggers } from "@boomerang/db";
 import { MAX_CREATED, runRules } from "./engine/runRules";
 import { agentIn, client, setupApp } from "./test/helpers";
+import { MAX_ATTEMPTS, OutboxWorker } from "./workers/outbox";
 import { Scheduler } from "./workers/scheduler";
+
+/** A destination on a port of its own that always answers `status`, counting the hits. */
+function fakeDestination(status: number): Promise<{ url: string; hits: () => number; close: () => Promise<void> }> {
+  let hits = 0;
+  const server = createServer((req, res) => { hits += 1; req.resume(); req.on("end", () => { res.statusCode = status; res.end(); }); });
+  return new Promise((resolve) => server.listen(0, "127.0.0.1", () => {
+    const { port } = server.address() as { port: number };
+    resolve({ url: `http://127.0.0.1:${port}/hook`, hits: () => hits, close: () => new Promise((r) => server.close(() => r())) });
+  }));
+}
+const servers: { close: () => Promise<void> }[] = [];
+afterEach(async () => { for (const s of servers.splice(0)) await s.close(); });
 
 // The rule engine and the rules routes (milestone 3, task 4). Rules are created through the
 // canvas so the tests exercise the same serialiser the Automations view will: one event node,
@@ -221,6 +235,42 @@ describe("rule engine", () => {
     const last = w.events().filter((e) => e.type === "rule.fired").at(-1)!;
     expect(last.payload).toMatchObject({ ruleId: r.id, outcome: "skipped", reason: "budget" });
     expect(verifyChain(w.events()).ok).toBe(true);
+  });
+
+  it("gives each root event its own budget: a first event that spends its budget does not silence the second", async () => {
+    const w = await world();
+    const ready = w.lane("Ready").id;
+    const r = await w.rule("Breed", { type: "ticket.created" }, [], [{ type: "create_ticket", title: "Child of {{ticket.key}}", laneId: ready }, { type: "create_ticket", title: "Twin of {{ticket.key}}", laneId: ready }], false);
+    const a = (await w.human("POST", "/api/v1/tickets", { projectId: w.project.id, title: "Root A" })).json;
+    const b = (await w.human("POST", "/api/v1/tickets", { projectId: w.project.id, title: "Root B" })).json;
+    expect((await w.human("PATCH", `/api/v1/rules/${r.id}`, { enabled: true })).status).toBe(200);
+    const roots = w.events().filter((e) => e.type === "ticket.created");
+    expect(roots).toHaveLength(2);
+    // One call with both root events, the way a scheduler tick hands its events over.
+    runRules(w.app.ctx, roots);
+    const tickets = (await w.human("GET", `/api/v1/tickets?projectId=${w.project.id}`)).json;
+    expect(tickets).toHaveLength(2 + 2 * MAX_CREATED);
+    const runs = await w.runs(r.id);
+    expect(runs.filter((x: any) => x.outcome === "applied")).toHaveLength(MAX_CREATED);
+    expect(runs.filter((x: any) => x.outcome === "skipped").map((x: any) => x.detail.reason)).toEqual(["budget", "budget"]);
+    expect((await w.ticket(a.id)).flags).toEqual(["needs_human"]);
+    expect((await w.ticket(b.id)).flags).toEqual(["needs_human"]);
+    expect(verifyChain(w.events()).ok).toBe(true);
+  });
+
+  it("does not let one fire exceed the created-ticket budget: a fire that would pass it is skipped whole", async () => {
+    const w = await world();
+    const ready = w.lane("Ready").id;
+    const creates = ["One", "Two", "Three"].map((n) => ({ type: "create_ticket", title: `${n} of {{ticket.key}}`, laneId: ready }));
+    const r = await w.rule("Triplets", { type: "ticket.created" }, [], creates);
+    await w.human("POST", "/api/v1/tickets", { projectId: w.project.id, title: "Root" });
+    // Six fires make 18; a seventh would make 21, past MAX_CREATED, so it does not start.
+    const fires = Math.floor(MAX_CREATED / 3);
+    const tickets = (await w.human("GET", `/api/v1/tickets?projectId=${w.project.id}`)).json;
+    expect(tickets).toHaveLength(1 + fires * 3);
+    const runs = await w.runs(r.id);
+    expect(runs.filter((x: any) => x.outcome === "applied")).toHaveLength(fires);
+    expect(runs.filter((x: any) => x.outcome === "skipped").map((x: any) => x.detail.reason)).toEqual(["budget"]);
   });
 
   it("does not move a ticket past a gate: the run is refused, the ticket is blocked, and a system comment says why", async () => {
@@ -483,5 +533,27 @@ describe("rule engine with the workers", () => {
     expect((await w.runs(r.id)).map((x: any) => [x.outcome, x.detail.code])).toEqual([["refused", "destination_archived"], ["applied", undefined]]);
     const refused = w.events().filter((e) => e.type === "rule.fired").at(-1)!;
     expect(refused.payload).toMatchObject({ ruleId: r.id, outcome: "refused", code: "destination_archived" });
+  });
+
+  it("names the ticket on an engine-enqueued delivery, so one that gives up flags it needs_human", async () => {
+    const w = await world();
+    const dead = await fakeDestination(500); servers.push(dead);
+    const dest = (await w.human("POST", "/api/v1/destinations", { projectId: w.project.id, name: "Dead", url: dead.url })).json;
+    await w.rule("Tell ops", { type: "ticket.created" }, [], [{ type: "emit_webhook", destinationId: dest.id }]);
+    const t = (await w.human("POST", "/api/v1/tickets", { projectId: w.project.id, title: "Notify me" })).json;
+    const [row] = dueOutbox(w.app.ctx.db!, FAR);
+    expect(row.payload).toMatchObject({ ticketId: t.id, projectId: w.project.id, ticket: { id: t.id } });
+
+    const clock = { now: new Date() };
+    const worker = new OutboxWorker(w.app.ctx, { now: () => clock.now, allowPrivate: true, log: () => {} });
+    for (let i = 0; i < MAX_ATTEMPTS; i++) {
+      await worker.tick();
+      clock.now = new Date(clock.now.getTime() + 24 * 3_600_000);
+    }
+    expect(dead.hits()).toBe(MAX_ATTEMPTS);
+    const failed = w.events().find((e) => e.type === "webhook.failed")!;
+    expect(failed.payload).toMatchObject({ outboxId: row.id, destinationId: dest.id, projectId: w.project.id, ticketId: t.id, attempts: MAX_ATTEMPTS });
+    expect((await w.ticket(t.id)).flags).toEqual(["needs_human"]);
+    expect(w.events().filter((e) => e.type === "ticket.flag_set").map((e) => e.payload)).toEqual([{ id: t.id, projectId: w.project.id, flag: "needs_human", cause: "webhook" }]);
   });
 });

@@ -22,9 +22,11 @@ import { ENGINE_ACTOR_ID, ensureEngineActor } from "./actor";
  * commit together, and a failing action rolls the whole fire back before a second, smaller
  * transaction records why (refused at a gate, or error). Events a fire produces are queued
  * and evaluated in turn, carrying the causal chain the loop guard reads: at most 8 fires deep,
- * one fire per rule per ticket per chain, and a rolling per-minute cap on top. One call also
- * has a budget, MAX_FIRES fires and MAX_CREATED created tickets, so a rule that fans out
- * through create_ticket cannot run away inside the depth limit. A rule whose conditions do
+ * one fire per rule per ticket per chain, and a rolling per-minute cap on top. Each root
+ * event handed in also has a budget, MAX_FIRES fires and MAX_CREATED created tickets, shared
+ * by the chain it starts, so a rule that fans out through create_ticket cannot run away
+ * inside the depth limit; a root that spends its budget drops the rest of its own chain and
+ * nothing else, so one scheduler tick's other events still run. A rule whose conditions do
  * not hold records nothing; a guard or budget refusal records a skipped run, a rule.fired,
  * and flags needs_human. Each fire's committed events reach the caller's sink as that fire
  * completes, so a failure later in the queue cannot cost the stream what already happened.
@@ -33,7 +35,7 @@ import { ENGINE_ACTOR_ID, ensureEngineActor } from "./actor";
 /** What an event a rule caused carries so the chain can be followed back to the fire. */
 export interface RuleCause { ruleId: string; runId: string; eventSeq: number }
 
-/** Fires one runRules call may make before it stops its queue, and tickets it may create. */
+/** Fires one root event's chain may make before the engine stops it, and tickets it may create. */
 export const MAX_FIRES = 50;
 export const MAX_CREATED = 20;
 
@@ -44,8 +46,10 @@ export interface RunOptions {
   log?: (message: string, error: unknown) => void;
 }
 
-interface Queued { event: ChainEvent; chain: CausedBy[]; rootTicketId: string | undefined }
-interface Budget { fires: number; created: number }
+interface Queued { event: ChainEvent; chain: CausedBy[]; rootTicketId: string | undefined; budget: Budget }
+/** One root event's allowance, shared by every fire in the chain it starts. Once spent, the
+ *  rest of that chain is dropped; other roots in the same call keep their own. */
+interface Budget { fires: number; created: number; exhausted: boolean }
 
 const guards = new WeakMap<Ctx, LoopGuard>();
 /** One guard per server, kept off the Ctx type so the engine adds nothing to context.ts. */
@@ -102,11 +106,10 @@ export function runRules(ctx: Ctx, events: ChainEvent[], opts: RunOptions = {}):
     produced.push(...out);
     opts.sink?.(out);
   };
-  const budget: Budget = { fires: 0, created: 0 };
-  const queue: Queued[] = events.map((event) => ({ event, chain: [], rootTicketId: ticketIdOf(event) }));
+  const queue: Queued[] = events.map((event) => ({ event, chain: [], rootTicketId: ticketIdOf(event), budget: { fires: 0, created: 0, exhausted: false } }));
   while (queue.length) {
-    const { event, chain, rootTicketId } = queue.shift()!;
-    if (event.type === "rule.fired") continue;
+    const { event, chain, rootTicketId, budget } = queue.shift()!;
+    if (budget.exhausted || event.type === "rule.fired") continue;
     const projectId = str(payloadOf(event).projectId);
     if (!projectId) continue;
     const rules = listRules(db, projectId, { enabledOnly: true });
@@ -126,11 +129,11 @@ export function runRules(ctx: Ctx, events: ChainEvent[], opts: RunOptions = {}):
       }
       emit(out);
       const link: CausedBy = { ruleId: rule.id, ticketId: ticketIdOf(event) ?? "" };
-      for (const e of out) {
-        if (e.type === "ticket.created") budget.created += 1;
-        queue.push({ event: e, chain: [...chain, link], rootTicketId });
+      for (const e of out) queue.push({ event: e, chain: [...chain, link], rootTicketId, budget });
+      if (exhausted) {
+        budget.exhausted = true;
+        break;
       }
-      if (exhausted) return produced;
     }
   }
   return produced;
@@ -169,7 +172,9 @@ function fire(ctx: Ctx, db: DB, rule: Rule, event: ChainEvent, chain: CausedBy[]
   const actions = evaluateRule(rule, asEngineEvent(event, chain), ruleContext(db, ticket, actorKindOf(db, event.actorId)));
   if (actions.length === 0) return { out, exhausted: false };
 
-  if (budget.fires >= MAX_FIRES || budget.created >= MAX_CREATED) {
+  // A fire is all or nothing, so one whose creates would pass the budget does not start.
+  const creates = actions.filter((a) => a.type === "create_ticket").length;
+  if (budget.fires >= MAX_FIRES || budget.created + creates > MAX_CREATED) {
     db.transaction(() => {
       fired("skipped", { reason: "budget", actions });
       flagForHuman(liveTicket(db, rootTicketId));
@@ -187,12 +192,13 @@ function fire(ctx: Ctx, db: DB, rule: Rule, event: ChainEvent, chain: CausedBy[]
   }
 
   budget.fires += 1;
+  const createdBefore = budget.created;
   let failed: { action: Action; index: number; error: unknown } | undefined;
   try {
     db.transaction(() => {
       actions.forEach((action, index) => {
         try {
-          applyAction(acting, rule, action, liveTicket(db, ticketId), event);
+          applyAction(acting, rule, action, liveTicket(db, ticketId), event, budget);
         } catch (error) {
           failed = { action, index, error };
           throw error;
@@ -201,8 +207,10 @@ function fire(ctx: Ctx, db: DB, rule: Rule, event: ChainEvent, chain: CausedBy[]
       fired("applied", { actions });
     })();
   } catch (error) {
-    // The fire rolled back: nothing it appended exists any more, only what follows does.
+    // The fire rolled back: nothing it appended exists any more, only what follows does, and
+    // the tickets it counted were never created.
     out.length = 0;
+    budget.created = createdBefore;
     const f = failed ?? { action: actions[0], index: 0, error };
     db.transaction(() => recordFailure(acting, rule, actions, f, liveTicket(db, ticketId), fired))();
   }
@@ -264,8 +272,9 @@ const needTicket = (t: Ticket | undefined, what: string): Ticket => {
 };
 
 /** One action through the same path a request takes. Anything a route would refuse, this
- *  refuses the same way, and the HttpError becomes the run's outcome. */
-function applyAction(a: Acting, rule: Rule, action: Action, ticket: Ticket | undefined, event: ChainEvent): void {
+ *  refuses the same way, and the HttpError becomes the run's outcome. A created ticket is
+ *  counted against the root event's budget here, as it happens. */
+function applyAction(a: Acting, rule: Rule, action: Action, ticket: Ticket | undefined, event: ChainEvent, budget: Budget): void {
   const { db } = a;
   switch (action.type) {
     case "move_to_lane":
@@ -311,8 +320,9 @@ function applyAction(a: Acting, rule: Rule, action: Action, ticket: Ticket | und
       if (dest && dest.projectId !== rule.projectId) throw new HttpError(400, "wrong_project", "That destination belongs to another project");
       try {
         // Written in the same transaction as the fire, through the outbox's own door (task 5);
-        // its worker signs and delivers it.
-        enqueueNotification(db, action.destinationId, event.seq, { event: { seq: event.seq, type: event.type, payload: event.payload, createdAt: event.createdAt }, ticket: ticket ?? null, ruleId: rule.id }, a.now());
+        // its worker signs and delivers it. The top-level ticketId is what the worker reads
+        // when a delivery gives up, so the ticket it flags is this one.
+        enqueueNotification(db, action.destinationId, event.seq, { ticketId: ticket?.id ?? null, projectId: rule.projectId, event: { seq: event.seq, type: event.type, payload: event.payload, createdAt: event.createdAt }, ticket: ticket ?? null, ruleId: rule.id }, a.now());
       } catch (e) {
         const code = (e as Error).message;
         if (code === "no_destination") throw new HttpError(422, code, "That destination no longer exists", { destinationId: action.destinationId });
@@ -322,6 +332,10 @@ function applyAction(a: Acting, rule: Rule, action: Action, ticket: Ticket | und
       return;
     }
     case "create_ticket":
+      // The fire checked its creates fit before it started; this is the count as it happens,
+      // so no fire, however many creates it carries, can pass MAX_CREATED.
+      if (budget.created >= MAX_CREATED) throw new HttpError(422, "budget", `This event's chain has already created ${MAX_CREATED} tickets`);
+      budget.created += 1;
       createTicketAs(a, { projectId: rule.projectId, title: action.title, laneId: action.laneId, ...(action.boardId ? { boardId: action.boardId } : {}), ...(action.epicId ? { epicId: action.epicId } : {}), ...(action.tagIds ? { tagIds: action.tagIds } : {}) });
       return;
     case "start_timer":

@@ -15,9 +15,13 @@ import { makeLog } from "./common";
 // returned exactly once (on create and on rotate), and never listed; at rest it is sealed under
 // the server's key when encryption is on (workers/secrets.ts). The url's scheme is checked here;
 // where it points is checked at send time by the outbox worker, so a name that later resolves
-// somewhere private is refused then.
+// somewhere private is refused then. The chain never carries a url: agents in scope read the
+// stream, and a webhook url's path or query may itself be a token, so an event names the
+// host alone.
 
 const parseUrl = (u: string): URL | null => { try { return new URL(u); } catch { return null; } };
+/** What an event records of a url: the host (with its port), never path, query or userinfo. */
+const hostOf = (u: string): string => new URL(u).host;
 const url = z.string().max(2000)
   .refine((u) => /^https?:$/.test(parseUrl(u)?.protocol ?? ""), "an http or https url")
   .refine((u) => { const p = parseUrl(u); return !!p && !p.username && !p.password; }, "a url without credentials")
@@ -56,7 +60,7 @@ export function destinationRoutes(app: FastifyInstance, ctx: Ctx): void {
     return db.transaction(() => {
       requireFreeName(db, input.projectId, input.name);
       const d = createDestination(db, { ...input, secret: sealSecret(ctx.fileKey, secret) }, iso());
-      log(db, req, "destination.created", { id: d.id, projectId: d.projectId, name: d.name, url: d.url });
+      log(db, req, "destination.created", { id: d.id, projectId: d.projectId, name: d.name, host: hostOf(d.url) });
       return { ...d, secret };
     })();
   });
@@ -69,7 +73,13 @@ export function destinationRoutes(app: FastifyInstance, ctx: Ctx): void {
       const live = patch.archived === undefined ? !d.archived : !patch.archived;
       if (live && (patch.name !== undefined || patch.archived === false)) requireFreeName(db, d.projectId, patch.name ?? d.name, d.id);
       const out = updateDestination(db, d.id, patch);
-      log(db, req, "destination.updated", { id: d.id, projectId: d.projectId, changed: changedKeys(d, patch), patch });
+      // Only what changed, and of a url only its host.
+      const changed = changedKeys(d, patch);
+      const noted: Record<string, unknown> = {};
+      if (changed.includes("name")) noted.name = out.name;
+      if (changed.includes("url")) noted.host = hostOf(out.url);
+      if (changed.includes("archived")) noted.archived = out.archived;
+      log(db, req, "destination.updated", { id: d.id, projectId: d.projectId, changed, ...noted });
       return out;
     })();
   });

@@ -9,6 +9,7 @@ import {
   type Connection,
   type Edge,
   type EdgeChange,
+  type FitViewOptions,
   type NodeChange,
 } from "@xyflow/react";
 import "@xyflow/react/dist/base.css";
@@ -19,7 +20,8 @@ import { isPickerOpen, isTypingTarget } from "../../lib/keys";
 import { Picker } from "../Picker";
 import { CanvasContext, nodeTypes, type CanvasOptions, type RuleNode } from "./nodes";
 import { buildNode, newId, placeNear, reducer, type CanvasAction, type CanvasState } from "./store";
-import { KIND_FAMILY, KIND_KEY, KIND_LABEL, actionSentence, conditionSentence, eventSentence, scheduleSentence, type Names } from "./vocab";
+import { scheduleTitle } from "./schedule";
+import { KIND_FAMILY, KIND_KEY, KIND_LABEL, actionSentence, conditionSentence, eventSentence, type Names } from "./vocab";
 
 /**
  * The rule canvas on React Flow: the four custom nodes, smooth step edges, a grid in the
@@ -38,13 +40,21 @@ export interface RuleCanvasProps {
   lit: Set<string>;
   /** Else edges the last test run passed through (their synthesised node matched). */
   litEdges?: Set<string>;
-  /** Shown beside the palette while the rule is only its event node. */
-  hint?: boolean;
+  /** Condition nodes whose else branch the last test run took. */
+  elseTaken?: Set<string>;
 }
 
 const DRAG_TYPE = "application/x-boomerang-node";
 const SNAP: [number, number] = [8, 8];
-const FIT = { padding: 0.25, maxZoom: 1 };
+/** The palette rail sits on the right edge of the canvas, so a fit leaves that edge clear. */
+const FIT: FitViewOptions = { padding: { top: "24px", right: "168px", bottom: "64px", left: "24px" }, maxZoom: 1 };
+const EMPTY_SET: Set<string> = new Set();
+/** Where focus goes after a delete when no node is left: the canvas itself. */
+const ROOT = "__root__";
+
+/** A node id inside an attribute selector; ids are free text from the API. */
+const esc = (s: string): string => (typeof CSS !== "undefined" && typeof CSS.escape === "function" ? CSS.escape(s) : s.replace(/["\\]/g, "\\$&"));
+const nodeSelector = (id: string) => `.react-flow__node[data-id="${esc(id)}"]`;
 
 function titleOf(kind: CanvasNodeKind, data: Record<string, unknown>, names: Names): string {
   switch (kind) {
@@ -55,7 +65,7 @@ function titleOf(kind: CanvasNodeKind, data: Record<string, unknown>, names: Nam
     case "action":
       return actionSentence(data, names);
     case "schedule":
-      return scheduleSentence(data);
+      return scheduleTitle(data);
   }
 }
 
@@ -67,7 +77,7 @@ function controlsOf(node: HTMLElement): HTMLElement[] {
 /** Phones start at half zoom and pan: a whole rule fitted at the 0.3 floor is not readable. */
 const isPhone = () => typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia("(max-width: 720px)").matches;
 
-function Flow({ state, dispatch, options, names, errors, lit, litEdges, hint }: RuleCanvasProps) {
+function Flow({ state, dispatch, options, names, errors, lit, litEdges, elseTaken }: RuleCanvasProps) {
   const { screenToFlowPosition, zoomIn, zoomOut, fitView } = useReactFlow();
   const rootRef = useRef<HTMLDivElement>(null);
   const focusNext = useRef<string | null>(null);
@@ -95,14 +105,15 @@ function Flow({ state, dispatch, options, names, errors, lit, litEdges, hint }: 
         type: "smoothstep",
         label: e.label === "else" ? "else" : undefined,
         selected: state.selectedEdges.includes(e.id),
-        className: [e.label === "else" ? "edge-else" : "", litEdges?.has(e.id) ? "is-lit" : ""].filter(Boolean).join(" ") || undefined,
+        // An edge lights when the test run passed along it: both ends matched, or its else branch was taken.
+        className: [e.label === "else" ? "edge-else" : "", litEdges?.has(e.id) || (lit.has(e.source) && lit.has(e.target)) ? "is-lit" : ""].filter(Boolean).join(" ") || undefined,
       })),
-    [state.edges, state.selectedEdges, litEdges],
+    [state.edges, state.selectedEdges, litEdges, lit],
   );
 
   const context = useMemo(
-    () => ({ options, names, errors, lit, setData: (id: string, data: Record<string, unknown>) => dispatch({ type: "setData", id, data }) }),
-    [options, names, errors, lit, dispatch],
+    () => ({ options, names, errors, lit, elseTaken: elseTaken ?? EMPTY_SET, setData: (id: string, data: Record<string, unknown>) => dispatch({ type: "setData", id, data }) }),
+    [options, names, errors, lit, elseTaken, dispatch],
   );
 
   const onNodesChange = useCallback((changes: NodeChange[]) => dispatch({ type: "nodesChange", changes }), [dispatch]);
@@ -119,6 +130,28 @@ function Flow({ state, dispatch, options, names, errors, lit, litEdges, hint }: 
     timers.current.push(t);
   }, []);
   useEffect(() => () => timers.current.forEach((t) => window.clearTimeout(t)), []);
+
+  // The canvas takes the height the editor leaves it, which changes when the run log drawer
+  // opens or the window resizes; the drawing fits again a moment later (not on a phone, where a
+  // whole rule fitted is too small to read).
+  useEffect(() => {
+    const el = rootRef.current;
+    if (!el || phone || typeof ResizeObserver === "undefined") return;
+    let last = { w: el.clientWidth, h: el.clientHeight };
+    let timer: number | undefined;
+    const ro = new ResizeObserver(() => {
+      const next = { w: el.clientWidth, h: el.clientHeight };
+      if (next.w === last.w && next.h === last.h) return;
+      last = next;
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => fitView({ ...FIT, duration: 150 }), 60);
+    });
+    ro.observe(el);
+    return () => {
+      ro.disconnect();
+      window.clearTimeout(timer);
+    };
+  }, [phone, fitView]);
 
   // Two quick key presses can arrive before React re-renders, so placement reads the latest
   // drawing through a ref rather than the render's closure.
@@ -140,15 +173,21 @@ function Flow({ state, dispatch, options, names, errors, lit, litEdges, hint }: 
   );
 
   // A node added from the keyboard or the palette takes focus once it is on the canvas, so
-  // Enter opens its first Picker and Tab carries on from it. React Flow draws a new node a
-  // render after it arrives in props, so the lookup retries over a few frames.
+  // Enter opens its first Picker and Tab carries on from it (and after a delete, the node that
+  // takes over). React Flow draws a new node a render after it arrives in props, so the lookup
+  // retries over a few frames.
   useEffect(() => {
     if (!focusNext.current) return;
+    if (focusNext.current === ROOT) {
+      focusNext.current = null;
+      rootRef.current?.focus();
+      return;
+    }
     let tries = 0;
     const attempt = () => {
       const id = focusNext.current;
       if (!id) return;
-      const el = rootRef.current?.querySelector<HTMLElement>(`.react-flow__node[data-id="${id}"]`);
+      const el = rootRef.current?.querySelector<HTMLElement>(nodeSelector(id));
       if (el) {
         focusNext.current = null;
         el.focus();
@@ -203,7 +242,7 @@ function Flow({ state, dispatch, options, names, errors, lit, litEdges, hint }: 
     if (mod || e.altKey) return;
     if (e.key === "Delete" || e.key === "Backspace") {
       e.preventDefault();
-      dispatch({ type: "removeSelection" });
+      removeAt(onNode ? node.dataset.id : undefined);
       return;
     }
     if (onNode && e.key === "Enter") {
@@ -231,11 +270,31 @@ function Flow({ state, dispatch, options, names, errors, lit, litEdges, hint }: 
       const start = stateRef.current.nodes.find((n) => n.kind === "event" || n.kind === "schedule");
       if (start) {
         dispatch({ type: "select", nodeIds: [start.id] });
-        rootRef.current?.querySelector<HTMLElement>(`.react-flow__node[data-id="${start.id}"]`)?.focus();
+        rootRef.current?.querySelector<HTMLElement>(nodeSelector(start.id))?.focus();
         return;
       }
     }
     addKind(kind);
+  }
+
+  /**
+   * Delete: the selection goes, or, when nothing is selected, the node that has focus (focus is
+   * not selection; Tab reaches a node without selecting it). Focus then moves to the node before
+   * the first one removed, else the one after, else the canvas, so the keyboard keeps its place
+   * and Ctrl+Z still has somewhere to land.
+   */
+  function removeAt(focusedId: string | undefined) {
+    const s = stateRef.current;
+    const hasSelection = s.selectedNodes.length > 0 || s.selectedEdges.length > 0;
+    const nodeIds = hasSelection ? s.selectedNodes : focusedId ? [focusedId] : [];
+    if (!nodeIds.length && !hasSelection) return;
+    const gone = new Set(nodeIds);
+    const order = s.nodes.map((n) => n.id);
+    const first = order.findIndex((id) => gone.has(id));
+    if (!hasSelection) dispatch({ type: "select", nodeIds });
+    dispatch({ type: "removeSelection" });
+    if (first < 0) return;
+    focusNext.current = order.slice(0, first).reverse().find((id) => !gone.has(id)) ?? order.slice(first + 1).find((id) => !gone.has(id)) ?? ROOT;
   }
 
   function onDrop(e: React.DragEvent) {
@@ -294,7 +353,7 @@ function Flow({ state, dispatch, options, names, errors, lit, litEdges, hint }: 
           edgesFocusable
         >
           <Background variant={BackgroundVariant.Lines} gap={32} lineWidth={1} className="rule-grid" />
-          <Panel position="top-right" className="rule-palette">
+          <Panel position="top-right" className="rule-palette" aria-label="Add a node">
             <span className="rule-palette-title">Add</span>
             {CANVAS_NODE_KINDS.map((kind) => (
               <button
@@ -312,8 +371,13 @@ function Flow({ state, dispatch, options, names, errors, lit, litEdges, hint }: 
                 <kbd>{KIND_KEY[kind]}</kbd> {KIND_LABEL[kind]}
               </button>
             ))}
-            {(hint ?? onlyEvent) && <p className="rule-palette-hint muted">Press c to add a condition, a to add an action</p>}
+            <p className="rule-palette-hint muted">Press e, c, a or s</p>
           </Panel>
+          {onlyEvent && (
+            <Panel position="bottom-center" className="rule-canvas-hint">
+              <p className="muted">Press c to add a condition, a to add an action</p>
+            </Panel>
+          )}
           <Panel position="bottom-left" className="rule-controls">
             <button type="button" className="icon-btn" aria-label="Zoom in" title="Zoom in" onClick={() => zoomIn()}>
               <MagnifyingGlassPlus size={16} weight="regular" aria-hidden="true" />

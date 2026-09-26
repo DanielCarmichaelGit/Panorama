@@ -321,11 +321,6 @@ export function eventSentence(data: Record<string, unknown>, names: Names): stri
   }
 }
 
-/** The schedule node's title: the cron in words and its timezone ("Every weekday at 09:00, Europe/London"). */
-export function scheduleSentence(data: Record<string, unknown>): string {
-  return scheduleTitle(data);
-}
-
 /** The fields `ticket.updated` can name, as people read them; the id is the key the event carries. The Picker also takes a typed key. */
 export const CHANGED_OPTIONS = [
   { id: "title", label: "Title" },
@@ -387,6 +382,6 @@ function nodeTitle(node: { kind: CanvasNodeKind; data: Record<string, unknown> }
     node.kind === "event" ? (node.data.type ? eventSentence(node.data, names) : "") :
     node.kind === "condition" ? (node.data.kind ? conditionSentence(node.data, names) : "") :
     node.kind === "action" ? (node.data.type ? actionSentence(node.data, names) : "") :
-    node.data.cron ? scheduleSentence(node.data) : "";
+    node.data.cron ? scheduleTitle(node.data) : "";
   return t ? ` (${t})` : "";
 }

@@ -78,6 +78,8 @@ describe("DestinationsTab", () => {
     expect(within(panel).getByText("a".repeat(64)).classList.contains("mono")).toBe(true);
     expect(within(panel).getByText("Shown once. Store it in the receiver now.")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
+    // The keyboard lands on Copy, the one thing to do with a secret shown once.
+    expect(document.activeElement).toBe(within(panel).getByRole("button", { name: "Copy" }));
 
     const writeText = vi.fn(() => Promise.resolve());
     Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
@@ -102,6 +104,7 @@ describe("DestinationsTab", () => {
     await waitFor(() => expect(calls.some((c) => c.path === "/api/v1/destinations/d1/rotate")).toBe(true));
     const panel = await screen.findByRole("region", { name: "Secret for Slack relay" });
     expect(within(panel).getByText("b".repeat(64))).toBeTruthy();
+    expect(document.activeElement).toBe(within(panel).getByRole("button", { name: "Copy" }));
     fireEvent.click(within(panel).getByRole("button", { name: "Done" }));
     expect(screen.queryByText("b".repeat(64))).toBeNull();
   });
@@ -116,6 +119,9 @@ describe("DestinationsTab", () => {
     fireEvent.click(row("Slack relay").getByRole("button", { name: "Archive", exact: true }));
     await waitFor(() => expect(calls.some((c) => c.method === "PATCH")).toBe(true));
     expect(calls[0]).toEqual({ method: "PATCH", path: "/api/v1/destinations/d1", body: { archived: true } });
+    // The confirmation is gone; focus comes back to the row's actions rather than dropping to the page.
+    await waitFor(() => expect(row("Slack relay").queryByText("Archive Slack relay?")).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(row("Slack relay").getByRole("button", { name: "Edit" })));
 
     fireEvent.click(row("Old relay").getByRole("button", { name: "Restore" }));
     await waitFor(() => expect(calls.length).toBe(2));
@@ -166,6 +172,18 @@ describe("DestinationsTab", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     expect((await screen.findByRole("alert")).textContent).toBe("The url must start with http or https and carry no username or password.");
+  });
+
+  it("names the field the server's validation refusal is about", async () => {
+    mockApi(() => Promise.reject(new ApiError(400, "validation", "Invalid request", [{ path: ["name"], message: "String must contain at most 80 character(s)" }])));
+    renderTab();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Add destination" }));
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Pager" } });
+    fireEvent.change(screen.getByLabelText("Url"), { target: { value: "https://pager.example.com/in" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect((await screen.findByRole("alert")).textContent).toBe("The name is 1 to 80 characters.");
   });
 
   it("shows the empty state when there are no destinations", async () => {

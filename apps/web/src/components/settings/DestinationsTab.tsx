@@ -9,22 +9,36 @@ import { tabState } from "./tabState";
 
 const NEW = "new";
 
-/** The url rule the server applies, in words, for the validation refusal its zod schema answers with. */
+/** The rules the server applies, in words, for the validation refusal its zod schema answers with; the issue's path says which field. */
 const URL_RULE = "The url must start with http or https and carry no username or password.";
+const NAME_RULE = "The name is 1 to 80 characters.";
 
 function writeError(e: unknown, fallback: string): string {
-  if (e instanceof ApiError && e.code === "validation") return URL_RULE;
+  if (e instanceof ApiError && e.code === "validation") {
+    const issues = Array.isArray(e.details) ? (e.details as { path?: unknown }[]) : [];
+    const about = (field: string) => issues.some((i) => Array.isArray(i.path) && i.path.includes(field));
+    const lines = [about("name") ? NAME_RULE : "", about("url") ? URL_RULE : ""].filter(Boolean);
+    return lines.length ? lines.join(" ") : URL_RULE;
+  }
   return errorMessage(e, fallback);
 }
 
 const looksLikeUrl = (u: string) => /^https?:\/\/\S+$/i.test(u.trim());
 
-/** A secret shown once, with a Copy button and Done. Copy uses the clipboard when the browser allows it, else selects the text so a keyboard copy takes it. */
+/**
+ * A secret shown once, with a Copy button and Done. Copy uses the clipboard when the browser
+ * allows it, else selects the text so a keyboard copy takes it. Focus lands on Copy when the
+ * panel opens: it is the one thing to do with a secret shown once.
+ */
 function SecretPanel({ name, secret, onDone }: { name: string; secret: string; onDone: () => void }) {
   const [copied, setCopied] = useState(false);
   const codeRef = useRef<HTMLElement>(null);
+  const copyRef = useRef<HTMLButtonElement>(null);
   const timer = useRef<number | undefined>(undefined);
   useEffect(() => () => window.clearTimeout(timer.current), []);
+  useEffect(() => {
+    copyRef.current?.focus();
+  }, []);
 
   function select() {
     const el = codeRef.current;
@@ -64,7 +78,7 @@ function SecretPanel({ name, secret, onDone }: { name: string; secret: string; o
     <section className="secret-panel" aria-label={`Secret for ${name}`}>
       <div className="secret-line">
         <code ref={codeRef} className="mono secret-value" onClick={select}>{secret}</code>
-        <button type="button" className="btn ghost small" onClick={copy}>{copied ? "Copied" : "Copy"}</button>
+        <button ref={copyRef} type="button" className="btn ghost small" onClick={copy}>{copied ? "Copied" : "Copy"}</button>
       </div>
       <p className="muted">Shown once. Store it in the receiver now.</p>
       <div className="row-form-actions">
@@ -157,6 +171,19 @@ function DestinationRow({
   const d = destination;
   const idle = !expanded && pending === null && !secret;
 
+  // Once an inline confirmation or the secret panel is gone, focus comes back to the row's
+  // actions rather than dropping to the page.
+  const rowRef = useRef<HTMLLIElement>(null);
+  const returnFocus = useRef(false);
+  const hadSecret = useRef(!!secret);
+  useEffect(() => {
+    const secretClosed = hadSecret.current && !secret;
+    hadSecret.current = !!secret;
+    if (!(returnFocus.current && pending === null) && !secretClosed) return;
+    returnFocus.current = false;
+    rowRef.current?.querySelector<HTMLElement>(".row-actions button:not(:disabled)")?.focus();
+  }, [pending, secret]);
+
   function start(next: Pending) {
     update.reset();
     rotate.reset();
@@ -175,6 +202,7 @@ function DestinationRow({
 
   return (
     <SettingsRow
+      ref={rowRef}
       expanded={expanded || pending !== null || !!secret}
       identity={<span className="row-name">{d.name}</span>}
       facts={
@@ -217,8 +245,14 @@ function DestinationRow({
           note="Pending deliveries to it stop. Rules that name it keep it until you pick another."
           action="Archive"
           busy={update.isPending}
-          onConfirm={() => update.mutate({ id: d.id, patch: { archived: true } }, { onSettled: () => setPending(null) })}
-          onCancel={() => setPending(null)}
+          onConfirm={() => {
+            returnFocus.current = true;
+            update.mutate({ id: d.id, patch: { archived: true } }, { onSettled: () => setPending(null) });
+          }}
+          onCancel={() => {
+            returnFocus.current = true;
+            setPending(null);
+          }}
         />
       )}
       {secret && <SecretPanel name={d.name} secret={secret} onDone={onSecretDone} />}

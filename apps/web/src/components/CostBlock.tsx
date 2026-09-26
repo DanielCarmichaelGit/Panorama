@@ -1,11 +1,8 @@
+import { when } from "../lib/format";
 import { useTicketMetrics } from "../lib/hooks";
 import { costText, estimateTitle, formatDuration, formatTokens, hasFigures } from "../lib/metrics";
 import { FigureSpans } from "./Figures";
 import { SettingsList, SettingsRow } from "./settings/primitives";
-
-function when(iso: string): string {
-  return new Date(iso).toLocaleString();
-}
 
 /**
  * The ticket panel's Cost block: what the ticket has cost so far, as the server measured and

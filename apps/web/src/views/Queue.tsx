@@ -5,7 +5,7 @@ import type { Lane, Project } from "@boomerang/core";
 import { BoomerangScene } from "../lib/iso";
 import { useAgents, useBoards, useEpics, useProjectMetrics, useQueue, useTags, useTickets } from "../lib/hooks";
 import { isTypingTarget } from "../lib/keys";
-import { PERIODS, periodFrom, usePeriod } from "../lib/metrics";
+import { PERIODS, emptyFiguresNote, hasFigures, periodFrom, usePeriod } from "../lib/metrics";
 import { FigureSpans } from "../components/Figures";
 import { Picker } from "../components/Picker";
 import { TicketRow } from "../components/TicketRow";
@@ -15,7 +15,8 @@ import { PresenceStrip, presenceLine } from "../components/PresenceStrip";
 /**
  * The quiet figures row under the Queue's title: the period (This week by default, kept in the
  * URL as `?period=`) and the project's time, tokens and estimated cost for it. The figures wait
- * for the rollup rather than showing zeros that would then jump.
+ * for the rollup rather than showing zeros that would then jump, and a period with nothing in
+ * it says so in words.
  */
 function QueueFigures({ projectId }: { projectId: string }) {
   const [period, setPeriod] = usePeriod();
@@ -30,7 +31,7 @@ function QueueFigures({ projectId }: { projectId: string }) {
         value={period}
         onChange={(id) => setPeriod(periodFrom(id))}
       />
-      {metrics.data && <FigureSpans figures={metrics.data.total} priceDate={metrics.data.priceDate} />}
+      {metrics.data && (hasFigures(metrics.data.total) ? <FigureSpans figures={metrics.data.total} priceDate={metrics.data.priceDate} /> : <span className="muted figures-empty">{emptyFiguresNote(period)}</span>)}
     </div>
   );
 }

@@ -58,6 +58,8 @@ test("the owner's pipeline rule, drawn by keyboard, runs on the demo agent's tic
   await page.getByRole("button", { name: "New rule" }).first().click();
   await expect(page.getByRole("region", { name: "New rule" })).toBeVisible();
   await page.getByLabel("Rule name").fill("Pipeline");
+  await expect(page.getByText("Press c to add a condition, a to add an action")).toBeVisible();
+  await page.screenshot({ path: "shots-final-2/automations-draft-1280.png" });
 
   const canvas = page.getByRole("application", { name: "Rule canvas" });
   const node = (kind: "event" | "condition" | "action") => canvas.locator(`.react-flow__node:has(.rnode-${kind})`);
@@ -135,16 +137,29 @@ test("the owner's pipeline rule, drawn by keyboard, runs on the demo agent's tic
   await expect(node("condition")).toBeFocused();
   await expect(node("condition").locator(".rnode-title")).toHaveText("Evidence Eval score passed");
 
-  // Saving a draft lands on the saved rule's own address (the editor remounts under it, so
-  // the "Saved." bar is not the thing to wait for); the list shows it enabled.
+  // Saving a draft lands on the saved rule's own address, with the "Saved." bar still up
+  // (the editor remounts under the new id and brings the bar with it); the list shows it enabled.
   await page.getByRole("button", { name: "Save" }).click();
   await expect(page).toHaveURL(/\/automations\/(?!new$)[^/]+$/);
   await expect(page.getByRole("region", { name: "Pipeline" })).toBeVisible();
+  await expect(page.getByRole("status")).toContainText("Saved.");
   await expect(page.getByRole("button", { name: "Save" })).toBeDisabled();
   const ruleUrl = page.url();
   const ruleId = ruleUrl.slice(ruleUrl.lastIndexOf("/") + 1);
   await expect(page.getByRole("switch", { name: "Pipeline enabled" })).toHaveAttribute("aria-checked", "true");
+  // The run log is a drawer under the canvas, closed until asked; it stays open for the session.
+  const drawer = page.getByRole("button", { name: /^Runs/ });
+  await expect(drawer).toHaveAttribute("aria-expanded", "false");
+  await expect(drawer).toContainText("Not fired yet");
+  await drawer.click();
   await expect(page.getByRole("list", { name: "Runs" })).toContainText("This rule has not fired yet.");
+  // The canvas shrank for the drawer, so the drawing fits again: no node sits under the zoom controls.
+  await expect(async () => {
+    const first = await node("event").boundingBox();
+    const controls = await canvas.locator(".rule-controls").boundingBox();
+    expect(first && controls && first.y + first.height <= controls.y).toBe(true);
+  }).toPass({ timeout: 5_000 });
+  await page.screenshot({ path: "shots-final-2/automations-rule-drawer-1280.png" });
 
   // The demo agent over MCP, with the owner's stream open to see the rule fire. The agent
   // moves its ticket into Eval with a passing eval score on it; the rule takes it from there.
@@ -202,7 +217,19 @@ test("the owner's pipeline rule, drawn by keyboard, runs on the demo agent's tic
   await expect(page.getByRole("status")).toContainText("Matched PIPELINE-1. Nothing was written.");
   await expect(page.getByRole("status")).toContainText("Would move to Ready for Production");
   await expect(canvas.locator(".rnode.is-lit")).toHaveCount(3);
+  await expect(canvas.locator(".react-flow__edge.is-lit")).toHaveCount(2);
+  await expect(drawer).toContainText(/Last fired .*, 1 run$/);
   const after = (await human.call("GET", "/api/v1/chain/verify")).json;
   expect(after.seq).toBe(before.seq);
   expect(after.head).toBe(before.head);
+  await page.screenshot({ path: "shots-final-2/automations-test-1280.png" });
+
+  // The same three states on a phone: the pieces stack and the palette is a strip over the canvas.
+  await page.setViewportSize({ width: 375, height: 800 });
+  await expect(canvas.locator(".rnode.is-lit")).toHaveCount(3);
+  await page.screenshot({ path: "shots-final-2/automations-test-375.png", fullPage: true });
+  await page.getByRole("button", { name: "New rule" }).first().click();
+  await expect(page.getByRole("region", { name: "New rule" })).toBeVisible();
+  await expect(page.getByText("Press c to add a condition, a to add an action")).toBeVisible();
+  await page.screenshot({ path: "shots-final-2/automations-draft-375.png", fullPage: true });
 });

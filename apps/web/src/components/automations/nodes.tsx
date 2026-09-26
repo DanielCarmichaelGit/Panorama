@@ -1,10 +1,12 @@
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { Handle, Position, type NodeProps, type Node } from "@xyflow/react";
+import { Clock, Funnel, Lightning, Play, type Icon } from "@phosphor-icons/react";
 import type { Actor, Board, CanvasNodeKind, Epic, EvidenceType, FieldDefinition, Lane, Tag } from "@boomerang/core";
 import { Picker, type PickerOption } from "../Picker";
 import type { Destination } from "../../lib/hooks";
-import { DEFAULT_FIELDS, HOUR_OPTIONS, MISSED_OPTIONS, REPEAT_OPTIONS, WEEKDAY_OPTIONS, buildCron, describeCron, parseCron, timezoneOptions, type Repeat, type ScheduleFields } from "./schedule";
+import { useConfirmLeave } from "../../lib/unsaved";
+import { DEFAULT_FIELDS, HOUR_OPTIONS, MISSED_OPTIONS, REPEAT_OPTIONS, WEEKDAY_OPTIONS, buildCron, describeCron, parseCron, scheduleTitle, timezoneOptions, type Repeat, type ScheduleFields } from "./schedule";
 import {
   ACTION_OPTIONS,
   ACTOR_OPTIONS,
@@ -18,7 +20,6 @@ import {
   conditionSentence,
   eventSentence,
   opsFor,
-  scheduleSentence,
   type Names,
 } from "./vocab";
 
@@ -51,6 +52,8 @@ export interface CanvasContextValue {
   errors: Map<string, string>;
   /** Nodes the last test run matched. */
   lit: Set<string>;
+  /** Condition nodes whose else branch the last test run took: not matched, but on the path. */
+  elseTaken: Set<string>;
 }
 
 export const EMPTY_OPTIONS: CanvasOptions = { lanes: [], boards: [], epics: [], tags: [], actors: [], evidenceTypes: [], fields: [], destinations: [], flags: ["needs_human"] };
@@ -70,7 +73,7 @@ export function namesFrom(o: CanvasOptions): Names {
   };
 }
 
-export const CanvasContext = createContext<CanvasContextValue>({ options: EMPTY_OPTIONS, names: namesFrom(EMPTY_OPTIONS), setData: () => {}, errors: new Map(), lit: new Set() });
+export const CanvasContext = createContext<CanvasContextValue>({ options: EMPTY_OPTIONS, names: namesFrom(EMPTY_OPTIONS), setData: () => {}, errors: new Map(), lit: new Set(), elseTaken: new Set() });
 
 export type RuleNodeData = { values: Record<string, unknown> };
 export type RuleNode = Node<RuleNodeData, CanvasNodeKind>;
@@ -113,20 +116,34 @@ function createFlag(text: string): PickerOption {
   return { id: name, label: name };
 }
 
+/** The glyph on each kind's header strip: a bolt for When, a funnel for If, play for Then, a clock for Every. */
+const KIND_ICON: Record<CanvasNodeKind, Icon> = { event: Lightning, condition: Funnel, action: Play, schedule: Clock };
+
 function Card({ id, kind, title, children }: { id: string; kind: CanvasNodeKind; title: string; children: React.ReactNode }) {
-  const { errors, lit } = useContext(CanvasContext);
+  const Glyph = KIND_ICON[kind];
+  const { errors, lit, elseTaken } = useContext(CanvasContext);
   const error = errors.get(id);
-  const cls = ["rnode", `rnode-${kind}`, error ? "has-error" : "", lit.has(id) ? "is-lit" : ""].filter(Boolean).join(" ");
+  // A condition whose else branch ran did not match; it says so in words rather than lighting up.
+  const elseRan = kind === "condition" && elseTaken.has(id);
+  const cls = ["rnode", `rnode-${kind}`, error ? "has-error" : "", lit.has(id) && !elseRan ? "is-lit" : ""].filter(Boolean).join(" ");
   return (
     <div className={cls} data-kind={kind} data-node-id={id}>
-      <span className="rnode-band" aria-hidden="true" />
+      {/* The header strip in the family's top colour is the drag handle; the title sits in the body under it. */}
       <div className="rnode-head">
+        <Glyph size={14} weight="regular" aria-hidden="true" />
         <span className="rnode-kind">{KIND_LABEL[kind]}</span>
-        <span className="rnode-title">{title}</span>
       </div>
-      {/* nokey keeps React Flow's own key handling (arrows nudge, Enter selects) off the controls inside. */}
-      <div className="rnode-body nodrag nowheel nokey">{children}</div>
-      {error && <p className="rnode-error">{error}</p>}
+      {/*
+        nokey keeps React Flow's own key handling (arrows nudge, Enter selects, Escape deselects)
+        off the controls inside. A Picker's popover is portalled out of the node, so its keys
+        bubble here through the React tree without the class; they stop here for the same reason.
+      */}
+      <div className="rnode-body nodrag nowheel nokey" onKeyDown={(e) => { if ((e.target as HTMLElement).closest(".picker-popover")) e.stopPropagation(); }}>
+        <span className="rnode-title">{title}</span>
+        {children}
+        {error && <p className="rnode-error">{error}</p>}
+        {elseRan && !error && <p className="rnode-note muted">Else branch taken</p>}
+      </div>
       {kind !== "event" && kind !== "schedule" && <Handle type="target" position={Position.Left} className="rnode-handle" />}
       <Handle type="source" position={Position.Right} className="rnode-handle" />
     </div>
@@ -344,6 +361,7 @@ const NONE = "__none__";
 /** The action node: what the engine does, and the target it needs. */
 export function ActionNode({ id, data }: NodeProps<RuleNode>) {
   const { options, names, values, set, patch } = useNode(id, data);
+  const confirmLeave = useConfirmLeave();
   const type = values.type as string | undefined;
   const setFieldDef = type === "set_field" ? options.fields.find((f) => f.key === values.key) : undefined;
 
@@ -411,7 +429,7 @@ export function ActionNode({ id, data }: NodeProps<RuleNode>) {
       {type === "emit_webhook" && (
         <>
           <Picker id={`${id}-dest`} label="Destination" options={destinationOptions(options)} value={(values.destinationId as string) ?? null} onChange={(v) => patch({ destinationId: v ?? undefined })} placeholder={destinationOptions(options).length ? "Choose" : "No destinations yet"} />
-          <Link className="rnode-link" to="/settings?tab=destinations">Manage destinations</Link>
+          <Link className="rnode-link" to="/settings?tab=destinations" onClick={(e) => { if (!confirmLeave()) e.preventDefault(); }}>Manage destinations</Link>
         </>
       )}
     </Card>
@@ -470,7 +488,7 @@ export function ScheduleNode({ id, data }: NodeProps<RuleNode>) {
   const description = custom ? (describeCron(cron) ?? "Not a valid schedule") : null;
 
   return (
-    <Card id={id} kind="schedule" title={scheduleSentence(values)}>
+    <Card id={id} kind="schedule" title={scheduleTitle(values)}>
       <Picker id={`${id}-repeat`} label="Repeats" options={REPEAT_OPTIONS} value={repeat} onChange={choose} placeholder="Choose how often" />
       {repeat === "hour" && minuteField}
       {(repeat === "day" || repeat === "weekday") && (

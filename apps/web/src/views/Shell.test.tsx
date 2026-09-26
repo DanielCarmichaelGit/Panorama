@@ -81,6 +81,30 @@ describe("Shell", () => {
     expect(await screen.findByText("Automations view")).toBeTruthy();
   });
 
+  it("the metrics links carry the period, and g b keeps it", async () => {
+    mockApi();
+    render(
+      <QueryClientProvider client={client()}>
+        <MemoryRouter initialEntries={["/?period=month"]}>
+          <Routes>
+            <Route element={<Shell status={{ state: "unlocked" }} chainOk={true} />}>
+              <Route path="/" element={<div>Queue view</div>} />
+              <Route path="/board" element={<div>Board view</div>} />
+            </Route>
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    await screen.findByText("Queue view");
+    expect(screen.getByRole("link", { name: "Board" }).getAttribute("href")).toBe("/board?period=month");
+    expect(screen.getByRole("link", { name: "Agents" }).getAttribute("href")).toBe("/agents?period=month");
+    expect(screen.getByRole("link", { name: "Settings" }).getAttribute("href")).toBe("/settings");
+    fireEvent.keyDown(document, { key: "g" });
+    fireEvent.keyDown(document, { key: "b" });
+    await screen.findByText("Board view");
+    expect(screen.getByRole("link", { name: "Queue" }).getAttribute("href")).toBe("/?period=month");
+  });
+
   it("the app routes /automations to the Automations view", async () => {
     mockApi();
     session.setSeed(new Uint8Array(32));

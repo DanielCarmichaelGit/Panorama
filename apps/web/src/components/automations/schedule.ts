@@ -10,8 +10,7 @@ import type { PickerOption } from "../Picker";
  * final judge of what a field means.
  */
 
-export const REPEATS = ["hour", "day", "weekday", "week", "month", "custom"] as const;
-export type Repeat = (typeof REPEATS)[number];
+export type Repeat = "hour" | "day" | "weekday" | "week" | "month" | "custom";
 
 export interface ScheduleFields {
   repeat: Repeat;
@@ -72,8 +71,43 @@ export function timezoneOptions(current: string | undefined): PickerOption[] {
   return current && !zones.some((z) => z.id === current) ? [{ id: current, label: current }, ...zones] : zones;
 }
 
-/** Five space separated cron fields of the shape the core accepts. */
-export const isCronShape = (s: string): boolean => isCron(s);
+const MONTH_NAMES = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+const DAY_NAMES = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
+
+/** Each field's range as croner reads it: weekday 7 is Sunday again; names count from 1 for months and 0 for days. */
+const FIELD_RANGES: { lo: number; hi: number; names?: string[]; first?: number }[] = [
+  { lo: 0, hi: 59 },
+  { lo: 0, hi: 23 },
+  { lo: 1, hi: 31 },
+  { lo: 1, hi: 12, names: MONTH_NAMES, first: 1 },
+  { lo: 0, hi: 7, names: DAY_NAMES, first: 0 },
+];
+
+/** True when every part of a field (a list of values, ranges and steps) sits inside its range. */
+function fieldInRange(field: string, { lo, hi, names, first = 0 }: (typeof FIELD_RANGES)[number]): boolean {
+  const value = (s: string): number | null => {
+    if (/^\d+$/.test(s)) return Number(s);
+    const i = names?.indexOf(s.toLowerCase()) ?? -1;
+    return i >= 0 ? i + first : null;
+  };
+  return field.split(",").every((part) => {
+    const [span, step, ...more] = part.split("/");
+    if (more.length) return false;
+    if (step !== undefined && !(/^\d+$/.test(step) && Number(step) >= 1)) return false;
+    if (span === "*") return true;
+    const ends = span.split("-");
+    if (ends.length > 2) return false;
+    const nums = ends.map(value);
+    if (nums.some((n) => n === null || n < lo || n > hi)) return false;
+    return nums.length === 1 || (nums[0] as number) <= (nums[1] as number);
+  });
+}
+
+/** Five fields of the shape the core accepts, each inside its range, so `99 * * * *` is not a schedule. */
+function isValidCron(cron: string): boolean {
+  if (!isCron(cron)) return false;
+  return cron.trim().split(/\s+/).every((f, i) => fieldInRange(f, FIELD_RANGES[i]));
+}
 
 export function buildCron(f: ScheduleFields): string {
   const m = clamp(f.minute, 0, 59);
@@ -139,7 +173,7 @@ const ordinal = (n: number): string => {
 };
 
 /** A preset in words: "Every weekday at 09:00". */
-export function describeFields(f: ScheduleFields): string {
+function describeFields(f: ScheduleFields): string {
   const at = time(f.hour, f.minute);
   switch (f.repeat) {
     case "hour":
@@ -160,12 +194,12 @@ export function describeFields(f: ScheduleFields): string {
 const listWords = (items: string[]): string => (items.length <= 1 ? items.join("") : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`);
 
 /**
- * A cron in words, or null when it is not five fields. Presets read as their sentence; the
- * common custom shapes (every N minutes or hours, a list of weekdays at a time) get their own,
- * and anything else reads as "On cron <expression>".
+ * A cron in words, or null when it is not five fields inside their ranges. Presets read as
+ * their sentence; the common custom shapes (every N minutes or hours, a list of weekdays at a
+ * time) get their own, and anything else reads as "On cron <expression>".
  */
 export function describeCron(cron: string): string | null {
-  if (!isCronShape(cron)) return null;
+  if (!isValidCron(cron)) return null;
   const f = parseCron(cron);
   if (f.repeat !== "custom") return describeFields(f);
   const [m, h, dom, mon, dow] = cron.trim().split(/\s+/);

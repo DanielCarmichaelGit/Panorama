@@ -6,10 +6,16 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type { Lane, Project, Rule, Ticket } from "@boomerang/core";
 import { ApiError, api } from "../lib/api";
 import { Automations } from "./Automations";
+import { Shell } from "./Shell";
 
 vi.mock("../lib/api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../lib/api")>();
   return { ...actual, api: vi.fn() };
+});
+// The Shell opens the live stream; not under test here.
+vi.mock("../lib/stream", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../lib/stream")>();
+  return { ...actual, connectStream: vi.fn(() => new Promise<void>(() => {})) };
 });
 
 // jsdom lays nothing out. React Flow measures nodes through ResizeObserver, offsetWidth and
@@ -219,11 +225,66 @@ describe("Automations view", () => {
     await waitFor(() => expect(calls.some((c) => c.path === "/api/v1/rules/r1/test")).toBe(true));
     expect(calls.find((c) => c.path === "/api/v1/rules/r1/test")?.body).toEqual({ ticketId: "t2" });
     await waitFor(() => expect(nodeEl("a1")?.querySelector(".rnode")?.classList.contains("is-lit")).toBe(true));
+    // The edges between matched nodes light too, so the path reads as one.
+    await waitFor(() => expect(document.querySelectorAll(".react-flow__edge.is-lit")).toHaveLength(2));
     const status = screen.getByRole("status");
     expect(status.textContent).toContain("Matched PAN-2. Nothing was written.");
     expect(status.textContent).toContain("Would move to Ready for Production");
     expect(status.textContent).toContain("Move to Ready for Production would be refused: needs Eval score (0 of 1), Blocked by STU-2");
     expect(calls.filter((c) => c.method === "PATCH" || (c.method === "POST" && !c.path.endsWith("/test")))).toHaveLength(0);
+  });
+
+  it("a saved draft lands under its id with the Saved bar still showing", async () => {
+    const created = rule({ id: "r9", name: "Fresh" });
+    let posted = false;
+    mockApi([], (c) => {
+      if (c.method === "POST" && c.path === "/api/v1/rules") {
+        posted = true;
+        return created;
+      }
+      if (c.path.startsWith("/api/v1/rules?")) return posted ? [created] : [];
+      return undefined;
+    });
+    renderView("/automations");
+    fireEvent.click(await screen.findByRole("button", { name: "New rule" }));
+    await waitFor(() => expect(document.querySelectorAll(".rnode")).toHaveLength(1));
+    // The event needs a type before the drawing can run.
+    fireEvent.click(within(nodeEl("event")!).getByRole("button", { name: "Event" }));
+    fireEvent.click(await screen.findByRole("option", { name: "A ticket is created" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Rule name" }), { target: { value: "Fresh" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(posted).toBe(true));
+    expect(await screen.findByRole("region", { name: "Fresh" })).toBeTruthy();
+    expect(screen.getByRole("status").textContent).toContain("Saved.");
+  });
+
+  it("an else path taken shows the If node a muted note instead of a ring", async () => {
+    const withElse = rule({
+      canvas: {
+        nodes: [
+          { id: "event", kind: "event", position: { x: 0, y: 0 }, data: { type: "ticket.moved", toLaneId: "l2" } },
+          { id: "c1", kind: "condition", position: { x: 288, y: 0 }, data: { kind: "evidence", typeId: "et1", result: "pass", op: "exists" } },
+          { id: "a1", kind: "action", position: { x: 576, y: 0 }, data: { type: "move_to_lane", laneId: "l3" } },
+          // The synthesised not-node, where toDoc writes it, so the rule reads as clean.
+          { id: "c1~else", kind: "condition", position: { x: 288, y: 40 }, data: { kind: "not", condition: { kind: "evidence", typeId: "et1", result: "pass", op: "exists" } } },
+        ],
+        edges: [
+          { id: "event-c1", source: "event", target: "c1" },
+          { id: "event-c1~else", source: "event", target: "c1~else" },
+          { id: "c1-a1", source: "c1~else", target: "a1" },
+        ],
+      },
+    });
+    mockApi([withElse], (c) => (c.method === "POST" && c.path === "/api/v1/rules/r1/test" ? { matched: true, nodeIds: ["event", "c1~else", "a1"], actions: [{ type: "move_to_lane", laneId: "l3" }], refusals: [] } : undefined));
+    renderView("/automations/r1");
+    await waitFor(() => expect(document.querySelectorAll(".rnode")).toHaveLength(3));
+    fireEvent.click(screen.getByRole("button", { name: "Test on ticket" }));
+    fireEvent.click(await screen.findByRole("option", { name: /Ship it/ }));
+    await waitFor(() => expect(nodeEl("a1")?.querySelector(".rnode")?.classList.contains("is-lit")).toBe(true));
+    const cond = nodeEl("c1")!.querySelector(".rnode")!;
+    expect(cond.classList.contains("is-lit")).toBe(false);
+    expect(within(nodeEl("c1")!).getByText("Else branch taken").classList.contains("muted")).toBe(true);
+    expect(document.querySelector(".react-flow__edge.edge-else")?.classList.contains("is-lit")).toBe(true);
   });
 
   it("selecting a node keeps the error rings and the bar; changing the drawing clears them", async () => {
@@ -396,5 +457,210 @@ describe("keyboard inside nodes", () => {
     fireEvent.keyDown(added, { key: "e" });
     expect(document.querySelectorAll(".rnode-event")).toHaveLength(1);
     await waitFor(() => expect(document.activeElement).toBe(nodeEl("event")));
+  });
+
+  it("Delete on a focused, unselected node removes it, focus moves to the node before it, and Ctrl+Z from there brings it back", async () => {
+    await drawn();
+    const a1 = nodeEl("a1")!;
+    await act(async () => {
+      a1.focus();
+    });
+    expect(a1.classList.contains("selected")).toBe(false);
+    fireEvent.keyDown(a1, { key: "Delete" });
+    await waitFor(() => expect(nodeEl("a1")).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(nodeEl("c1")));
+    fireEvent.keyDown(document.activeElement!, { key: "z", ctrlKey: true });
+    await waitFor(() => expect(nodeEl("a1")).toBeTruthy());
+  });
+
+  it("deleting the first node focuses the next one; deleting the only node focuses the canvas", async () => {
+    const event = await drawn();
+    fireEvent.keyDown(event, { key: "Delete" });
+    await waitFor(() => expect(nodeEl("event")).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(nodeEl("c1")));
+    fireEvent.keyDown(nodeEl("c1")!, { key: "Delete" });
+    await waitFor(() => expect(nodeEl("c1")).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(nodeEl("a1")));
+    fireEvent.keyDown(nodeEl("a1")!, { key: "Delete" });
+    await waitFor(() => expect(document.querySelectorAll(".rnode")).toHaveLength(0));
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("application", { name: "Rule canvas" })));
+  });
+
+  it("Escape out of a node's Picker closes the popover and keeps the node selected", async () => {
+    const event = await drawn();
+    await act(async () => {
+      fireEvent.click(event);
+    });
+    await waitFor(() => expect(event.classList.contains("selected")).toBe(true));
+    const trigger = within(event).getByRole("button", { name: "Event" });
+    fireEvent.click(trigger);
+    await waitFor(() => expect(trigger.getAttribute("aria-expanded")).toBe("true"));
+    fireEvent.keyDown(document.activeElement!, { key: "Escape" });
+    expect(trigger.getAttribute("aria-expanded")).toBe("false");
+    expect(nodeEl("event")!.classList.contains("selected")).toBe(true);
+  });
+});
+
+describe("full-height layout", () => {
+  afterEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+  });
+
+  it("each node has a header strip with its icon and kind, and the title in the body", async () => {
+    mockApi([rule({})]);
+    renderView("/automations/r1");
+    await waitFor(() => expect(document.querySelectorAll(".rnode")).toHaveLength(3));
+    const head = nodeEl("event")!.querySelector(".rnode-head")!;
+    expect(head.querySelector("svg")).toBeTruthy();
+    expect(head.querySelector(".rnode-kind")?.textContent).toBe("When");
+    expect(head.querySelector(".rnode-title")).toBeNull();
+    expect(nodeEl("event")!.querySelector(".rnode-body .rnode-title")?.textContent).toBe("A ticket moves to Eval");
+    expect(nodeEl("event")!.querySelector(".rnode-band")).toBeNull();
+  });
+
+  it("the rule list collapses to a rail and remembers it", async () => {
+    mockApi([rule({})]);
+    renderView("/automations/r1");
+    const list = await screen.findByRole("complementary", { name: "Rules" });
+    expect(list.classList.contains("rail")).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: "Collapse rules" }));
+    expect(list.classList.contains("rail")).toBe(true);
+    expect(localStorage.getItem("bm.rulesRail")).toBe("1");
+    expect(screen.queryByRole("list", { name: "Rules" })).toBeNull();
+    expect(screen.getByRole("button", { name: "New rule" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Expand rules" }));
+    expect(list.classList.contains("rail")).toBe(false);
+    expect(localStorage.getItem("bm.rulesRail")).toBe("0");
+    expect(screen.getByRole("list", { name: "Rules" })).toBeTruthy();
+  });
+
+  it("the run log is a drawer: a bar with the last fire and run count, opening to the list, remembered for the session", async () => {
+    const twelveMinutesAgo = new Date(Date.now() - 12 * 60 * 1000).toISOString();
+    mockApi([{ ...rule({}), lastFiredAt: twelveMinutesAgo, runCount: 7 } as Rule]);
+    renderView("/automations/r1");
+    const bar = await screen.findByRole("button", { name: /^Runs/ });
+    expect(bar.getAttribute("aria-expanded")).toBe("false");
+    expect(bar.textContent).toContain("Last fired 12 min ago, 7 runs");
+    expect(bar.querySelector(".mono")?.textContent).toBe("Last fired 12 min ago, 7 runs");
+    expect(screen.queryByRole("list", { name: "Runs" })).toBeNull();
+    fireEvent.click(bar);
+    expect(bar.getAttribute("aria-expanded")).toBe("true");
+    expect(await screen.findByRole("list", { name: "Runs" })).toBeTruthy();
+    expect(screen.getByText("This rule has not fired yet.")).toBeTruthy();
+    expect(sessionStorage.getItem("bm.runsDrawer")).toBe("open");
+    expect(document.querySelector(".rule-editor")?.classList.contains("drawer-open")).toBe(true);
+    fireEvent.click(bar);
+    expect(screen.queryByRole("list", { name: "Runs" })).toBeNull();
+    expect(sessionStorage.getItem("bm.runsDrawer")).toBe("closed");
+  });
+
+  it("a rule that never fired says so on the bar", async () => {
+    mockApi([rule({})]);
+    renderView("/automations/r1");
+    const bar = await screen.findByRole("button", { name: /^Runs/ });
+    expect(bar.querySelector(".mono")?.textContent).toBe("Not fired yet");
+  });
+});
+
+describe("enable switch while busy", () => {
+  it("ignores a second click while the PATCH is in flight and keeps focus on the switch", async () => {
+    let release!: () => void;
+    const calls = mockApi([rule({})], (c) => (c.method === "PATCH" ? new Promise((r) => { release = () => r({ ...rule({}), enabled: false }); }) : undefined));
+    renderView("/automations");
+    const sw = await screen.findByRole("switch", { name: "Promote on eval pass enabled" });
+    await act(async () => {
+      sw.focus();
+      fireEvent.click(sw);
+    });
+    await waitFor(() => expect(sw.getAttribute("aria-disabled")).toBe("true"));
+    expect(sw.hasAttribute("disabled")).toBe(false);
+    fireEvent.click(sw);
+    expect(calls.filter((c) => c.method === "PATCH")).toHaveLength(1);
+    expect(document.activeElement).toBe(sw);
+    await act(async () => {
+      release();
+    });
+    await waitFor(() => expect(sw.getAttribute("aria-disabled")).toBeNull());
+    expect(document.activeElement).toBe(sw);
+  });
+});
+
+/** The view under the Shell, so its shortcuts and sidebar links are the ones leaving the rule. */
+function renderShell(path: string, rules: Rule[] = []) {
+  const calls = mockApi(rules, (c) => (c.path === "/api/v1/projects" ? [project] : c.path === "/api/v1/projects/p1/lanes" ? lanes : undefined));
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+  render(
+    <QueryClientProvider client={client}>
+      <MemoryRouter initialEntries={[path]}>
+        <Routes>
+          <Route element={<Shell status={{ state: "unlocked" }} chainOk={true} />}>
+            <Route path="/" element={<div>Queue view</div>} />
+            <Route path="/board" element={<div>Board view</div>} />
+            <Route path="/agents" element={<div>Agents view</div>} />
+            <Route path="/automations" element={<Automations />} />
+            <Route path="/automations/:ruleId" element={<Automations />} />
+          </Route>
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  return calls;
+}
+
+describe("leaving a dirty rule", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  async function dirtyDraft() {
+    renderShell("/automations");
+    fireEvent.click(await screen.findByRole("button", { name: "New rule" }));
+    await waitFor(() => expect(document.querySelectorAll(".rnode")).toHaveLength(1));
+  }
+
+  it("g b asks first and stays when cancelled; confirmed, it goes", async () => {
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    await dirtyDraft();
+    fireEvent.keyDown(document, { key: "g" });
+    fireEvent.keyDown(document, { key: "b" });
+    expect(confirm).toHaveBeenCalledWith("You have unsaved changes. Leave this rule?");
+    expect(screen.queryByText("Board view")).toBeNull();
+    expect(screen.getByRole("region", { name: "New rule" })).toBeTruthy();
+    confirm.mockReturnValue(true);
+    fireEvent.keyDown(document, { key: "g" });
+    fireEvent.keyDown(document, { key: "b" });
+    expect(await screen.findByText("Board view")).toBeTruthy();
+  });
+
+  it("a sidebar link asks too and stays when cancelled", async () => {
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    await dirtyDraft();
+    fireEvent.click(screen.getByRole("link", { name: "Board" }));
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText("Board view")).toBeNull();
+    expect(screen.getByRole("region", { name: "New rule" })).toBeTruthy();
+  });
+
+  it("g then a inside the canvas adds an action node and does not leave for Agents", async () => {
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    await dirtyDraft();
+    const event = nodeEl("event")!;
+    await act(async () => {
+      event.focus();
+      fireEvent.keyDown(event, { key: "g" });
+      fireEvent.keyDown(event, { key: "a" });
+    });
+    await waitFor(() => expect(document.querySelectorAll(".rnode-action")).toHaveLength(1));
+    expect(confirm).not.toHaveBeenCalled();
+    expect(screen.queryByText("Agents view")).toBeNull();
+  });
+
+  it("a clean rule leaves without asking", async () => {
+    const confirm = vi.spyOn(window, "confirm");
+    renderShell("/automations/r1", [rule({})]);
+    await waitFor(() => expect(document.querySelectorAll(".rnode")).toHaveLength(3));
+    fireEvent.keyDown(document, { key: "g" });
+    fireEvent.keyDown(document, { key: "b" });
+    expect(await screen.findByText("Board view")).toBeTruthy();
+    expect(confirm).not.toHaveBeenCalled();
   });
 });

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useOutletContext } from "react-router-dom";
 import { CaretDown, CaretRight } from "@phosphor-icons/react";
 import { AGENT_ACTIONS, type Actor, type AgentAction, type Lane, type Project, type Scopes } from "@boomerang/core";
+import { when } from "../lib/format";
 import { BoomerangScene } from "../lib/iso";
 import { useAgents, useApproveAgent, useProjectMetrics, useProjects, useRevokeAgent, useTickets } from "../lib/hooks";
 import { isPickerOpen } from "../lib/keys";
@@ -116,10 +117,6 @@ function ApproveDialog({ agent, onClose }: { agent: Actor; onClose: () => void }
       </div>
     </div>
   );
-}
-
-function when(iso: string | null): string {
-  return iso ? new Date(iso).toLocaleString() : "Never";
 }
 
 function PendingCard({ agent, error, onApprove, onReject, working }: {

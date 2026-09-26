@@ -175,4 +175,11 @@ test("the settings lifecycle: an evidence type, a lane that requires it, the gat
   await expect(scratchRow).toHaveCount(0);
   await expect(laneRows).toHaveCount(7);
   await expect(page.getByRole("alert")).toHaveCount(0);
+
+  // On a phone the six tabs scroll inside their strip; the page itself does not widen.
+  await page.setViewportSize({ width: 375, height: 800 });
+  await page.getByRole("tab", { name: "Destinations" }).click();
+  await expect(page.getByRole("tab", { name: "Destinations" })).toHaveAttribute("aria-selected", "true");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375);
+  await page.screenshot({ path: "shots-final-2/settings-375.png", fullPage: true });
 });

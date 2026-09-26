@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
+import { useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { useNavigate, useOutletContext, useParams } from "react-router-dom";
-import { Flask, Plus, Trash } from "@phosphor-icons/react";
+import { CaretLineLeft, CaretLineRight, Flask, Plus, Trash } from "@phosphor-icons/react";
 import type { CanvasError, Lane, Project, Rule } from "@boomerang/core";
 import { canonical, canvasToRule } from "@boomerang/core";
 import { Chip } from "../components/Chip";
@@ -30,6 +30,8 @@ import {
   type RuleTestResult,
 } from "../lib/hooks";
 import { BoomerangScene } from "../lib/iso";
+import { RULES_RAIL_KEY, RUNS_DRAWER_KEY } from "../lib/storage";
+import { useConfirmLeave, useUnsavedGuard } from "../lib/unsaved";
 
 /**
  * Automations: the rule list on the left, the canvas for the selected rule on the right, the
@@ -44,7 +46,29 @@ function eventFamily(rule: Rule): "coral" | "lilac" {
   return rule.event.type === "schedule" ? "lilac" : "coral";
 }
 
-/** The enable toggle. It flips at once and settles on what the server answers; while the PATCH is in flight it takes no second click. */
+/** The rule list folded to its rail, kept in localStorage; the run log drawer, kept for the session. */
+function readFlag(store: Storage | undefined, key: string, on: string): boolean {
+  try {
+    return store?.getItem(key) === on;
+  } catch {
+    return false;
+  }
+}
+function writeFlag(store: Storage | undefined, key: string, value: string): void {
+  try {
+    store?.setItem(key, value);
+  } catch {
+    // storage unavailable; the choice just will not persist
+  }
+}
+const local = () => (typeof localStorage === "undefined" ? undefined : localStorage);
+const session = () => (typeof sessionStorage === "undefined" ? undefined : sessionStorage);
+
+/**
+ * The enable toggle. It flips at once and settles on what the server answers; while the PATCH
+ * is in flight it ignores a second click, but stays focusable (aria-disabled, not disabled) so
+ * the keyboard does not lose its place.
+ */
 function EnableSwitch({ rule, onChange, busy }: { rule: RuleSummary; onChange: (enabled: boolean) => void; busy?: boolean }) {
   const [optimistic, setOptimistic] = useState<boolean | null>(null);
   useEffect(() => {
@@ -58,10 +82,11 @@ function EnableSwitch({ rule, onChange, busy }: { rule: RuleSummary; onChange: (
       aria-checked={checked}
       aria-label={`${rule.name} enabled`}
       className="switch"
-      disabled={busy}
+      aria-disabled={busy || undefined}
       aria-busy={busy || undefined}
       onClick={(e) => {
         e.stopPropagation();
+        if (busy) return;
         setOptimistic(!checked);
         onChange(!checked);
       }}
@@ -71,13 +96,28 @@ function EnableSwitch({ rule, onChange, busy }: { rule: RuleSummary; onChange: (
   );
 }
 
-function RuleList({ rules, selectedId, busyId, onSelect, onNew, onToggle }: { rules: RuleSummary[]; selectedId: string | undefined; busyId: string | null; onSelect: (id: string) => void; onNew: () => void; onToggle: (rule: RuleSummary, enabled: boolean) => void }) {
+function RuleList({ rules, selectedId, busy, rail, onRail, onSelect, onNew, onToggle }: { rules: RuleSummary[]; selectedId: string | undefined; busy: Set<string>; rail: boolean; onRail: (rail: boolean) => void; onSelect: (id: string) => void; onNew: () => void; onToggle: (rule: RuleSummary, enabled: boolean) => void }) {
+  if (rail) {
+    return (
+      <aside className="rule-list rail" aria-label="Rules">
+        <button type="button" className="icon-btn rail-btn" aria-label="Expand rules" title="Expand rules" onClick={() => onRail(false)}>
+          <CaretLineRight size={16} weight="regular" aria-hidden="true" />
+        </button>
+        <button type="button" className="icon-btn rail-btn" aria-label="New rule" title="New rule" onClick={onNew}>
+          <Plus size={16} weight="bold" aria-hidden="true" />
+        </button>
+      </aside>
+    );
+  }
   return (
     <aside className="rule-list" aria-label="Rules">
       <div className="rule-list-head">
         <h2>Rules</h2>
         <button type="button" className="btn small" onClick={onNew}>
           <Plus size={14} weight="bold" aria-hidden="true" /> New rule
+        </button>
+        <button type="button" className="icon-btn rail-btn" aria-label="Collapse rules" title="Collapse rules" onClick={() => onRail(true)}>
+          <CaretLineLeft size={16} weight="regular" aria-hidden="true" />
         </button>
       </div>
       <ul className="settings-list rule-rows" aria-label="Rules">
@@ -87,7 +127,7 @@ function RuleList({ rules, selectedId, busyId, onSelect, onNew, onToggle }: { ru
           </li>
         )}
         {rules.map((rule) => (
-          <li key={rule.id} className="settings-row rule-row" data-expanded={rule.id === selectedId || undefined} aria-current={rule.id === selectedId || undefined}>
+          <li key={rule.id} className="settings-row rule-row" data-expanded={rule.id === selectedId || undefined}>
             <div className="row-id">
               <button type="button" className="rule-row-name" onClick={() => onSelect(rule.id)} aria-current={rule.id === selectedId ? "true" : undefined}>
                 <span className="row-name">{rule.name}</span>
@@ -99,7 +139,7 @@ function RuleList({ rules, selectedId, busyId, onSelect, onNew, onToggle }: { ru
               {typeof rule.runCount === "number" && <span className="mono">{rule.runCount} {rule.runCount === 1 ? "run" : "runs"}</span>}
             </div>
             <div className="row-actions">
-              <EnableSwitch rule={rule} busy={busyId === rule.id} onChange={(enabled) => onToggle(rule, enabled)} />
+              <EnableSwitch rule={rule} busy={busy.has(rule.id)} onChange={(enabled) => onToggle(rule, enabled)} />
             </div>
           </li>
         ))}
@@ -129,17 +169,27 @@ function mapErrors(errors: CanvasError[], nodes: Drawn[], names: Names): { byNod
   return { byNode, lines };
 }
 
-function RuleEditor({ rule, project, lanes, onSaved, onDeleted, onDirtyChange }: { rule: RuleSummary; project: Project; lanes: Lane[]; onSaved: (saved: Rule) => void; onDeleted: () => void; onDirtyChange?: (dirty: boolean) => void }) {
+const SAVED: Bar = { kind: "saved", lines: ["Saved."] };
+
+function RuleEditor({ rule, project, lanes, justSaved, onSaved, onDeleted }: { rule: RuleSummary; project: Project; lanes: Lane[]; /** The editor mounts fresh under the saved draft's own id; the bar the save earned comes with it. */ justSaved?: boolean; onSaved: (saved: Rule) => void; onDeleted: () => void }) {
   const draft = rule.id === DRAFT_ID;
   const [state, dispatch] = useReducer(reducer, rule.canvas, initialState);
   const [name, setName] = useState(rule.name);
   const [errors, setErrors] = useState<Map<string, string>>(new Map());
   const [lit, setLit] = useState<Set<string>>(new Set());
   const [litEdges, setLitEdges] = useState<Set<string>>(new Set());
-  const [bar, setBar] = useState<Bar | null>(null);
+  const [elseTaken, setElseTaken] = useState<Set<string>>(new Set());
+  const [bar, setBar] = useState<Bar | null>(justSaved ? SAVED : null);
   const [testing, setTesting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
+  const [runsOpen, setRunsOpen] = useState(() => readFlag(session(), RUNS_DRAWER_KEY, "open"));
+  function toggleRuns() {
+    setRunsOpen((open) => {
+      writeFlag(session(), RUNS_DRAWER_KEY, open ? "closed" : "open");
+      return !open;
+    });
+  }
 
   const boards = useBoards(project.id);
   const epics = useEpics(project.id);
@@ -173,18 +223,21 @@ function RuleEditor({ rule, project, lanes, onSaved, onDeleted, onDirtyChange }:
 
   const doc = useMemo(() => toDoc(state), [state]);
   const dirty = draft || name.trim() !== rule.name || canonical(doc) !== canonical(rule.canvas);
-  useEffect(() => {
-    onDirtyChange?.(dirty);
-    return () => onDirtyChange?.(false);
-  }, [dirty, onDirtyChange]);
+  useUnsavedGuard(dirty);
 
   // What the drawing means, positions and selection left out: editing it again clears what the
   // last save or test said, while moving or selecting a node keeps the rings and the bar.
   const meaning = useMemo(() => canonical({ nodes: state.nodes.map((n) => ({ id: n.id, kind: n.kind, data: n.data })), edges: state.edges }), [state.nodes, state.edges]);
+  const firstMeaning = useRef(true);
   useEffect(() => {
+    if (firstMeaning.current) {
+      firstMeaning.current = false;
+      return;
+    }
     setErrors(new Map());
     setLit(new Set());
     setLitEdges(new Set());
+    setElseTaken(new Set());
     setBar((b) => (b && b.kind !== "test" ? null : b));
   }, [meaning]);
 
@@ -193,6 +246,7 @@ function RuleEditor({ rule, project, lanes, onSaved, onDeleted, onDirtyChange }:
     setErrors(m.byNode);
     setLit(new Set());
     setLitEdges(new Set());
+    setElseTaken(new Set());
     setBar({ kind: "error", lines: m.lines });
   }
 
@@ -209,7 +263,7 @@ function RuleEditor({ rule, project, lanes, onSaved, onDeleted, onDirtyChange }:
         ? await create.mutateAsync({ projectId: project.id, name: trimmed, enabled: rule.enabled, canvas: doc })
         : await update.mutateAsync({ id: rule.id, patch: { name: trimmed, canvas: doc } });
       setErrors(new Map());
-      setBar({ kind: "saved", lines: ["Saved."] });
+      setBar(SAVED);
       onSaved(saved);
     } catch (e) {
       if (e instanceof ApiError && e.code === "canvas_invalid" && Array.isArray((e.details as { errors?: unknown })?.errors)) {
@@ -227,17 +281,21 @@ function RuleEditor({ rule, project, lanes, onSaved, onDeleted, onDirtyChange }:
     try {
       const result: RuleTestResult = await test.mutateAsync({ id: rule.id, ticketId });
       const key = tickets.data?.find((t) => t.id === ticketId)?.key ?? ticketId;
-      // A drawn node lights up; a synthesised else node lights the else edges out of its condition instead.
+      // A drawn node lights up; a synthesised else node lights the else edges out of its
+      // condition instead, and the condition itself says its else branch was taken.
       const nodesLit = new Set<string>();
       const edgesLit = new Set<string>();
+      const elseOwners = new Set<string>();
       for (const id of result.nodeIds) {
         if (isElseId(id, state.nodes)) {
           const owner = ownerOf(id, state.nodes);
+          elseOwners.add(owner);
           for (const e of state.edges) if (e.label === "else" && e.source === owner) edgesLit.add(e.id);
         } else nodesLit.add(id);
       }
       setLit(nodesLit);
       setLitEdges(edgesLit);
+      setElseTaken(elseOwners);
       setErrors(new Map());
       const lines: string[] = [];
       if (result.matched) {
@@ -258,7 +316,7 @@ function RuleEditor({ rule, project, lanes, onSaved, onDeleted, onDirtyChange }:
   const ticketOptions = useMemo(() => (tickets.data ?? []).filter((t) => !t.archived).map((t) => ({ id: t.id, label: t.title, hint: t.key })), [tickets.data]);
 
   return (
-    <section className="rule-editor" aria-label={draft ? "New rule" : rule.name}>
+    <section className={runsOpen && !draft ? "rule-editor drawer-open" : "rule-editor"} aria-label={draft ? "New rule" : rule.name}>
       <div className="rule-editor-head">
         <input className="rule-name-input" aria-label="Rule name" value={name} onChange={(e) => setName(e.target.value)} maxLength={80} placeholder="Name this rule" />
         <div className="rule-editor-actions">
@@ -309,8 +367,8 @@ function RuleEditor({ rule, project, lanes, onSaved, onDeleted, onDirtyChange }:
           </ul>
         </div>
       )}
-      <RuleCanvas state={state} dispatch={dispatch} options={options} names={names} errors={errors} lit={lit} litEdges={litEdges} />
-      {!draft && <RunLog ruleId={rule.id} projectId={project.id} />}
+      <RuleCanvas state={state} dispatch={dispatch} options={options} names={names} errors={errors} lit={lit} litEdges={litEdges} elseTaken={elseTaken} />
+      {!draft && <RunLog ruleId={rule.id} projectId={project.id} lastFiredAt={rule.lastFiredAt} runCount={rule.runCount} open={runsOpen} onToggle={toggleRuns} />}
     </section>
   );
 }
@@ -323,15 +381,20 @@ export function Automations() {
   const update = useUpdateRule();
   const [draft, setDraft] = useState<RuleSummary | null>(null);
   const [toggleError, setToggleError] = useState<string | null>(null);
-  const [busyId, setBusyId] = useState<string | null>(null);
-  const editorDirty = useRef(false);
-  const onDirtyChange = useCallback((d: boolean) => {
-    editorDirty.current = d;
-  }, []);
+  /** The rules whose enable PATCH is in flight. */
+  const [busy, setBusy] = useState<Set<string>>(() => new Set());
+  /** The id a draft was just saved under, so the editor that mounts for it shows the Saved bar. */
+  const [justSaved, setJustSaved] = useState<string | null>(null);
+  const [rail, setRail] = useState(() => readFlag(local(), RULES_RAIL_KEY, "1"));
+  function setRailAndRemember(next: boolean) {
+    setRail(next);
+    writeFlag(local(), RULES_RAIL_KEY, next ? "1" : "0");
+  }
+  const confirmLeave = useConfirmLeave();
 
   /** Leaving a rule with unsaved changes asks first. */
   function leave(go: () => void) {
-    if (editorDirty.current && !window.confirm("You have unsaved changes. Leave this rule?")) return;
+    if (!confirmLeave()) return;
     go();
   }
 
@@ -348,13 +411,17 @@ export function Automations() {
 
   async function toggle(rule: RuleSummary, enabled: boolean) {
     setToggleError(null);
-    setBusyId(rule.id);
+    setBusy((prev) => new Set(prev).add(rule.id));
     try {
       await update.mutateAsync({ id: rule.id, patch: { enabled } });
     } catch (e) {
       setToggleError(e instanceof Error ? e.message : "Could not change the rule.");
     } finally {
-      setBusyId(null);
+      setBusy((prev) => {
+        const next = new Set(prev);
+        next.delete(rule.id);
+        return next;
+      });
     }
   }
 
@@ -366,13 +433,13 @@ export function Automations() {
       </div>
       {rules.isError && <p className="error" role="alert">Could not load the rules.</p>}
       {toggleError && <p className="error" role="alert">{toggleError}</p>}
-      <div className="auto-layout">
+      <div className={rail ? "auto-layout rail" : "auto-layout"}>
         {rules.isPending ? (
           <div className="rule-list">
             {[0, 1, 2].map((i) => <div key={i} className="skeleton" />)}
           </div>
         ) : (
-          <RuleList rules={list} selectedId={selected?.id} busyId={busyId} onSelect={(id) => { if (id !== selected?.id) leave(() => navigate(`/automations/${id}`)); }} onNew={startDraft} onToggle={toggle} />
+          <RuleList rules={list} selectedId={selected?.id} busy={busy} rail={rail} onRail={setRailAndRemember} onSelect={(id) => { if (id !== selected?.id) leave(() => navigate(`/automations/${id}`)); }} onNew={startDraft} onToggle={toggle} />
         )}
         {selected ? (
           <RuleEditor
@@ -380,14 +447,15 @@ export function Automations() {
             rule={selected}
             project={project}
             lanes={lanes}
+            justSaved={justSaved === selected.id}
             onSaved={(saved) => {
               if (selected.id === DRAFT_ID) {
                 setDraft(null);
+                setJustSaved(saved.id);
                 navigate(`/automations/${saved.id}`, { replace: true });
               }
             }}
             onDeleted={() => navigate("/automations", { replace: true })}
-            onDirtyChange={onDirtyChange}
           />
         ) : (
           <div className="canvas-empty">

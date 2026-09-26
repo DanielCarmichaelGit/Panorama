@@ -81,6 +81,20 @@ describe("Queue figures", () => {
     expect(await screen.findByText("~$9.40")).toBeTruthy();
   });
 
+  it("says in words when the period has nothing recorded, instead of a row of zeros", async () => {
+    renderQueue({ total: total({ seconds: 0, openTimers: 0, tokens: tokens(0), usd: 0, known: 0, entries: 0 }) });
+    await screen.findByRole("heading", { name: "No agents connected yet" });
+    const note = await screen.findByText("No time or cost recorded this week");
+    expect(note.classList.contains("muted")).toBe(true);
+    expect(screen.queryByText("0m")).toBeNull();
+    expect(screen.queryByText(/\$0/)).toBeNull();
+  });
+
+  it("names the period in the empty note", async () => {
+    renderQueue({ entry: "/?period=month", total: total({ seconds: 0, openTimers: 0, tokens: tokens(0), usd: 0, known: 0, entries: 0 }) });
+    expect(await screen.findByText("No time or cost recorded this month")).toBeTruthy();
+  });
+
   it("says at least when an unpriced model is among the entries", async () => {
     renderQueue({ total: total({ usd: null, known: 3.2, unpriced: 1 }) });
     expect(await screen.findByText("at least ~$3.20")).toBeTruthy();

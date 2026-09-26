@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_FIELDS, buildCron, describeCron, isCronShape, parseCron, scheduleTitle } from "./schedule";
+import { DEFAULT_FIELDS, buildCron, describeCron, parseCron, scheduleTitle } from "./schedule";
 
 describe("buildCron", () => {
   it("writes each preset as five fields", () => {
@@ -36,17 +36,6 @@ describe("parseCron", () => {
   });
 });
 
-describe("isCronShape", () => {
-  it("accepts five fields of ranges, lists and steps and refuses anything else", () => {
-    expect(isCronShape("0 9 * * 1-5")).toBe(true);
-    expect(isCronShape("*/10 8-18 * * mon-fri")).toBe(true);
-    expect(isCronShape("0 9 * *")).toBe(false);
-    expect(isCronShape("0 9 * * * *")).toBe(false);
-    expect(isCronShape("a b c d e#")).toBe(false);
-    expect(isCronShape("")).toBe(false);
-  });
-});
-
 describe("describeCron", () => {
   it("says a preset in words", () => {
     expect(describeCron("0 * * * *")).toBe("Every hour");
@@ -67,7 +56,29 @@ describe("describeCron", () => {
 
   it("returns null when the shape is wrong", () => {
     expect(describeCron("0 9 * *")).toBeNull();
+    expect(describeCron("0 9 * * * *")).toBeNull();
+    expect(describeCron("a b c d e#")).toBeNull();
     expect(describeCron("")).toBeNull();
+  });
+
+  it("returns null when a field is out of its range", () => {
+    expect(describeCron("99 * * * *")).toBeNull();
+    expect(describeCron("0 24 * * *")).toBeNull();
+    expect(describeCron("0 9 32 * *")).toBeNull();
+    expect(describeCron("0 9 0 * *")).toBeNull();
+    expect(describeCron("0 9 * 13 *")).toBeNull();
+    expect(describeCron("0 9 * * 8")).toBeNull();
+    expect(describeCron("0 9 * * 1-9")).toBeNull();
+    expect(describeCron("0 9,25 * * *")).toBeNull();
+    expect(describeCron("*/0 * * * *")).toBeNull();
+    expect(describeCron("0 9 * * fri-sun")).toBeNull();
+  });
+
+  it("accepts ranges, lists, steps and names inside their ranges", () => {
+    expect(describeCron("*/10 8-18 * * mon-fri")).toBe("On cron */10 8-18 * * mon-fri");
+    expect(describeCron("0 9 1,15 jan-jun *")).toBe("On cron 0 9 1,15 jan-jun *");
+    expect(describeCron("0 9 * * 7")).toBe("On cron 0 9 * * 7");
+    expect(describeCron("0 9 * * 1-5/2")).toBe("On cron 0 9 * * 1-5/2");
   });
 });
 
@@ -76,6 +87,7 @@ describe("scheduleTitle", () => {
     expect(scheduleTitle({ cron: "0 9 * * 1-5", timezone: "Europe/London" })).toBe("Every weekday at 09:00, Europe/London");
     expect(scheduleTitle({ cron: "0 9 * * 1-5" })).toBe("Every weekday at 09:00");
     expect(scheduleTitle({ cron: "nope", timezone: "UTC" })).toBe("Not a valid schedule, UTC");
+    expect(scheduleTitle({ cron: "99 * * * *", timezone: "UTC" })).toBe("Not a valid schedule, UTC");
     expect(scheduleTitle({ timezone: "UTC" })).toBe("Choose a schedule");
   });
 });

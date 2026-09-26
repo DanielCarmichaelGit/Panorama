@@ -5,7 +5,7 @@ import type { Actor, Board, CanvasNodeKind, Epic, EvidenceType, FieldDefinition,
 import { Picker, type PickerOption } from "../Picker";
 import type { Destination } from "../../lib/hooks";
 import { useConfirmLeave } from "../../lib/unsaved";
-import { DEFAULT_FIELDS, HOUR_OPTIONS, MISSED_OPTIONS, REPEAT_OPTIONS, WEEKDAY_OPTIONS, buildCron, describeCron, parseCron, timezoneOptions, type Repeat, type ScheduleFields } from "./schedule";
+import { DEFAULT_FIELDS, HOUR_OPTIONS, MISSED_OPTIONS, REPEAT_OPTIONS, WEEKDAY_OPTIONS, buildCron, describeCron, parseCron, scheduleTitle, timezoneOptions, type Repeat, type ScheduleFields } from "./schedule";
 import {
   ACTION_OPTIONS,
   ACTOR_OPTIONS,
@@ -19,7 +19,6 @@ import {
   conditionSentence,
   eventSentence,
   opsFor,
-  scheduleSentence,
   type Names,
 } from "./vocab";
 
@@ -52,6 +51,8 @@ export interface CanvasContextValue {
   errors: Map<string, string>;
   /** Nodes the last test run matched. */
   lit: Set<string>;
+  /** Condition nodes whose else branch the last test run took: not matched, but on the path. */
+  elseTaken: Set<string>;
 }
 
 export const EMPTY_OPTIONS: CanvasOptions = { lanes: [], boards: [], epics: [], tags: [], actors: [], evidenceTypes: [], fields: [], destinations: [], flags: ["needs_human"] };
@@ -71,7 +72,7 @@ export function namesFrom(o: CanvasOptions): Names {
   };
 }
 
-export const CanvasContext = createContext<CanvasContextValue>({ options: EMPTY_OPTIONS, names: namesFrom(EMPTY_OPTIONS), setData: () => {}, errors: new Map(), lit: new Set() });
+export const CanvasContext = createContext<CanvasContextValue>({ options: EMPTY_OPTIONS, names: namesFrom(EMPTY_OPTIONS), setData: () => {}, errors: new Map(), lit: new Set(), elseTaken: new Set() });
 
 export type RuleNodeData = { values: Record<string, unknown> };
 export type RuleNode = Node<RuleNodeData, CanvasNodeKind>;
@@ -115,9 +116,11 @@ function createFlag(text: string): PickerOption {
 }
 
 function Card({ id, kind, title, children }: { id: string; kind: CanvasNodeKind; title: string; children: React.ReactNode }) {
-  const { errors, lit } = useContext(CanvasContext);
+  const { errors, lit, elseTaken } = useContext(CanvasContext);
   const error = errors.get(id);
-  const cls = ["rnode", `rnode-${kind}`, error ? "has-error" : "", lit.has(id) ? "is-lit" : ""].filter(Boolean).join(" ");
+  // A condition whose else branch ran did not match; it says so in words rather than lighting up.
+  const elseRan = kind === "condition" && elseTaken.has(id);
+  const cls = ["rnode", `rnode-${kind}`, error ? "has-error" : "", lit.has(id) && !elseRan ? "is-lit" : ""].filter(Boolean).join(" ");
   return (
     <div className={cls} data-kind={kind} data-node-id={id}>
       <span className="rnode-band" aria-hidden="true" />
@@ -132,6 +135,7 @@ function Card({ id, kind, title, children }: { id: string; kind: CanvasNodeKind;
       */}
       <div className="rnode-body nodrag nowheel nokey" onKeyDown={(e) => { if ((e.target as HTMLElement).closest(".picker-popover")) e.stopPropagation(); }}>{children}</div>
       {error && <p className="rnode-error">{error}</p>}
+      {elseRan && !error && <p className="rnode-note muted">Else branch taken</p>}
       {kind !== "event" && kind !== "schedule" && <Handle type="target" position={Position.Left} className="rnode-handle" />}
       <Handle type="source" position={Position.Right} className="rnode-handle" />
     </div>
@@ -476,7 +480,7 @@ export function ScheduleNode({ id, data }: NodeProps<RuleNode>) {
   const description = custom ? (describeCron(cron) ?? "Not a valid schedule") : null;
 
   return (
-    <Card id={id} kind="schedule" title={scheduleSentence(values)}>
+    <Card id={id} kind="schedule" title={scheduleTitle(values)}>
       <Picker id={`${id}-repeat`} label="Repeats" options={REPEAT_OPTIONS} value={repeat} onChange={choose} placeholder="Choose how often" />
       {repeat === "hour" && minuteField}
       {(repeat === "day" || repeat === "weekday") && (

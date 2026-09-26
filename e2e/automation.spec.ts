@@ -135,11 +135,12 @@ test("the owner's pipeline rule, drawn by keyboard, runs on the demo agent's tic
   await expect(node("condition")).toBeFocused();
   await expect(node("condition").locator(".rnode-title")).toHaveText("Evidence Eval score passed");
 
-  // Saving a draft lands on the saved rule's own address (the editor remounts under it, so
-  // the "Saved." bar is not the thing to wait for); the list shows it enabled.
+  // Saving a draft lands on the saved rule's own address, with the "Saved." bar still up
+  // (the editor remounts under the new id and brings the bar with it); the list shows it enabled.
   await page.getByRole("button", { name: "Save" }).click();
   await expect(page).toHaveURL(/\/automations\/(?!new$)[^/]+$/);
   await expect(page.getByRole("region", { name: "Pipeline" })).toBeVisible();
+  await expect(page.getByRole("status")).toContainText("Saved.");
   await expect(page.getByRole("button", { name: "Save" })).toBeDisabled();
   const ruleUrl = page.url();
   const ruleId = ruleUrl.slice(ruleUrl.lastIndexOf("/") + 1);

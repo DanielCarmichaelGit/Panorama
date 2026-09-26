@@ -93,7 +93,7 @@ function RuleList({ rules, selectedId, busy, onSelect, onNew, onToggle }: { rule
           </li>
         )}
         {rules.map((rule) => (
-          <li key={rule.id} className="settings-row rule-row" data-expanded={rule.id === selectedId || undefined} aria-current={rule.id === selectedId || undefined}>
+          <li key={rule.id} className="settings-row rule-row" data-expanded={rule.id === selectedId || undefined}>
             <div className="row-id">
               <button type="button" className="rule-row-name" onClick={() => onSelect(rule.id)} aria-current={rule.id === selectedId ? "true" : undefined}>
                 <span className="row-name">{rule.name}</span>
@@ -144,6 +144,7 @@ function RuleEditor({ rule, project, lanes, justSaved, onSaved, onDeleted }: { r
   const [errors, setErrors] = useState<Map<string, string>>(new Map());
   const [lit, setLit] = useState<Set<string>>(new Set());
   const [litEdges, setLitEdges] = useState<Set<string>>(new Set());
+  const [elseTaken, setElseTaken] = useState<Set<string>>(new Set());
   const [bar, setBar] = useState<Bar | null>(justSaved ? SAVED : null);
   const [testing, setTesting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -195,6 +196,7 @@ function RuleEditor({ rule, project, lanes, justSaved, onSaved, onDeleted }: { r
     setErrors(new Map());
     setLit(new Set());
     setLitEdges(new Set());
+    setElseTaken(new Set());
     setBar((b) => (b && b.kind !== "test" ? null : b));
   }, [meaning]);
 
@@ -203,6 +205,7 @@ function RuleEditor({ rule, project, lanes, justSaved, onSaved, onDeleted }: { r
     setErrors(m.byNode);
     setLit(new Set());
     setLitEdges(new Set());
+    setElseTaken(new Set());
     setBar({ kind: "error", lines: m.lines });
   }
 
@@ -237,17 +240,21 @@ function RuleEditor({ rule, project, lanes, justSaved, onSaved, onDeleted }: { r
     try {
       const result: RuleTestResult = await test.mutateAsync({ id: rule.id, ticketId });
       const key = tickets.data?.find((t) => t.id === ticketId)?.key ?? ticketId;
-      // A drawn node lights up; a synthesised else node lights the else edges out of its condition instead.
+      // A drawn node lights up; a synthesised else node lights the else edges out of its
+      // condition instead, and the condition itself says its else branch was taken.
       const nodesLit = new Set<string>();
       const edgesLit = new Set<string>();
+      const elseOwners = new Set<string>();
       for (const id of result.nodeIds) {
         if (isElseId(id, state.nodes)) {
           const owner = ownerOf(id, state.nodes);
+          elseOwners.add(owner);
           for (const e of state.edges) if (e.label === "else" && e.source === owner) edgesLit.add(e.id);
         } else nodesLit.add(id);
       }
       setLit(nodesLit);
       setLitEdges(edgesLit);
+      setElseTaken(elseOwners);
       setErrors(new Map());
       const lines: string[] = [];
       if (result.matched) {
@@ -319,7 +326,7 @@ function RuleEditor({ rule, project, lanes, justSaved, onSaved, onDeleted }: { r
           </ul>
         </div>
       )}
-      <RuleCanvas state={state} dispatch={dispatch} options={options} names={names} errors={errors} lit={lit} litEdges={litEdges} />
+      <RuleCanvas state={state} dispatch={dispatch} options={options} names={names} errors={errors} lit={lit} litEdges={litEdges} elseTaken={elseTaken} />
       {!draft && <RunLog ruleId={rule.id} projectId={project.id} />}
     </section>
   );

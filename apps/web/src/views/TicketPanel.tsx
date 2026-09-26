@@ -30,12 +30,9 @@ import { Picker, type PickerOption } from "../components/Picker";
 import { Thread } from "../components/Thread";
 import { toggleTaskItem } from "../lib/criteria";
 import { errorMessage } from "../lib/errors";
+import { when } from "../lib/format";
 import { isPickerOpen } from "../lib/keys";
 import { Markdown } from "../lib/markdown";
-
-function when(iso: string): string {
-  return new Date(iso).toLocaleString();
-}
 
 function metaValue(v: unknown): string {
   if (v === null || v === undefined) return "none";

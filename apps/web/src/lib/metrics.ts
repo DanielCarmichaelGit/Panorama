@@ -24,6 +24,9 @@ export function periodFrom(raw: string | null): MetricsPeriod {
 
 export const periodLabel = (period: MetricsPeriod): string => PERIODS.find((p) => p.id === period)?.label ?? "This week";
 
+/** What a figures row says when the period holds nothing, instead of a row of zeros. */
+export const emptyFiguresNote = (period: MetricsPeriod): string => (period === "all" ? "No time or cost recorded yet" : `No time or cost recorded ${periodLabel(period).toLowerCase()}`);
+
 /**
  * The period every metrics surface shares, kept in the URL as `?period=` so a link carries it and
  * the Queue, the Board and the Agents view agree. The week is the default and leaves the URL clean.

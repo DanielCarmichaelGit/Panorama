@@ -232,6 +232,59 @@ describe("Automations view", () => {
     expect(calls.filter((c) => c.method === "PATCH" || (c.method === "POST" && !c.path.endsWith("/test")))).toHaveLength(0);
   });
 
+  it("a saved draft lands under its id with the Saved bar still showing", async () => {
+    const created = rule({ id: "r9", name: "Fresh" });
+    let posted = false;
+    mockApi([], (c) => {
+      if (c.method === "POST" && c.path === "/api/v1/rules") {
+        posted = true;
+        return created;
+      }
+      if (c.path.startsWith("/api/v1/rules?")) return posted ? [created] : [];
+      return undefined;
+    });
+    renderView("/automations");
+    fireEvent.click(await screen.findByRole("button", { name: "New rule" }));
+    await waitFor(() => expect(document.querySelectorAll(".rnode")).toHaveLength(1));
+    // The event needs a type before the drawing can run.
+    fireEvent.click(within(nodeEl("event")!).getByRole("button", { name: "Event" }));
+    fireEvent.click(await screen.findByRole("option", { name: "A ticket is created" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Rule name" }), { target: { value: "Fresh" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(posted).toBe(true));
+    expect(await screen.findByRole("region", { name: "Fresh" })).toBeTruthy();
+    expect(screen.getByRole("status").textContent).toContain("Saved.");
+  });
+
+  it("an else path taken shows the If node a muted note instead of a ring", async () => {
+    const withElse = rule({
+      canvas: {
+        nodes: [
+          { id: "event", kind: "event", position: { x: 0, y: 0 }, data: { type: "ticket.moved", toLaneId: "l2" } },
+          { id: "c1", kind: "condition", position: { x: 288, y: 0 }, data: { kind: "evidence", typeId: "et1", result: "pass", op: "exists" } },
+          { id: "a1", kind: "action", position: { x: 576, y: 0 }, data: { type: "move_to_lane", laneId: "l3" } },
+          // The synthesised not-node, where toDoc writes it, so the rule reads as clean.
+          { id: "c1~else", kind: "condition", position: { x: 288, y: 40 }, data: { kind: "not", condition: { kind: "evidence", typeId: "et1", result: "pass", op: "exists" } } },
+        ],
+        edges: [
+          { id: "event-c1", source: "event", target: "c1" },
+          { id: "event-c1~else", source: "event", target: "c1~else" },
+          { id: "c1-a1", source: "c1~else", target: "a1" },
+        ],
+      },
+    });
+    mockApi([withElse], (c) => (c.method === "POST" && c.path === "/api/v1/rules/r1/test" ? { matched: true, nodeIds: ["event", "c1~else", "a1"], actions: [{ type: "move_to_lane", laneId: "l3" }], refusals: [] } : undefined));
+    renderView("/automations/r1");
+    await waitFor(() => expect(document.querySelectorAll(".rnode")).toHaveLength(3));
+    fireEvent.click(screen.getByRole("button", { name: "Test on ticket" }));
+    fireEvent.click(await screen.findByRole("option", { name: /Ship it/ }));
+    await waitFor(() => expect(nodeEl("a1")?.querySelector(".rnode")?.classList.contains("is-lit")).toBe(true));
+    const cond = nodeEl("c1")!.querySelector(".rnode")!;
+    expect(cond.classList.contains("is-lit")).toBe(false);
+    expect(within(nodeEl("c1")!).getByText("Else branch taken").classList.contains("muted")).toBe(true);
+    expect(document.querySelector(".react-flow__edge.edge-else")?.classList.contains("is-lit")).toBe(true);
+  });
+
   it("selecting a node keeps the error rings and the bar; changing the drawing clears them", async () => {
     mockApi([disconnected]);
     renderView("/automations/r2");

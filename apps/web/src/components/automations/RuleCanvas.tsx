@@ -9,6 +9,7 @@ import {
   type Connection,
   type Edge,
   type EdgeChange,
+  type FitViewOptions,
   type NodeChange,
 } from "@xyflow/react";
 import "@xyflow/react/dist/base.css";
@@ -19,7 +20,8 @@ import { isPickerOpen, isTypingTarget } from "../../lib/keys";
 import { Picker } from "../Picker";
 import { CanvasContext, nodeTypes, type CanvasOptions, type RuleNode } from "./nodes";
 import { buildNode, newId, placeNear, reducer, type CanvasAction, type CanvasState } from "./store";
-import { KIND_FAMILY, KIND_KEY, KIND_LABEL, actionSentence, conditionSentence, eventSentence, scheduleSentence, type Names } from "./vocab";
+import { scheduleTitle } from "./schedule";
+import { KIND_FAMILY, KIND_KEY, KIND_LABEL, actionSentence, conditionSentence, eventSentence, type Names } from "./vocab";
 
 /**
  * The rule canvas on React Flow: the four custom nodes, smooth step edges, a grid in the
@@ -38,13 +40,15 @@ export interface RuleCanvasProps {
   lit: Set<string>;
   /** Else edges the last test run passed through (their synthesised node matched). */
   litEdges?: Set<string>;
-  /** Shown beside the palette while the rule is only its event node. */
-  hint?: boolean;
+  /** Condition nodes whose else branch the last test run took. */
+  elseTaken?: Set<string>;
 }
 
 const DRAG_TYPE = "application/x-boomerang-node";
 const SNAP: [number, number] = [8, 8];
-const FIT = { padding: 0.25, maxZoom: 1 };
+/** The palette sits over the right edge of the canvas, so a fit leaves that edge clear. */
+const FIT: FitViewOptions = { padding: { top: 0.2, right: "200px", bottom: 0.2, left: 0.15 }, maxZoom: 1 };
+const EMPTY_SET: Set<string> = new Set();
 /** Where focus goes after a delete when no node is left: the canvas itself. */
 const ROOT = "__root__";
 
@@ -61,7 +65,7 @@ function titleOf(kind: CanvasNodeKind, data: Record<string, unknown>, names: Nam
     case "action":
       return actionSentence(data, names);
     case "schedule":
-      return scheduleSentence(data);
+      return scheduleTitle(data);
   }
 }
 
@@ -73,7 +77,7 @@ function controlsOf(node: HTMLElement): HTMLElement[] {
 /** Phones start at half zoom and pan: a whole rule fitted at the 0.3 floor is not readable. */
 const isPhone = () => typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia("(max-width: 720px)").matches;
 
-function Flow({ state, dispatch, options, names, errors, lit, litEdges, hint }: RuleCanvasProps) {
+function Flow({ state, dispatch, options, names, errors, lit, litEdges, elseTaken }: RuleCanvasProps) {
   const { screenToFlowPosition, zoomIn, zoomOut, fitView } = useReactFlow();
   const rootRef = useRef<HTMLDivElement>(null);
   const focusNext = useRef<string | null>(null);
@@ -107,8 +111,8 @@ function Flow({ state, dispatch, options, names, errors, lit, litEdges, hint }: 
   );
 
   const context = useMemo(
-    () => ({ options, names, errors, lit, setData: (id: string, data: Record<string, unknown>) => dispatch({ type: "setData", id, data }) }),
-    [options, names, errors, lit, dispatch],
+    () => ({ options, names, errors, lit, elseTaken: elseTaken ?? EMPTY_SET, setData: (id: string, data: Record<string, unknown>) => dispatch({ type: "setData", id, data }) }),
+    [options, names, errors, lit, elseTaken, dispatch],
   );
 
   const onNodesChange = useCallback((changes: NodeChange[]) => dispatch({ type: "nodesChange", changes }), [dispatch]);
@@ -344,7 +348,7 @@ function Flow({ state, dispatch, options, names, errors, lit, litEdges, hint }: 
                 <kbd>{KIND_KEY[kind]}</kbd> {KIND_LABEL[kind]}
               </button>
             ))}
-            {(hint ?? onlyEvent) && <p className="rule-palette-hint muted">Press c to add a condition, a to add an action</p>}
+            {onlyEvent && <p className="rule-palette-hint muted">Press c to add a condition, a to add an action</p>}
           </Panel>
           <Panel position="bottom-left" className="rule-controls">
             <button type="button" className="icon-btn" aria-label="Zoom in" title="Zoom in" onClick={() => zoomIn()}>

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { forwardRef, useEffect, useRef } from "react";
 import type { Icon } from "@phosphor-icons/react";
 import { ApiError } from "../../lib/api";
 import { BoomerangScene } from "../../lib/iso";
@@ -31,30 +31,25 @@ export function SettingsList({ children, label }: { children: React.ReactNode; l
 /**
  * A row: identity (swatch or chip, name) | facts (chips and muted text) | actions (32px icon
  * buttons). Anything passed as `children` (the expanded form, an inline confirmation, an error)
- * renders below the line, spanning the row.
+ * renders below the line, spanning the row. The ref reaches the row element, for a tab that
+ * hands focus back to the row's actions once an inline confirmation is gone.
  */
-export function SettingsRow({
-  identity,
-  facts,
-  actions,
-  expanded,
-  children,
-}: {
+export const SettingsRow = forwardRef<HTMLLIElement, {
   identity: React.ReactNode;
   facts?: React.ReactNode;
   actions?: React.ReactNode;
   expanded?: boolean;
   children?: React.ReactNode;
-}) {
+}>(function SettingsRow({ identity, facts, actions, expanded, children }, ref) {
   return (
-    <li className="settings-row" data-expanded={expanded || undefined}>
+    <li ref={ref} className="settings-row" data-expanded={expanded || undefined}>
       <div className="row-id">{identity}</div>
       <div className="row-facts">{facts}</div>
       <div className="row-actions">{actions}</div>
       {children}
     </li>
   );
-}
+});
 
 /** A 32px icon button with a tooltip and an accessible name; the tooltip carries the reason when disabled. */
 export function RowAction({

@@ -1,6 +1,7 @@
 import type { Actor, Family, Scopes, Ticket } from "@boomerang/core";
 import type { Figures } from "../lib/hooks";
 import { AgentMark } from "../lib/iso";
+import { when } from "../lib/format";
 import { hasFigures } from "../lib/metrics";
 import { FigureSpans } from "./Figures";
 
@@ -30,10 +31,6 @@ export function agentStatusLine(agent: Actor, ticket: Ticket | undefined, now: D
   if (agent.status === "pending") return { text: "waiting for approval", coral: true };
   if (isWorking(agent, now) && ticket) return { text: `on ${ticket.key} for ${minutesSince(ticket.updatedAt, now)} min`, coral: false };
   return { text: "idle", coral: false };
-}
-
-function when(iso: string | null): string {
-  return iso ? new Date(iso).toLocaleString() : "Never";
 }
 
 export function scopeSummary(scopes: Scopes | null): string {

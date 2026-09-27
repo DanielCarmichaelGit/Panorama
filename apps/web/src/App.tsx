@@ -5,6 +5,7 @@ import { ChainBanner } from "./components/ChainBanner";
 import { api } from "./lib/api";
 import { session } from "./lib/session";
 import { Agents } from "./views/Agents";
+import { Automations } from "./views/Automations";
 import { Board } from "./views/Board";
 import { LockScreen } from "./views/LockScreen";
 import { Queue } from "./views/Queue";
@@ -49,6 +50,8 @@ export function App() {
         <Route element={<Shell status={status.data} chainOk={chain.ok} />}>
           <Route path="/" element={<Queue />} />
           <Route path="/board" element={<Board />} />
+          <Route path="/automations" element={<Automations />} />
+          <Route path="/automations/:ruleId" element={<Automations />} />
           <Route path="/agents" element={<Agents />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/t/:id" element={<Queue />} />

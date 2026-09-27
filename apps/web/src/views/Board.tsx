@@ -4,7 +4,8 @@ import { DndContext, DragOverlay, PointerSensor, useDroppable, useSensor, useSen
 import type { DragEndEvent, DragStartEvent } from "@dnd-kit/core";
 import type { Board as BoardType, Epic, EvidenceType, Lane, Project, Tag, Ticket } from "@boomerang/core";
 import { ApiError } from "../lib/api";
-import { useAgents, useBoard, useBoards, useEpics, useEvidenceTypes, useGates, useMoveTicket, useTags } from "../lib/hooks";
+import { useAgents, useBoard, useBoards, useEpics, useEvidenceTypes, useGates, useMoveTicket, useProjectMetrics, useTags } from "../lib/hooks";
+import { costText, estimateTitle, formatDuration, hasFigures, usePeriod } from "../lib/metrics";
 import { BoardCard, BoardCardContent } from "../components/BoardCard";
 import { laneOptionLabel, missingMessage } from "../components/GateList";
 import { NewBoard } from "../components/NewBoard";
@@ -141,6 +142,17 @@ export function Board() {
   const epicId = urlEpicId && epics.some((e) => e.id === urlEpicId) ? urlEpicId : null;
   const tagIds = searchParams.getAll("tag").filter((id) => tags.some((t) => t.id === id));
   const hasFilters = !!epicId || tagIds.length > 0;
+  // The selected arc's time and estimated cost for the period (the same `?period=` the Queue
+  // shows), from the by-arc rollup; asked for only while an arc is selected.
+  const [period] = usePeriod();
+  const epicMetrics = useProjectMetrics(epicId ? project.id : undefined, period, "epic");
+  const epicGroup = epicId ? epicMetrics.data?.groups.find((g) => g.id === epicId) : undefined;
+  const epicHint = epicGroup && hasFigures(epicGroup) && epicMetrics.data ? (
+    <>
+      <span className="mono muted">{formatDuration(epicGroup.seconds)}</span>
+      <span className="mono muted" title={estimateTitle(epicMetrics.data.priceDate)}>{costText(epicGroup)}</span>
+    </>
+  ) : undefined;
   // A deep link with a filter waits for the list that validates it; otherwise the board would
   // flash unfiltered until the arcs or tags arrive.
   const filtersLoading = (!!urlEpicId && epicsQuery.isPending) || (searchParams.has("tag") && tagsQuery.isPending);
@@ -260,6 +272,7 @@ export function Board() {
           options={epicOptions.map((e) => ({ id: e.id, label: e.name, family: e.family, color: e.color }))}
           value={epicId}
           onChange={selectEpic}
+          hint={epicHint}
         />
         <Picker
           id="board-tag-filter"

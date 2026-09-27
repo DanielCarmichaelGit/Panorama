@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
-import { can, verifyRequest, type Action, type Actor } from "@boomerang/core";
+import { can, verifyRequest, type PermissionAction, type Actor } from "@boomerang/core";
 import { getActor, touchActor, type DB } from "@boomerang/db";
 import type { Ctx } from "./context";
 import { HttpError } from "./errors";
@@ -11,7 +11,7 @@ export function getDb(ctx: Ctx): DB {
   return ctx.db;
 }
 
-export function requireCan(req: FastifyRequest, action: Action, projectId?: string): void {
+export function requireCan(req: FastifyRequest, action: PermissionAction, projectId?: string): void {
   if (!can(req.actor, action, projectId)) throw new HttpError(403, "forbidden", `This key may not perform ${action}`);
 }
 

@@ -23,18 +23,16 @@ import {
 import { AddEvidence } from "../components/AddEvidence";
 import { Chip } from "../components/Chip";
 import { Composer } from "../components/Composer";
+import { CostBlock } from "../components/CostBlock";
 import { FieldControl, isFieldEmpty } from "../components/FieldControl";
 import { GateList, laneOptionLabel, nextLane } from "../components/GateList";
 import { Picker, type PickerOption } from "../components/Picker";
 import { Thread } from "../components/Thread";
 import { toggleTaskItem } from "../lib/criteria";
 import { errorMessage } from "../lib/errors";
+import { when } from "../lib/format";
 import { isPickerOpen } from "../lib/keys";
 import { Markdown } from "../lib/markdown";
-
-function when(iso: string): string {
-  return new Date(iso).toLocaleString();
-}
 
 function metaValue(v: unknown): string {
   if (v === null || v === undefined) return "none";
@@ -488,6 +486,8 @@ export function TicketPanel({ id, onClose }: { id: string; onClose: () => void }
         />
         {activeFields.map((f) => <FieldRow key={f.id} ticket={t} def={f} />)}
       </div>
+
+      <CostBlock ticketId={t.id} />
 
       <Picker
         id="tp-lane"

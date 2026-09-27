@@ -1,0 +1,26 @@
+{
+  "sessionId": "s_20260925T184801_4e231a",
+  "actor": "Daniel Carmichael",
+  "tool": "cli",
+  "intent": "milestone 3 task 5 scheduler, outbox worker, webhook destinations (continues session s_20260925T044147_90c922, whose chain broke at seq 30 when two tool hooks appended concurrently)",
+  "head": "7e26308fc4601c4397367d2de85b735bfc356876f3f973d9828238dee8d463d1",
+  "count": 56,
+  "diffHash": "4a0518037b30323ddb86db5cd52d8bc2bac2ddbf6248ed3c449b8ee1ead8ec1d",
+  "files": [
+    "README.md",
+    "apps/server/src/destinations.test.ts",
+    "apps/server/src/routes/destinations.ts",
+    "apps/server/src/workers/outbox.test.ts",
+    "apps/server/src/workers/outbox.ts",
+    "apps/server/src/workers/scheduler.test.ts",
+    "apps/server/src/workers/scheduler.ts",
+    "docs/superpowers/specs/2026-09-24-automation-design.md",
+    "docs/webhooks.md",
+    "packages/core/src/rules/canvas.test.ts",
+    "packages/core/src/rules/evaluate.test.ts",
+    "packages/core/src/rules/schema.test.ts",
+    "packages/core/src/rules/schema.ts"
+  ],
+  "base": "e4c87aa1eb6e39cd549b37ba030fb4593a32b20b",
+  "ts": "2026-09-25T19:03:22.098Z"
+}

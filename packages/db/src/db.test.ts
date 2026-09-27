@@ -149,7 +149,7 @@ describe("ticket refs", () => {
 });
 
 describe("keyed database migration", () => {
-  it("upgrades an encrypted database from version 7 with every foreign key intact", () => {
+  it("upgrades an encrypted database from version 7 to the current version with every foreign key intact", () => {
     const dir = mkdtempSync(join(tmpdir(), "pan-"));
     const key = "ab".repeat(32);
     const db = d.openDatabase(join(dir, "p.db"), key);
@@ -159,7 +159,7 @@ describe("keyed database migration", () => {
     const field = d.createField(db, { projectId: project.id, name: "Points", key: "points", kind: "number", required: false }, NOW);
     d.setTicketFields(db, t.id, { points: 3 });
     d.migrate(db);
-    expect(db.pragma("user_version", { simple: true })).toBe(8);
+    expect(db.pragma("user_version", { simple: true })).toBe(9);
     expect(db.pragma("foreign_key_check")).toEqual([]);
     expect(d.getTicketFields(db, t.id)).toEqual({ points: 3 });
     expect(d.getField(db, field.id)!.key).toBe("points");
@@ -184,7 +184,7 @@ describe("M8 migration", () => {
     expect(() => db.prepare("insert into field_definitions(id, project_id, name, key, kind, options, required, position, archived, created_at) values(?,?,?,?,?,?,?,?,?,?)")
       .run("fd2", "proj1", "Spec", "spec", "file", "[]", 0, 1, 0, NOW)).toThrow(/CHECK constraint/);
 
-    d.migrate(db); // completes the upgrade to M8
+    d.migrateTo(db, 8); // applies M8 alone; M9 has its own test in automation.test.ts
 
     expect(db.pragma("user_version", { simple: true })).toBe(8);
     expect(d.getField(db, "fd1")).toMatchObject({ key: "points", kind: "number", required: true });
@@ -383,5 +383,36 @@ describe("projects and tickets", () => {
 
     expect(d.listTickets(db, { projectId: project.id, epicId: epic.id }).map((t) => t.id)).toEqual([inEpic.id]);
     expect(d.listTickets(db, { projectId: project.id, tagId: tag.id }).map((t) => t.id)).toEqual([tagged.id]);
+  });
+});
+
+describe("event lookups", () => {
+  it("finds one event by seq and lists the events of one type in order", () => {
+    const { db } = fresh();
+    d.appendEvent(db, { actorId: "human", type: "a", payload: { n: 1 }, signature: "s", now: NOW });
+    const b = d.appendEvent(db, { actorId: "human", type: "b", payload: { n: 2 }, signature: "s", now: NOW });
+    d.appendEvent(db, { actorId: "system", type: "a", payload: { n: 3 }, signature: "", now: NOW });
+    expect(d.getEvent(db, b.seq)).toEqual(b);
+    expect(d.getEvent(db, 99)).toBeUndefined();
+    expect(d.listEventsOfType(db, "a").map((e) => (e.payload as { n: number }).n)).toEqual([1, 3]);
+    expect(d.listEventsOfType(db, "zzz")).toEqual([]);
+  });
+});
+
+describe("tickets due before a day", () => {
+  it("lists unarchived tickets whose due date is strictly before the given day", () => {
+    const { db } = fresh();
+    const { project } = d.createProject(db, { name: "P", key: "PP" }, NOW);
+    const mk = (title: string, dueDate: string | null) => {
+      const t = d.createTicket(db, { projectId: project.id, title }, NOW);
+      return dueDate ? d.updateTicket(db, t.id, { dueDate }, NOW) : t;
+    };
+    const early = mk("early", "2026-09-20");
+    mk("today", "2026-09-25");
+    mk("none", null);
+    const gone = mk("gone", "2026-09-19");
+    d.archiveTicket(db, gone.id, NOW);
+    expect(d.listTicketsDueBefore(db, "2026-09-25")).toEqual([{ id: early.id, projectId: project.id, dueDate: "2026-09-20" }]);
+    expect(d.listTicketsDueBefore(db, "2026-09-20")).toEqual([]);
   });
 });

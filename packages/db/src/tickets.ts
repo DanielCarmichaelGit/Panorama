@@ -48,15 +48,22 @@ export function listTickets(db: DB, f: { projectId?: string; boardId?: string; l
   return db.prepare(`${SELECT} where ${where.join(" and ")} order by t.lane_id, t.position`).all(...args).map((r) => toTicket(db, r));
 }
 
+/** Unarchived tickets whose due date is strictly before `day` (YYYY-MM-DD). Due dates are calendar
+ *  days stored as text, so the comparison is textual; the caller decides which day has ended. */
+export const listTicketsDueBefore = (db: DB, day: string): { id: string; projectId: string; dueDate: string }[] =>
+  db.prepare("select id, project_id, due_date from tickets where archived = 0 and due_date is not null and due_date < ? order by due_date, id").all(day)
+    .map((r: any) => ({ id: r.id, projectId: r.project_id, dueDate: r.due_date }));
+
 export function updateTicket(
   db: DB,
   id: string,
   patch: { title?: string; startDate?: string | null; dueDate?: string | null; assigneeId?: string | null; metadata?: Record<string, unknown>;
-    epicId?: string | null; tagIds?: string[]; successCriteria?: string; fields?: Record<string, FieldValue> },
+    epicId?: string | null; boardId?: string; tagIds?: string[]; successCriteria?: string; fields?: Record<string, FieldValue> },
   now: string
 ): Ticket {
   const cols: Record<string, unknown> = {};
   if (patch.title !== undefined) cols.title = patch.title;
+  if (patch.boardId !== undefined) cols.board_id = patch.boardId;
   if (patch.startDate !== undefined) cols.start_date = patch.startDate;
   if (patch.dueDate !== undefined) cols.due_date = patch.dueDate;
   if (patch.assigneeId !== undefined) cols.assignee_id = patch.assigneeId;

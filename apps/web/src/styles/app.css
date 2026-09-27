@@ -54,8 +54,8 @@ a{color:var(--accent)}
 .checkbox-row{display:flex;align-items:center;gap:.5rem;margin:.3rem 0;font-weight:400}
 .banner{background:var(--coral-top);color:var(--coral-ink);padding:.7rem var(--gutter);font-weight:600}
 @media (max-width:860px){.lock{grid-template-columns:1fr;align-content:start}.lock .art{order:-1;margin-bottom:.5rem}.lock form{width:100%;margin:0 auto}.iso-scene{max-width:320px}}
-/* The track snaps: animating grid-template-columns relayouts the whole shell on every frame.
-   The sidebar's own contents carry the motion instead, and the labels fade. */
+/* The track changes in one frame (animating grid-template-columns relays out the page on every
+   frame); useSidebarFlip makes it read as motion with transforms only. See "Sidebar motion" below. */
 .shell{display:grid;grid-template-columns:232px minmax(0,1fr);min-height:100%}.shell.collapsed{grid-template-columns:64px minmax(0,1fr)}
 .side{background:var(--surface);border-right:1px solid var(--line);padding:16px 12px;display:flex;flex-direction:column;gap:4px;position:sticky;top:0;height:100vh;z-index:var(--z-sidebar);animation:fade 300ms var(--ease-in) both}
 .side>*{transition:transform var(--dur) var(--ease),opacity var(--dur) var(--ease)}
@@ -81,7 +81,7 @@ a{color:var(--accent)}
 .collapsed .side .nav-item{justify-content:center;width:44px;height:44px;padding:0;gap:0;border-radius:var(--r-input)}
 .side .label{white-space:nowrap;overflow:hidden;transition:opacity var(--dur) var(--ease)}
 .collapsed .side .label{opacity:0;position:absolute;width:1px;height:1px;clip:rect(0 0 0 0)}
-.view{padding:2rem var(--gutter);max-width:1200px;position:relative}
+.view{padding:2rem var(--gutter);position:relative;min-width:0}
 .view-head{display:flex;align-items:baseline;gap:1rem;flex-wrap:wrap;margin-bottom:1.25rem}
 .view-head .count{font-size:2.4rem;font-weight:500;color:var(--accent);letter-spacing:-.03em;margin-right:.5rem}
 .view-head .spacer{margin-left:auto}
@@ -92,7 +92,7 @@ a{color:var(--accent)}
 .chip{font:600 .75rem var(--font);padding:.2rem .6rem;border-radius:var(--r-pill);border:0;white-space:nowrap;flex:none}
 .section-title{margin:1.75rem 0 .75rem}
 .skeleton{height:46px;border-radius:var(--r-card);background:var(--stone-top);margin-bottom:8px}
-.empty{display:grid;justify-items:start;gap:.5rem;max-width:420px}
+.empty{display:grid;justify-items:start;gap:.5rem}.empty p{max-width:60ch}
 .empty-actions{display:flex;gap:.6rem;margin-top:.25rem}
 .rows{width:100%;max-width:none}
 .modal-back{position:fixed;inset:0;background:rgba(27,34,48,.35);z-index:var(--z-modal);display:grid;place-items:center;padding:var(--gutter)}
@@ -106,7 +106,8 @@ a{color:var(--accent)}
 .side .menu-item{display:none}
 .sheet{background:var(--surface);border-top:1px solid var(--line);border-radius:var(--r-card) var(--r-card) 0 0;padding:1rem var(--gutter) 1.25rem;display:grid;gap:.75rem;justify-items:stretch;animation:sheet-in 250ms var(--ease-in) both}
 @keyframes sheet-in{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
-@media (max-width:860px){.shell,.shell.collapsed{grid-template-columns:1fr}.side{position:fixed;inset:auto 0 0 0;height:auto;flex-direction:row;justify-content:space-around;gap:0;padding:6px 4px;border-right:0;border-top:1px solid var(--line);animation:none}.side .nav-item{flex:0 0 auto;padding:.55rem;border-radius:var(--r-input)}.side .nav-item .label{display:none}.side .foot,.side .switcher,.side .brand{display:none}.side .menu-item{display:flex}.sheet-back{align-items:end;justify-items:stretch;padding:0}.sheet{width:100%;padding-bottom:5rem}.view{padding-bottom:5rem}.trow .ag,.trow .tk{display:none}}
+/* minmax(0,1fr), not 1fr: a bare 1fr track cannot shrink below its content, and six Settings tabs would widen the page on a phone. */
+@media (max-width:860px){.shell,.shell.collapsed{grid-template-columns:minmax(0,1fr)}.side{position:fixed;inset:auto 0 0 0;height:auto;flex-direction:row;justify-content:space-around;gap:0;padding:6px 4px;border-right:0;border-top:1px solid var(--line);animation:none}.side .nav-item{flex:0 0 auto;padding:.55rem;border-radius:var(--r-input)}.side .nav-item .label{display:none}.side .foot,.side .switcher,.side .brand{display:none}.side .menu-item{display:flex}.sheet-back{align-items:end;justify-items:stretch;padding:0}.sheet{width:100%;padding-bottom:5rem}.view{padding-bottom:5rem}.trow .ag,.trow .tk{display:none}}
 .panel{position:fixed;top:0;right:0;bottom:0;width:min(clamp(520px,60vw,1100px),100%);background:var(--surface);border-left:1px solid var(--line);z-index:var(--z-panel);padding:1.25rem var(--gutter);overflow:auto;animation:panel-in 250ms var(--ease-in) both;box-shadow:var(--shadow)}
 @keyframes panel-in{from{transform:translateX(24px);opacity:0}to{transform:none;opacity:1}}
 @media (min-width:1600px){.with-panel .view{margin-right:min(60vw,1100px)}}
@@ -276,7 +277,7 @@ a{color:var(--accent)}
 /* Settings (milestone 2c): one list per tab, rows that show and expand on demand. */
 .settings-intro-head{display:flex;align-items:center;justify-content:space-between;gap:1rem;margin:1.25rem 0 .5rem}
 .settings-intro-title{font-weight:600;font-size:.8125rem;color:var(--muted)}
-.settings-intro{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));background:var(--surface);border:1px solid var(--line);border-radius:var(--r-card);margin-bottom:1.5rem}
+.settings-intro{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));background:var(--surface);border:1px solid var(--line);border-radius:var(--r-card);margin-bottom:1.5rem}
 .settings-intro-item{display:grid;gap:.35rem;align-content:start;justify-items:start;text-align:left;padding:.85rem 1rem;background:none;border:0;border-left:1px solid var(--line);font:inherit;color:inherit;cursor:pointer;transition:background var(--dur) var(--ease)}
 .settings-intro-item:first-child{border-left:0;border-radius:var(--r-card) 0 0 var(--r-card)}
 .settings-intro-item:last-child{border-radius:0 var(--r-card) var(--r-card) 0}
@@ -287,7 +288,7 @@ a{color:var(--accent)}
 .settings-intro-text{font-size:.8125rem;line-height:1.5;color:var(--muted)}
 .settings-section{margin-bottom:2.5rem}
 .settings-head{display:flex;align-items:center;justify-content:space-between;gap:1rem;margin-bottom:.75rem}
-.settings-head p{margin:0;font-size:.875rem;max-width:56rem}
+.settings-head p{margin:0;font-size:.875rem;flex:1;min-width:0}
 .settings-head .btn{flex:none;white-space:nowrap}
 .settings-list{list-style:none;margin:0;padding:0;background:var(--surface);border:1px solid var(--line);border-radius:var(--r-card)}
 .settings-row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;grid-template-areas:"id facts actions";align-items:center;gap:.25rem .9rem;min-height:44px;padding:.3rem .5rem .3rem .9rem;transition:background var(--dur) var(--ease)}
@@ -296,11 +297,11 @@ a{color:var(--accent)}
 .settings-row:last-child{border-radius:0 0 var(--r-card) var(--r-card)}
 .settings-row:hover,.settings-row[data-expanded]{background:var(--bg)}
 .row-id{grid-area:id;display:flex;align-items:center;gap:.6rem;min-width:0}
-.row-name{font-weight:600;white-space:nowrap}
+.row-name{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 .row-dot{width:10px;height:10px;border-radius:var(--r-pill);flex:none}
 .row-facts{grid-area:facts;display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;min-width:0;font-size:.8125rem;color:var(--muted)}
 .row-facts .chip{font-size:.6875rem;padding:.12rem .5rem}
-.row-truncate{min-width:0;max-width:28rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row-truncate{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .row-actions{grid-area:actions;display:flex;align-items:center;gap:2px;justify-self:end;min-height:32px}
 .row-actions .icon-btn,.options-row .icon-btn,.req-row-top .icon-btn{width:32px;height:32px;flex:none;border:0;border-radius:var(--r-input);color:var(--muted)}
 .row-actions .icon-btn:hover,.options-row .icon-btn:hover,.req-row-top .icon-btn:hover{color:var(--text);background:var(--stone-top)}
@@ -316,7 +317,7 @@ a{color:var(--accent)}
 .row-form .color-swatches{padding:2px 4px}
 .row-form .color-native{width:34px;height:34px}
 .row-form .checkbox-row{margin:0;font-size:.875rem}
-.row-form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(11rem,1fr));gap:.6rem .9rem;align-items:start;max-width:48rem}
+.row-form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(11rem,1fr));gap:.6rem .9rem;align-items:start}
 .row-form-grid>.checkbox-row{margin-top:1.45rem;min-height:34px}
 .row-form-checks{display:flex;gap:1.25rem;flex-wrap:wrap}
 .row-form-actions{display:flex;gap:.5rem}
@@ -326,13 +327,18 @@ a{color:var(--accent)}
 .link-btn:hover{text-decoration:underline}
 .link-btn:disabled{color:var(--muted);cursor:not-allowed;text-decoration:none}
 .options-editor{display:grid;gap:.4rem;justify-items:start}
-.options-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto;gap:.5rem;align-items:center;width:100%;max-width:36rem}
+.options-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto;gap:.5rem;align-items:center;width:100%}
 .req-rows{display:grid;gap:.6rem;justify-items:start}
-.req-row{display:grid;gap:.4rem;width:100%;max-width:36rem;padding:.5rem .6rem .6rem;border:1px solid var(--line);border-radius:var(--r-input);background:var(--surface)}
+.req-row{display:grid;gap:.4rem;width:100%;padding:.5rem .6rem .6rem;border:1px solid var(--line);border-radius:var(--r-input);background:var(--surface)}
 .req-row-top{display:grid;grid-template-columns:minmax(0,1fr) 5rem auto;gap:.5rem;align-items:end}
 .req-desc{resize:none;overflow:hidden}
 .row-confirm{grid-column:1 / -1;display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;font-size:.875rem;padding:.2rem 0 .5rem}
 .row-error{grid-column:1 / -1;margin:.2rem 0 .5rem;font-size:.8125rem}
+.row-note{grid-column:1 / -1;margin:.2rem 0 .5rem;font-size:.8125rem}
+.secret-panel{grid-column:1 / -1;display:grid;gap:.5rem;padding:.6rem .75rem .7rem;margin:.2rem 0 .5rem;background:var(--surface);border:1px solid var(--line);border-radius:var(--r-input);animation:row-form-in var(--dur) var(--ease-in) both}
+.secret-panel p{margin:0;font-size:.8125rem}
+.secret-line{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap}
+.secret-value{font-size:.8125rem;overflow-wrap:anywhere;user-select:all;padding:.3rem .5rem;background:var(--bg);border:1px solid var(--line);border-radius:var(--r-input)}
 .settings-empty{display:flex;align-items:center;gap:1rem;padding:.75rem .9rem;min-height:44px}
 .settings-empty .iso-scene{width:96px;max-width:96px;flex:none}
 .settings-empty p{margin:0;font-size:.875rem}
@@ -402,6 +408,25 @@ a{color:var(--accent)}
 .collapsed .side-status{padding:8px 0;justify-items:center;border-color:transparent}
 .sheet .side-status{margin-bottom:0}
 
+/* Metrics (milestone 3): the figures row, agent card totals, the arc hint, the ticket's Cost block */
+.figures{display:flex;align-items:center;gap:1rem;flex-wrap:wrap;margin:0 0 1.25rem}
+.figure{display:inline-flex;align-items:baseline;gap:.3rem;font-size:.8125rem}
+.figure .mono{font-size:.8125rem}
+.figures .picker{width:auto;margin:0}
+.figures .picker-trigger{width:auto;padding:.3rem .6rem;font-size:.8125rem;font-weight:600;gap:.35rem}
+.agent-totals{margin:0;gap:.6rem}
+.agent-totals .figure,.agent-totals .figure .mono{font-size:.75rem}
+.picker-trigger-hint{display:inline-flex;align-items:baseline;gap:.5rem;flex:none;margin-left:.25rem}
+.cost-block{margin:0 0 1.75rem}
+.cost-block h2{margin-bottom:.6rem}
+.cost-block .figures{margin-bottom:.75rem}
+.cost-block .running{display:flex;align-items:center;gap:.5rem;margin:0 0 .75rem;font-size:.8125rem;color:var(--sky-ink)}
+.cost-block .running .dot{width:8px;height:8px;border-radius:var(--r-pill);background:var(--sky-right);flex:none}
+.cost-block .settings-list{margin-bottom:.75rem}
+.cost-block .settings-row{min-height:34px;padding:.2rem .9rem}
+.cost-block .row-facts{display:flex;align-items:center;gap:.9rem;justify-content:flex-end;flex-wrap:wrap}
+.cost-block .row-actions{display:none}
+
 /* Scrollbars: thin, rounded, in the line colour, so they belong to the page */
 *{scrollbar-width:thin;scrollbar-color:var(--line) transparent}
 *:hover{scrollbar-color:var(--stone-right) transparent}
@@ -410,3 +435,178 @@ a{color:var(--accent)}
 ::-webkit-scrollbar-thumb{background:var(--line);border-radius:var(--r-pill);border:3px solid transparent;background-clip:padding-box}
 ::-webkit-scrollbar-thumb:hover{background:var(--stone-right);background-clip:padding-box}
 ::-webkit-scrollbar-corner{background:transparent}
+
+/* Automations (milestone 3): a column the height of the viewport, the rule list (or its 44px rail)
+   on the left, the editor on the right with the canvas taking the remaining height and the run
+   log as a drawer under it. Under 900px the pieces stack and the page scrolls as usual. */
+.view.auto-view{max-width:none;display:flex;flex-direction:column;height:100vh;padding-bottom:1.25rem}
+.auto-view .view-head,.auto-view>.error{flex:none}
+.auto-layout{flex:1;min-height:0;display:grid;grid-template-columns:280px minmax(0,1fr);gap:var(--gutter);align-items:stretch}
+.auto-layout.rail{grid-template-columns:44px minmax(0,1fr)}
+.rule-list{min-width:0;min-height:0;overflow:auto;display:flex;flex-direction:column}
+.rule-list.rail{overflow:visible;align-items:center;gap:4px}
+.rail-btn{width:32px;height:32px;flex:none;border:0;border-radius:var(--r-input);color:var(--muted)}
+.rail-btn:hover{color:var(--text);background:var(--stone-top)}
+.rule-list.rail .rail-btn{width:44px;height:44px}
+.rule-list-head{display:flex;align-items:center;gap:.5rem;margin-bottom:.75rem;flex:none}
+.rule-list-head h2{font-size:1rem;flex:1;min-width:0}
+.rule-list-head .btn{display:inline-flex;align-items:center;gap:.3rem;white-space:nowrap}
+.rule-rows .settings-row{grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"id actions" "facts actions";padding:.55rem .6rem .55rem .9rem;gap:.2rem .6rem}
+.rule-row[data-expanded]{background:var(--stone-top)}
+.rule-row-name{background:none;border:0;padding:0;font:inherit;color:inherit;cursor:pointer;text-align:left;min-width:0;max-width:100%;border-radius:var(--r-input)}
+.rule-row-name .row-name{white-space:normal;line-height:1.3;max-width:none}
+.rule-row-name:hover{text-decoration:underline}
+.rule-rows .row-facts .mono{color:var(--muted)}
+.switch{width:34px;height:20px;border-radius:var(--r-pill);border:1px solid var(--line);background:var(--stone-left);position:relative;padding:0;cursor:pointer;flex:none;transition:background var(--dur) var(--ease),border-color var(--dur) var(--ease)}
+.switch[aria-checked="true"]{background:var(--mint-right);border-color:var(--mint-right)}
+.switch-knob{position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:var(--r-pill);background:var(--surface);transition:transform var(--dur) var(--ease)}
+.switch[aria-checked="true"] .switch-knob{transform:translateX(14px)}
+.switch[aria-disabled="true"]{opacity:.5;cursor:progress}
+.rule-editor{min-width:0;min-height:0;display:flex;flex-direction:column;gap:.75rem}
+.rule-editor>*{flex:none}
+.rule-editor-head{display:flex;align-items:center;gap:.75rem;flex-wrap:wrap}
+.rule-name-input{font:600 1.25rem var(--font);letter-spacing:-.01em;border:1px solid transparent;border-radius:var(--r-input);padding:.3rem .4rem;margin-left:-.4rem;flex:1;min-width:12rem;color:inherit;background:none;transition:border-color var(--dur) var(--ease)}
+.rule-name-input:hover,.rule-name-input:focus{border-color:var(--line)}
+.rule-editor-actions{display:flex;align-items:center;gap:.5rem;margin-left:auto;flex-wrap:wrap}
+.rule-editor-actions .btn{display:inline-flex;align-items:center;gap:.35rem;white-space:nowrap}
+.rule-test-picker{min-width:16rem}
+.rule-confirm{background:var(--surface);border:1px solid var(--line);border-radius:var(--r-input);padding:.3rem .8rem 0}
+.canvas-bar{border-radius:var(--r-input);padding:.6rem .8rem;font-size:.875rem;line-height:1.5;animation:row-form-in var(--dur) var(--ease-in) both}
+.canvas-bar ul{margin:0;padding:0;list-style:none;display:grid;gap:.15rem}
+.canvas-bar-error{background:var(--coral-top);color:var(--coral-ink)}
+.canvas-bar-test{background:var(--mint-top);color:var(--mint-ink)}
+.rule-saved{font-size:.8125rem;color:var(--muted);animation:saved-note 3s var(--ease) both}
+@keyframes saved-note{0%{opacity:0}8%{opacity:1}80%{opacity:1}100%{opacity:0}}
+@media (prefers-reduced-motion:reduce){.rule-saved{animation:none}}
+/* The canvas: the remaining height, never under 60vh; with the drawer open it may shrink to 30vh so the two fit. */
+.rule-editor>.rule-canvas{position:relative;flex:1;min-height:60vh;background:var(--surface);border:1px solid var(--line);border-radius:var(--r-card);overflow:hidden}
+.rule-editor.drawer-open>.rule-canvas{min-height:30vh}
+.rule-canvas:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+/* The grid stays; a soft vignette from the ground colour at the edges to the surface in the middle makes the centre read as the work surface. */
+.rule-canvas .react-flow{width:100%;height:100%;background:radial-gradient(ellipse at center,var(--surface) 0,var(--surface) 45%,var(--bg) 100%)}
+.rule-canvas .react-flow__background-pattern.lines{stroke:var(--line);stroke-opacity:.5}
+.rule-canvas .react-flow__edge-path{stroke:var(--stone-right);stroke-width:2;transition:stroke var(--dur) var(--ease)}
+.rule-canvas .react-flow__edge:hover .react-flow__edge-path{stroke:var(--muted)}
+.rule-canvas .react-flow__edge.selected .react-flow__edge-path,.rule-canvas .react-flow__edge:focus-visible .react-flow__edge-path{stroke:var(--accent)}
+.rule-canvas .react-flow__edge-interaction{stroke:transparent;fill:none}
+.rule-canvas .react-flow__connection-path{stroke:var(--muted);stroke-width:2}
+.rule-canvas .react-flow__edge-textbg{fill:var(--surface)}
+.rule-canvas .react-flow__edge-text{font:600 .6875rem var(--font);fill:var(--muted)}
+/* A test run: the edges it passed along carry a slow dash in the mint ink (stroke-dashoffset only; still under reduced motion). */
+.rule-canvas .react-flow__edge.is-lit .react-flow__edge-path{stroke:var(--mint-ink);stroke-dasharray:6 6;animation:edge-dash 1.2s linear infinite}
+.rule-canvas .react-flow__edge.is-lit .react-flow__edge-text{fill:var(--mint-ink)}
+@keyframes edge-dash{to{stroke-dashoffset:-24}}
+@media (prefers-reduced-motion:reduce){.rule-canvas .react-flow__edge.is-lit .react-flow__edge-path{animation:none;stroke-dasharray:none}}
+.rule-canvas .react-flow__node{outline:none}
+.rule-canvas .react-flow__node:focus-visible .rnode{outline:2px solid var(--accent);outline-offset:3px}
+.rule-canvas .react-flow__node.selected .rnode{border-color:var(--muted)}
+.rule-canvas .react-flow__node.dragging .rnode{box-shadow:var(--shadow)}
+.rule-canvas .react-flow__handle.rnode-handle{width:10px;height:10px;min-width:10px;min-height:10px;border-radius:var(--r-pill);background:var(--surface);border:1.5px solid var(--muted);pointer-events:all;cursor:crosshair;transition:background var(--dur) var(--ease)}
+.rule-canvas .react-flow__handle.rnode-handle:hover,.rule-canvas .react-flow__handle.connectingfrom{background:var(--muted)}
+.rule-canvas .react-flow__selection{background:var(--stone-top);border:1px dashed var(--muted);opacity:.6}
+/* A node is a card: the header strip in the family's top colour (the drag handle), then the title and its Pickers in the body. */
+.rnode{position:relative;width:272px;background:var(--surface);border:1px solid var(--line);border-radius:var(--r-card);display:grid;transition:border-color var(--dur) var(--ease),box-shadow var(--dur) var(--ease)}
+.rnode-head{display:flex;align-items:center;gap:.4rem;padding:.4rem .8rem;border-radius:calc(var(--r-card) - 1px) calc(var(--r-card) - 1px) 0 0;background:var(--stone-top);color:var(--stone-ink);cursor:grab}
+.rnode-head:active{cursor:grabbing}
+.rnode-head svg{flex:none}
+.rnode-event .rnode-head{background:var(--coral-top);color:var(--coral-ink)}
+.rnode-condition .rnode-head{background:var(--sky-top);color:var(--sky-ink)}
+.rnode-action .rnode-head{background:var(--mint-top);color:var(--mint-ink)}
+.rnode-schedule .rnode-head{background:var(--lilac-top);color:var(--lilac-ink)}
+.rnode-kind{font-size:.75rem;font-weight:600;letter-spacing:.02em}
+.rnode-title{font-weight:600;font-size:.9375rem;line-height:1.35;overflow-wrap:anywhere}
+.rnode-body{display:grid;gap:.45rem;padding:.6rem .8rem .7rem;cursor:default}
+.rnode-body .picker{gap:.2rem;min-width:0}
+.rnode-body .picker-label,.rnode-field span{font-size:.6875rem;font-weight:600;color:var(--muted)}
+.rnode-body .input{min-height:32px;padding:.25rem .55rem;font-size:.8125rem;line-height:1.4}
+.rnode-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:.45rem}
+.rnode-field{display:grid;gap:.2rem;min-width:0}
+.rnode-textarea{resize:vertical;min-height:4rem}
+.rnode-note{margin:0;font-size:.75rem;line-height:1.4}
+.rnode-error{margin:0;font-size:.75rem;line-height:1.4;color:var(--coral-ink)}
+.rnode-invalid{color:var(--coral-ink)}
+.rnode-link{justify-self:start;font-size:.75rem;font-weight:600;color:var(--accent);border-radius:var(--r-input)}
+.rnode.has-error{border-color:var(--coral-right);box-shadow:0 0 0 3px var(--coral-top)}
+.rnode.is-lit{border-color:var(--mint-right);box-shadow:0 0 0 3px var(--mint-top)}
+/* The palette: a rail down the right edge of the canvas, the four chips with their keys and a short hint under them. */
+.rule-canvas .react-flow__panel.rule-palette{top:0;right:0;bottom:0;margin:0;width:9.5rem;display:flex;flex-direction:column;gap:.4rem;padding:.75rem .6rem;background:var(--surface);border-left:1px solid var(--line);border-radius:0 var(--r-card) var(--r-card) 0}
+.rule-palette-title{font-size:.6875rem;font-weight:600;color:var(--muted);letter-spacing:.02em}
+.palette-chip{display:flex;align-items:center;gap:.4rem;width:100%;cursor:grab;border:1px solid transparent;transition:transform var(--dur) var(--ease),border-color var(--dur) var(--ease)}
+.palette-chip:hover{transform:translateY(-1px);border-color:currentColor}
+.palette-chip:active{cursor:grabbing;transform:none}
+.palette-chip kbd{font:500 .6875rem var(--mono);background:var(--surface);color:inherit;border-radius:calc(var(--r-input) / 2);padding:0 .3rem;opacity:.85}
+.palette-coral{background:var(--coral-top);color:var(--coral-ink)}
+.palette-sky{background:var(--sky-top);color:var(--sky-ink)}
+.palette-mint{background:var(--mint-top);color:var(--mint-ink)}
+.palette-lilac{background:var(--lilac-top);color:var(--lilac-ink)}
+.rule-palette-hint{margin:.2rem 0 0;font-size:.75rem;line-height:1.4}
+/* Under the centred node, above the zoom controls. */
+.rule-canvas .react-flow__panel.rule-canvas-hint{margin:0 0 64px;pointer-events:none}
+.rule-canvas-hint p{margin:0;font-size:.8125rem;white-space:nowrap}
+.rule-controls{display:flex;gap:2px;background:var(--surface);border:1px solid var(--line);border-radius:var(--r-input);padding:2px;margin:12px}
+.rule-controls .icon-btn{width:32px;height:32px;border:0;border-radius:calc(var(--r-input) - 2px);color:var(--muted)}
+.rule-controls .icon-btn:hover{color:var(--text);background:var(--stone-top)}
+.rule-controls .icon-btn:disabled{opacity:.35;cursor:not-allowed;background:none;color:var(--muted)}
+.rule-controls-gap{width:1px;background:var(--line);margin:4px 3px}
+.rule-edge-panel{background:var(--surface);border:1px solid var(--muted);border-radius:var(--r-input);padding:.5rem .7rem;margin:12px;min-width:18rem;animation:row-form-in var(--dur) var(--ease-in) both}
+.rule-edge-panel .picker-label{font-size:.6875rem;color:var(--muted)}
+.canvas-empty{display:grid;justify-items:start;gap:.75rem;padding:1.5rem 0}
+.canvas-empty .iso-scene{width:96px;max-width:96px}
+.canvas-empty p{margin:0}
+/* The run log drawer: a 44px bar that opens to its content, at most 35 percent of the editor, with the list scrolling inside. */
+.run-log{display:flex;flex-direction:column;min-height:0;background:var(--surface);border:1px solid var(--line);border-radius:var(--r-card)}
+.rule-editor>.run-log.open{flex:0 1 auto;max-height:35%}
+.run-log-bar{display:flex;align-items:center;gap:.75rem;width:100%;height:44px;padding:0 .9rem;background:none;border:0;border-radius:var(--r-card);font:inherit;color:inherit;cursor:pointer;text-align:left;transition:background var(--dur) var(--ease)}
+.run-log-bar:hover{background:var(--bg)}
+.run-log.open .run-log-bar{border-radius:var(--r-card) var(--r-card) 0 0}
+.run-log-title{font-weight:600;font-size:1rem;letter-spacing:-.01em}
+.run-log-bar .mono{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.run-log-caret{flex:none;color:var(--muted);transition:transform var(--dur) var(--ease)}
+.run-log.open .run-log-caret{transform:rotate(180deg)}
+.run-log-panel{flex:0 1 auto;min-height:0;overflow:auto;border-top:1px solid var(--line)}
+.run-log-panel .settings-list{border:0;border-radius:0}
+.run-log-panel .skeleton,.run-log-panel>.muted{margin:.75rem .9rem}
+.run-row .row-id{gap:.9rem}
+.run-detail{grid-column:1 / -1;margin:.3rem 0 .5rem;max-height:14rem;overflow:auto;white-space:pre-wrap}
+@media (max-width:900px){
+  .view.auto-view{height:auto;display:block}
+  .auto-layout,.auto-layout.rail{display:block}
+  .rule-list{overflow:visible;display:block}
+  .rule-list.rail{display:flex;flex-direction:row}
+  .rule-list-head{margin-bottom:.5rem}
+  .rule-rows{display:flex;overflow-x:auto;gap:8px;background:none;border:0;border-radius:0;padding-bottom:4px}
+  .rule-rows .settings-row,.rule-rows .settings-row+.settings-row,.rule-rows .settings-row:first-child,.rule-rows .settings-row:last-child{flex:0 0 auto;width:15rem;border:1px solid var(--line);border-radius:var(--r-card);background:var(--surface)}
+  .rule-rows .rule-row[data-expanded]{background:var(--stone-top)}
+  .rule-rows .settings-empty{flex:1;border:1px solid var(--line);border-radius:var(--r-card);background:var(--surface)}
+  .rule-editor{margin-top:.75rem}
+  .rule-editor>.rule-canvas,.rule-editor.drawer-open>.rule-canvas{flex:none;height:60vh;min-height:60vh}
+  .rule-editor>.run-log.open{flex:none;height:40vh}
+  /* The rail becomes a strip across the top of the canvas. */
+  .rule-canvas .react-flow__panel.rule-palette{top:0;left:0;right:0;bottom:auto;width:auto;flex-direction:row;align-items:center;gap:.3rem;padding:.4rem .5rem;border-left:0;border-bottom:1px solid var(--line);border-radius:var(--r-card) var(--r-card) 0 0}
+  .rule-palette-hint,.rule-palette-title{display:none}
+  .palette-chip{width:auto}
+  .rnode{width:236px}
+  .rnode-row{grid-template-columns:1fr}
+  .rule-editor-actions{margin-left:0;width:100%}
+  /* The bottom nav bar is fixed; the zoom and undo panel sits above it, and the draft hint above that. */
+  .rule-controls{margin-bottom:calc(12px + 3.5rem)}
+  .rule-canvas .react-flow__panel.rule-canvas-hint{margin-bottom:calc(64px + 3.5rem)}
+}
+
+/* Vertical rhythm: a view's blocks are spaced by its own stack, so a block after the empty state never sits flush under its buttons. */
+.view>.empty+*{margin-top:2rem}
+
+/* Sidebar motion: the sidebar's surface and border live on ::before and scale from the old width to
+   the new one through --side-scale, while the main column is translated and eased into place (see
+   useSidebarFlip). Labels fade in after the width settles and leave at once; the caret turns. */
+@media (min-width:861px){
+  .side{background:none;border-right:0}
+  .side::before{content:"";position:absolute;inset:0;z-index:-1;background:var(--surface);border-right:1px solid var(--line);transform-origin:left center;transform:scaleX(var(--side-scale,1));transition:transform 220ms var(--ease)}
+  .side.side-flip-start::before{transition:none}
+}
+.shell:not(.collapsed) .side .label{transition:opacity var(--dur) var(--ease) 140ms}
+.collapse-btn svg{transition:transform 220ms var(--ease)}
+.collapsed .collapse-btn svg{transform:rotate(180deg)}
+@media (prefers-reduced-motion:reduce){
+  .side::before,.collapse-btn svg,.shell:not(.collapsed) .side .label{transition:none}
+}

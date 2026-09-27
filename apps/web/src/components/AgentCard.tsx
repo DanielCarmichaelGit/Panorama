@@ -1,5 +1,9 @@
 import type { Actor, Family, Scopes, Ticket } from "@boomerang/core";
+import type { Figures } from "../lib/hooks";
 import { AgentMark } from "../lib/iso";
+import { when } from "../lib/format";
+import { hasFigures } from "../lib/metrics";
+import { FigureSpans } from "./Figures";
 
 const AGENT_FAMILIES: Family[] = ["sky", "lilac", "mint", "stone"];
 
@@ -29,10 +33,6 @@ export function agentStatusLine(agent: Actor, ticket: Ticket | undefined, now: D
   return { text: "idle", coral: false };
 }
 
-function when(iso: string | null): string {
-  return iso ? new Date(iso).toLocaleString() : "Never";
-}
-
 export function scopeSummary(scopes: Scopes | null): string {
   if (!scopes) return "no access";
   if (scopes.projects === "*") return "all projects";
@@ -40,12 +40,14 @@ export function scopeSummary(scopes: Scopes | null): string {
   return `${n} project${n === 1 ? "" : "s"}, ${scopes.actions.length} action${scopes.actions.length === 1 ? "" : "s"}`;
 }
 
-export function AgentCard({ agent, ticket, onRevoke, revoking, error }: {
+export function AgentCard({ agent, ticket, onRevoke, revoking, error, totals }: {
   agent: Actor;
   ticket: Ticket | undefined;
   onRevoke: () => void;
   revoking: boolean;
   error?: string;
+  /** The agent's time, tokens and estimated cost for the selected period; nothing when it did nothing then. */
+  totals?: { figures: Figures; priceDate: string; periodLabel: string };
 }) {
   const status = agentStatusLine(agent, ticket, new Date());
   return (
@@ -59,6 +61,12 @@ export function AgentCard({ agent, ticket, onRevoke, revoking, error }: {
       </div>
       <span className="mono muted">{when(agent.lastSeen)}</span>
       <span className="muted">{scopeSummary(agent.scopes)}</span>
+      {totals && hasFigures(totals.figures) && (
+        <div className="figures agent-totals">
+          <span className="muted">{totals.periodLabel}</span>
+          <FigureSpans figures={totals.figures} priceDate={totals.priceDate} />
+        </div>
+      )}
       <button type="button" className="btn ghost" onClick={onRevoke} disabled={revoking}>Revoke</button>
       {error && <p className="error" role="alert">{error}</p>}
     </div>

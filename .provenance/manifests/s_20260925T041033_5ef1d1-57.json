@@ -1,0 +1,28 @@
+{
+  "sessionId": "s_20260925T041033_5ef1d1",
+  "actor": "Daniel Carmichael",
+  "tool": "cli",
+  "intent": "milestone 3 task 7 mcp",
+  "head": "afc54b9711d99f0e7084202d562216104819edc4abf3502d6b10b4b675ad8441",
+  "count": 57,
+  "diffHash": "598e5b1d388c44625c6b81ad024b589bd6dc165e524c4c7c7613f6b3306c28c1",
+  "files": [
+    "README.md",
+    "apps/mcp/build.mjs",
+    "apps/mcp/package.json",
+    "apps/mcp/src/client.ts",
+    "apps/mcp/src/config.test.ts",
+    "apps/mcp/src/config.ts",
+    "apps/mcp/src/contract.test.ts",
+    "apps/mcp/src/errors.test.ts",
+    "apps/mcp/src/errors.ts",
+    "apps/mcp/src/howto.ts",
+    "apps/mcp/src/main.ts",
+    "apps/mcp/src/tools.ts",
+    "apps/mcp/tsconfig.json",
+    "pnpm-lock.yaml",
+    "vitest.workspace.ts"
+  ],
+  "base": "bfc69a80c5599c9ed0cd3693547616971e968fd2",
+  "ts": "2026-09-25T04:24:12.563Z"
+}

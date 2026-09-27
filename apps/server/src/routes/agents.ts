@@ -5,7 +5,10 @@ import { appendEvent, countPending, getActor, getTicket, insertActor, listActors
 import { getDb, inScope, requireCan } from "../auth";
 import { record } from "../bus";
 import type { Ctx } from "../context";
+import { ENGINE_ACTOR_ID } from "../engine/actor";
 import { HttpError } from "../errors";
+import { stopActorTimers } from "../services/timers";
+import { actingAs } from "./common";
 
 /** Whether two scopes share at least one project ("*" counts as sharing every project). An
  *  agent should not learn about another agent it never works alongside, so this gates what one
@@ -39,7 +42,8 @@ export function agentRoutes(app: FastifyInstance, ctx: Ctx): void {
   app.get("/api/v1/agents", async (req) => {
     requireCan(req, "read");
     const db = getDb(ctx);
-    const agents = listActors(db).filter((a) => a.kind === "agent");
+    // The engine's reserved row is agent-shaped but not an agent anyone approved or can revoke.
+    const agents = listActors(db).filter((a) => a.kind === "agent" && a.id !== ENGINE_ACTOR_ID);
     if (req.actor.kind === "human") return agents;
     // Any active actor with read may see who else is connected, but an agent only ever sees the
     // public shape of agents it shares a project with, and never a current ticket in a project
@@ -57,9 +61,10 @@ export function agentRoutes(app: FastifyInstance, ctx: Ctx): void {
   const change = (type: "agent.approved" | "agent.revoked") => async (req: any) => {
     requireCan(req, type === "agent.approved" ? "agent.approve" : "agent.revoke");
     const db = getDb(ctx); const id = req.params.id as string; const target = getActor(db, id);
-    if (!target || target.kind !== "agent") throw new HttpError(404, "not_found", "No such agent");
+    if (!target || target.kind !== "agent" || target.id === ENGINE_ACTOR_ID) throw new HttpError(404, "not_found", "No such agent");
     const scopes = type === "agent.approved" ? ApproveAgentInput.parse(req.body).scopes : null;
     db.transaction(() => {
+      if (type === "agent.revoked") stopActorTimers(actingAs(ctx, db, req), id);
       setActorStatus(db, id, type === "agent.approved" ? "active" : "revoked", scopes);
       const ev = appendEvent(db, { actorId: req.actor.id, type, payload: { id, scopes }, signature: req.sig, now: ctx.now().toISOString() });
       record(req, ev);

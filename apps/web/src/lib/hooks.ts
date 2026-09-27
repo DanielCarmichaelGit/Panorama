@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
+  Action,
   Actor,
   Attachment,
   Board,
+  CanvasDoc,
   Comment,
   CreateEvidenceTypeInput,
   CreateLaneInput,
@@ -18,6 +20,7 @@ import type {
   LaneRequirement,
   Project,
   LinkKind,
+  Rule,
   Scopes,
   Tag,
   Ticket,
@@ -25,6 +28,7 @@ import type {
   UpdateLaneInput,
 } from "@boomerang/core";
 import { api } from "./api";
+import type { MetricsGroupBy, MetricsPeriod } from "./metrics";
 import { session } from "./session";
 import { connectStream, invalidationsFor } from "./stream";
 
@@ -156,6 +160,53 @@ export const usePrefetchGates = () => {
   return (ticketId: string) =>
     qc.prefetchQuery({ queryKey: ["gates", ticketId], queryFn: gatesQueryFn(ticketId), staleTime: 10_000 });
 };
+
+/** The same figures on a ticket, an actor, an arc, a board and a project, as the server measures them. */
+export interface Figures {
+  /** Whole seconds on timers, an open one counting up to the server's now. */
+  seconds: number;
+  openTimers: number;
+  tokens: { input: number; output: number; cacheRead: number; cacheWrite: number; total: number };
+  /** The estimate, null as soon as one entry could not be priced. */
+  usd: number | null;
+  /** The subtotal of the priced entries, so the UI can still say "at least". */
+  known: number;
+  unpriced: number;
+  entries: number;
+}
+
+export interface TicketMetrics extends Figures {
+  ticketId: string;
+  estimate: true;
+  priceDate: string;
+  byModel: ({ model: string } & Omit<Figures, "seconds" | "openTimers">)[];
+  byActor: ({ actorId: string; name: string } & Figures)[];
+  /** The open timers, oldest first. */
+  running: { actorId: string; name: string; startedAt: string }[];
+}
+
+export interface ProjectMetrics {
+  projectId: string;
+  estimate: true;
+  priceDate: string;
+  period: { kind: MetricsPeriod; from: string | null; to: string | null };
+  groupBy: MetricsGroupBy;
+  total: Figures;
+  groups: ({ id: string; name: string } & Figures)[];
+}
+
+// Metrics keys: ["metrics", "ticket", ticketId] and ["metrics", "project", projectId, period,
+// groupBy]. The stream invalidates by the ticket key and by the project prefix on timer.started,
+// timer.stopped and cost.added, so every period and grouping on screen refetches together.
+export const useTicketMetrics = (ticketId: string | undefined) =>
+  useQuery({ queryKey: ["metrics", "ticket", ticketId], queryFn: () => api<TicketMetrics>("GET", `/api/v1/tickets/${ticketId}/metrics`), enabled: !!ticketId });
+
+export const useProjectMetrics = (projectId: string | undefined, period: MetricsPeriod, groupBy: MetricsGroupBy) =>
+  useQuery({
+    queryKey: ["metrics", "project", projectId, period, groupBy],
+    queryFn: () => api<ProjectMetrics>("GET", `/api/v1/metrics?projectId=${encodeURIComponent(projectId ?? "")}&period=${period}&groupBy=${groupBy}`),
+    enabled: !!projectId,
+  });
 
 export const useAddComment = () => {
   const qc = useQueryClient();
@@ -452,6 +503,138 @@ export const useRevokeAgent = () => {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["agents"] }),
   });
 };
+
+/** A rule as the list shows it: the server may add its last fire and run count (task 4). */
+export type RuleSummary = Rule & { lastFiredAt?: string | null; runCount?: number };
+
+export interface RuleRun {
+  id: string;
+  ruleId: string;
+  ticketId: string;
+  eventId: string;
+  firedAt: string;
+  outcome: "applied" | "skipped" | "refused" | "error";
+  detail?: unknown;
+  /** The ticket's key when the server joins it; the log falls back to the id. */
+  ticketKey?: string;
+}
+
+/** An action the dry run would perform but the gate refuses: which lane, and what the ticket lacks. A blocker (a link to an unfinished ticket) arrives as a miss with no count. */
+export interface RuleRefusal {
+  action: Action;
+  laneId: string;
+  missing: { typeId: string; name: string; need: number; have: number; description?: string }[];
+}
+
+export interface RuleTestResult {
+  matched: boolean;
+  /** Node ids the evaluation passed through; a synthesised else node is named as `<id>~else`. */
+  nodeIds: string[];
+  actions: Action[];
+  refusals: RuleRefusal[];
+}
+
+/** A webhook destination (task 5); the emit_webhook action's Picker reads the live ones, the Settings tab all of them. */
+export interface Destination { id: string; projectId: string; name: string; url: string; archived: boolean; createdAt: string }
+/** What create and rotate answer: the destination with its secret, shown once and never listed again. */
+export interface DestinationWithSecret extends Destination { secret: string }
+
+export const useRules = (projectId: string | undefined) =>
+  useQuery({
+    queryKey: ["rules", projectId],
+    queryFn: () => api<RuleSummary[]>("GET", `/api/v1/rules?projectId=${encodeURIComponent(projectId ?? "")}`),
+    enabled: !!projectId,
+  });
+
+export const useRuleRuns = (ruleId: string | undefined, limit = 20) =>
+  useQuery({
+    queryKey: ["rule-runs", ruleId],
+    queryFn: () => api<RuleRun[]>("GET", `/api/v1/rules/${ruleId}/runs?limit=${limit}`),
+    enabled: !!ruleId,
+  });
+
+/** Human only: creates a rule from its drawing; the server runs canvasToRule and answers 400 canvas_invalid with the offending nodes. */
+export const useCreateRule = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { projectId: string; name: string; enabled: boolean; canvas: CanvasDoc }) => api<Rule>("POST", "/api/v1/rules", v),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["rules"] }),
+  });
+};
+
+/** Human only: renames, enables or disables a rule, or replaces its drawing (same validation as create). */
+export const useUpdateRule = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { id: string; patch: { name?: string; enabled?: boolean; canvas?: CanvasDoc } }) => api<Rule>("PATCH", `/api/v1/rules/${v.id}`, v.patch),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["rules"] }),
+  });
+};
+
+export const useDeleteRule = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api<{ ok: boolean }>("DELETE", `/api/v1/rules/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["rules"] }),
+  });
+};
+
+/** Dry run: which nodes match a ticket and what would happen. Nothing is written. */
+export const useTestRule = () =>
+  useMutation({
+    mutationFn: (v: { id: string; ticketId: string }) => api<RuleTestResult>("POST", `/api/v1/rules/${v.id}/test`, { ticketId: v.ticketId }),
+  });
+
+/** The project's live destinations, for the notify node's Picker. */
+export const useDestinations = (projectId: string | undefined) =>
+  useQuery({
+    queryKey: ["destinations", projectId, "live"],
+    queryFn: () => api<Destination[]>("GET", `/api/v1/destinations?projectId=${encodeURIComponent(projectId ?? "")}`),
+    enabled: !!projectId,
+    retry: false,
+  });
+
+/** Every destination of the project, archived ones included, for the Settings tab. */
+export const useAllDestinations = (projectId: string | undefined) =>
+  useQuery({
+    queryKey: ["destinations", projectId, "all"],
+    queryFn: () => api<Destination[]>("GET", `/api/v1/destinations?projectId=${encodeURIComponent(projectId ?? "")}&includeArchived=1`),
+    enabled: !!projectId,
+    retry: false,
+  });
+
+/** Human only: adds a destination. The answer carries the secret once; nothing lists it afterwards (400 duplicate_name, validation for a url with credentials). */
+export const useCreateDestination = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { projectId: string; name: string; url: string }) => api<DestinationWithSecret>("POST", "/api/v1/destinations", v),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["destinations"] }),
+  });
+};
+
+/** Human only: renames a destination, changes its url, or archives and restores it. */
+export const useUpdateDestination = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { id: string; patch: { name?: string; url?: string; archived?: boolean } }) => api<Destination>("PATCH", `/api/v1/destinations/${v.id}`, v.patch),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["destinations"] }),
+  });
+};
+
+/** Human only: replaces the secret; the new one comes back once. */
+export const useRotateDestination = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api<DestinationWithSecret>("POST", `/api/v1/destinations/${id}/rotate`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["destinations"] }),
+  });
+};
+
+/** Human only: queues a signed test delivery, sent by the outbox worker like any other. */
+export const useTestDestination = () =>
+  useMutation({
+    mutationFn: (id: string) => api<{ id: string }>("POST", `/api/v1/destinations/${id}/test`),
+  });
 
 /**
  * Keeps a live SSE connection open while a session seed exists (reconnecting after unlock,

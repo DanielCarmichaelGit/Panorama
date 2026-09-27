@@ -1,0 +1,14 @@
+{
+  "sessionId": "s_20260925T035702_3bc74c",
+  "actor": "Daniel Carmichael",
+  "tool": "cli",
+  "intent": "milestone 2c server final review wave",
+  "head": "95852e4f02dbe3a9b0104c5088d6b96f7f279b1f07edf308ba5791bba1645772",
+  "count": 374,
+  "diffHash": "711294e58e90aab5cfc7a8208b583c8667c39a44e964b3f8169dc20b2597b60e",
+  "files": [
+    "apps/web/src/views/TicketPanel.test.tsx"
+  ],
+  "base": "db56d9e0622ecaa7c9ce7f249bf6d9a6f2461ea3",
+  "ts": "2026-09-25T19:23:28.341Z"
+}

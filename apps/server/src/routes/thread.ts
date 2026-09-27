@@ -1,7 +1,6 @@
 import type { FastifyInstance } from "fastify";
-import { AddCommentInput, AddEvidenceInput, checkGate, CreateEvidenceTypeInput, evaluateEvidence, LaneRequirementsInput } from "@boomerang/core";
+import { AddCommentInput, AddEvidenceInput, CreateEvidenceTypeInput, evaluateEvidence, LaneRequirementsInput } from "@boomerang/core";
 import {
-  addComment,
   addEvidence,
   createEvidenceType,
   deleteEvidenceType,
@@ -20,9 +19,9 @@ import {
 } from "@boomerang/db";
 import { getDb, requireCan } from "../auth";
 import type { Ctx } from "../context";
-import { blockedByReasons } from "../gate";
 import { HttpError } from "../errors";
-import { loadTicket, makeLog } from "./common";
+import { addCommentAs, missingForLane } from "../services/tickets";
+import { actingAs, loadTicket, makeLog } from "./common";
 
 export function threadRoutes(app: FastifyInstance, ctx: Ctx): void {
   const iso = () => ctx.now().toISOString();
@@ -100,25 +99,9 @@ export function threadRoutes(app: FastifyInstance, ctx: Ctx): void {
   app.post("/api/v1/comments", async (req: any) => {
     const db = getDb(ctx); const input = AddCommentInput.parse(req.body);
     const t = load(db, input.ticketId); requireCan(req, "comment.add", t.projectId);
-    const attachmentIds = input.attachmentIds ?? [];
-    for (const id of attachmentIds) {
-      const att = getAttachment(db, id);
-      if (!att || att.ticketId !== t.id || att.actorId !== req.actor.id || att.commentId !== null) {
-        throw new HttpError(400, "validation", "Bad attachment", { attachmentId: id });
-      }
-    }
-    // The body is markdown and is untrusted. It is stored verbatim (zod already bounds it to
-    // 1..20000 chars): an HTML sanitiser here is both lossy (it mangles plain markdown
-    // punctuation like `<` and `&` in prose or code spans) and bypassable (entity-encoded
-    // input decodes back to live markup once un-escaped for the markdown case). The render
-    // boundary is HTML, not this route, so sanitisation happens there: the web client renders
-    // this body through marked and DOMPurify, and shows any raw HTML blocks only inside a
-    // sandboxed frame.
-    return db.transaction(() => {
-      const c = addComment(db, { ticketId: t.id, actorId: req.actor.id, body: input.body, attachmentIds, now: iso() });
-      log(db, req, "comment.added", { id: c.id, ticketId: t.id, projectId: t.projectId });
-      return c;
-    })();
+    // The attachment ownership rule and the note on why the markdown body is stored verbatim
+    // live with the service, which the rule engine's add_comment action runs through too.
+    return addCommentAs(actingAs(ctx, db, req), t, input.body, input.attachmentIds ?? []);
   });
 
   app.post("/api/v1/evidence", async (req: any) => {
@@ -158,10 +141,7 @@ export function threadRoutes(app: FastifyInstance, ctx: Ctx): void {
     const db = getDb(ctx); const t = load(db, req.params.id); requireCan(req, "read", t.projectId);
     const evidence = listEvidence(db, t.id);
     const out: Record<string, { typeId: string; name: string; need: number; have: number }[]> = {};
-    for (const lane of listLanes(db, t.projectId)) {
-      const missing = checkGate(lane.evidenceRequirements, evidence).map((m) => ({ ...m, name: getEvidenceType(db, m.typeId)?.name ?? m.typeId }));
-      out[lane.id] = [...missing, ...blockedByReasons(db, t.projectId, t.id, lane)];
-    }
+    for (const lane of listLanes(db, t.projectId)) out[lane.id] = missingForLane(db, lane, evidence, t.projectId, t.id);
     return out;
   });
 }

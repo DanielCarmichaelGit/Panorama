@@ -2,6 +2,8 @@
 export const ANCHOR_KEY = "bm.anchor";
 export const SIDEBAR_KEY = "bm.sidebar";
 export const INTRO_KEY = "bm.settingsIntro";
+/** Whether the Automations rule list is folded to its rail (localStorage). */
+export const RULES_RAIL_KEY = "bm.rulesRail";
 
 const OLD_ANCHOR_KEY = "pan.anchor";
 const OLD_KEYS = [OLD_ANCHOR_KEY, "pan.sidebar", "pan.settingsIntro"];

@@ -1,0 +1,33 @@
+{
+  "sessionId": "s_20260925T184801_4e231a",
+  "actor": "Daniel Carmichael",
+  "tool": "cli",
+  "intent": "milestone 3 task 5 scheduler, outbox worker, webhook destinations (continues session s_20260925T044147_90c922, whose chain broke at seq 30 when two tool hooks appended concurrently)",
+  "head": "d3df955d9ffd269fc1b73ff1d67345a52e81be7b7b5c5bd3a20f07984f93f618",
+  "count": 4,
+  "diffHash": "1303e94e75cd5afc970369ecb2e6317bbe0ee56a0a74f7dfc46fbc7f20f70708",
+  "files": [
+    "apps/server/package.json",
+    "apps/server/src/app.ts",
+    "apps/server/src/destinations.test.ts",
+    "apps/server/src/files.ts",
+    "apps/server/src/main.ts",
+    "apps/server/src/routes/destinations.ts",
+    "apps/server/src/workers/index.ts",
+    "apps/server/src/workers/outbox.test.ts",
+    "apps/server/src/workers/outbox.ts",
+    "apps/server/src/workers/scheduler.test.ts",
+    "apps/server/src/workers/scheduler.ts",
+    "apps/server/src/workers/secrets.ts",
+    "apps/server/src/workers/system.ts",
+    "packages/core/src/permissions.ts",
+    "packages/db/src/automation.test.ts",
+    "packages/db/src/automation.ts",
+    "packages/db/src/db.test.ts",
+    "packages/db/src/events.ts",
+    "packages/db/src/tickets.ts",
+    "pnpm-lock.yaml"
+  ],
+  "base": "de1510c7e9a77758d2bcd5f98d33ec8b265b5f2b",
+  "ts": "2026-09-25T18:48:15.469Z"
+}

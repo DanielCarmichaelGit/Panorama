@@ -129,6 +129,11 @@ export function invalidationsFor(type: string, data: any): unknown[][] {
   if (type.startsWith("agent.")) {
     return [["agents"]];
   }
+  // A timer or a cost entry moves the ticket's own figures and every rollup of its project
+  // (whatever period or grouping is on screen), so the project prefix is enough.
+  if (type === "timer.started" || type === "timer.stopped" || type === "cost.added") {
+    return [["metrics", "ticket", data.ticketId], ["metrics", "project", data.projectId]];
+  }
   if (type.startsWith("lane.") || type.startsWith("project.")) {
     return [["lanes"], ["projects"], ["gates"]];
   }
@@ -143,6 +148,13 @@ export function invalidationsFor(type: string, data: any): unknown[][] {
   }
   if (type.startsWith("field.")) {
     return [["fields"]];
+  }
+  // A rule fire writes a run-log row and moves the rule's counters; any rule change moves the list.
+  if (type === "rule.fired") {
+    return [["rules"], ["rule-runs", data.ruleId]];
+  }
+  if (type.startsWith("rule.")) {
+    return [["rules"]];
   }
   return [];
 }

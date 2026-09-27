@@ -252,6 +252,7 @@ export const UpdateTicketInput = z
     assigneeId: z.string().min(1).nullable().optional(),
     metadata: z.record(z.unknown()).optional(),
     epicId: z.string().min(1).nullable().optional(),
+    boardId: z.string().min(1).optional(),
     tagIds: z.array(z.string().min(1)).max(20).optional(),
     successCriteria: z.string().max(20000).optional(),
     fields: z.record(FieldValueSchema).optional(),

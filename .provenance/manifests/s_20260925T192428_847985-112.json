@@ -1,0 +1,19 @@
+{
+  "sessionId": "s_20260925T192428_847985",
+  "actor": "Daniel Carmichael",
+  "tool": "cli",
+  "intent": "milestone 3 task 11 demo e2e readme",
+  "head": "b5771fc62c6a424523105f943155025d616cfb6a85a769cecce680e9449c3f14",
+  "count": 112,
+  "diffHash": "f95f9974aab48e8c5cc4c8ef0c80d2ff7764151c22ed0d8cba941b79c278ddbe",
+  "files": [
+    "e2e/automation.spec.ts",
+    "e2e/human.ts",
+    "package.json",
+    "playwright.config.ts",
+    "pnpm-lock.yaml",
+    "scripts/demo-agent.ts"
+  ],
+  "base": "140ea5a0e43b0579329b527f2311a3b7e3de94a8",
+  "ts": "2026-09-26T00:36:51.152Z"
+}

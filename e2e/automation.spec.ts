@@ -59,7 +59,7 @@ test("the owner's pipeline rule, drawn by keyboard, runs on the demo agent's tic
   await expect(page.getByRole("region", { name: "New rule" })).toBeVisible();
   await page.getByLabel("Rule name").fill("Pipeline");
   await expect(page.getByText("Press c to add a condition, a to add an action")).toBeVisible();
-  await page.screenshot({ path: "shots-final-2/automations-draft-1280.png" });
+  await page.screenshot({ path: "test-results/shots/automations-draft-1280.png" });
 
   const canvas = page.getByRole("application", { name: "Rule canvas" });
   const node = (kind: "event" | "condition" | "action") => canvas.locator(`.react-flow__node:has(.rnode-${kind})`);
@@ -223,14 +223,14 @@ test("the owner's pipeline rule, drawn by keyboard, runs on the demo agent's tic
   const after = (await human.call("GET", "/api/v1/chain/verify")).json;
   expect(after.seq).toBe(before.seq);
   expect(after.head).toBe(before.head);
-  await page.screenshot({ path: "shots-final-2/automations-test-1280.png" });
+  await page.screenshot({ path: "test-results/shots/automations-test-1280.png" });
 
   // The same three states on a phone: the pieces stack and the palette is a strip over the canvas.
   await page.setViewportSize({ width: 375, height: 800 });
   await expect(canvas.locator(".rnode.is-lit")).toHaveCount(3);
-  await page.screenshot({ path: "shots-final-2/automations-test-375.png", fullPage: true });
+  await page.screenshot({ path: "test-results/shots/automations-test-375.png", fullPage: true });
   await page.getByRole("button", { name: "New rule" }).first().click();
   await expect(page.getByRole("region", { name: "New rule" })).toBeVisible();
   await expect(page.getByText("Press c to add a condition, a to add an action")).toBeVisible();
-  await page.screenshot({ path: "shots-final-2/automations-draft-375.png", fullPage: true });
+  await page.screenshot({ path: "test-results/shots/automations-draft-375.png", fullPage: true });
 });

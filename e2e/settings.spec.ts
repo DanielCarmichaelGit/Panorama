@@ -181,5 +181,5 @@ test("the settings lifecycle: an evidence type, a lane that requires it, the gat
   await page.getByRole("tab", { name: "Destinations" }).click();
   await expect(page.getByRole("tab", { name: "Destinations" })).toHaveAttribute("aria-selected", "true");
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375);
-  await page.screenshot({ path: "shots-final-2/settings-375.png", fullPage: true });
+  await page.screenshot({ path: "test-results/shots/settings-375.png", fullPage: true });
 });
